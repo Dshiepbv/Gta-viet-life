@@ -1,0 +1,8 @@
+faster-whisper>=1.1
+sounddevice>=0.4
+numpy>=1.24
+edge-tts>=6.1.10
+pygame>=2.5
+# Cho faster-whisper chạy trên GPU NVIDIA (CUDA 12):
+nvidia-cublas-cu12
+nvidia-cudnn-cu12==9.*

@@ -1,0 +1,25 @@
+{
+  "port": 5577,
+
+  "provider": "gemini",
+  "gemini_api_key": "",
+  "gemini_model": "gemini-2.5-flash",
+  "gemini_thinking_budget": 0,
+
+  "ollama_enabled": true,
+  "ollama_url": "http://127.0.0.1:11434",
+  "ollama_model": "qwen2.5:3b",
+
+  "whisper_model": "large-v3-turbo",
+  "whisper_compute": "int8_float16",
+  "whisper_cpu_model": "small",
+  "mic_device": null,
+
+  "tts_volume": 1.0,
+
+  "overlay": true,
+  "overlay_font_size": 22,
+  "overlay_bottom_px": 90,
+
+  "memory_db": "memory.db"
+}
