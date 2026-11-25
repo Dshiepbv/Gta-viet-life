@@ -93,7 +93,7 @@ public class GtaVietLifeTraffic : Script
                 nextNode = now + 1500;
                 var dens = new OutputArgument(); var flags = new OutputArgument();
                 Vector3 p = me.Position;
-                Function.Call((Hash)0x0568566ACBB5DEDC, p.X, p.Y, p.Z, dens, flags);   // GET_VEHICLE_NODE_PROPERTIES
+                Function.Call(Hash.GET_VEHICLE_NODE_PROPERTIES, p.X, p.Y, p.Z, dens, flags);   // GET_VEHICLE_NODE_PROPERTIES
                 roadDensity = dens.GetResult<int>();
                 major = roadDensity >= 9;
             }
@@ -101,11 +101,11 @@ public class GtaVietLifeTraffic : Script
             // mật độ mỗi khung hình (phải gọi lại mỗi tick)
             float vd = major ? densMajor : densSide;
             vd *= rush ? densRush : densOff;
-            Function.Call((Hash)0x245A6883D966D537, vd);                            // SET_VEHICLE_DENSITY_MULTIPLIER_THIS_FRAME
-            Function.Call((Hash)0xB3B3359379FE77D3, vd);                            // SET_RANDOM_VEHICLE_DENSITY_MULTIPLIER_THIS_FRAME
-            Function.Call((Hash)0xEAE6DCC7EEE3DB1D, major ? 0.6f : 1.0f);           // SET_PARKED_VEHICLE_DENSITY_MULTIPLIER_THIS_FRAME
-            Function.Call((Hash)0x95E3D6257B166CF2, major ? pedMajor : pedSide);    // SET_PED_DENSITY_MULTIPLIER_THIS_FRAME
-            Function.Call((Hash)0x7A556143A1C03898, major ? pedMajor : pedSide, major ? pedMajor : pedSide); // SET_SCENARIO_PED_DENSITY_MULTIPLIER_THIS_FRAME
+            Function.Call(Hash.SET_VEHICLE_DENSITY_MULTIPLIER_THIS_FRAME, vd);                            // SET_VEHICLE_DENSITY_MULTIPLIER_THIS_FRAME
+            Function.Call(Hash.SET_RANDOM_VEHICLE_DENSITY_MULTIPLIER_THIS_FRAME, vd);                            // SET_RANDOM_VEHICLE_DENSITY_MULTIPLIER_THIS_FRAME
+            Function.Call(Hash.SET_PARKED_VEHICLE_DENSITY_MULTIPLIER_THIS_FRAME, major ? 0.6f : 1.0f);           // SET_PARKED_VEHICLE_DENSITY_MULTIPLIER_THIS_FRAME
+            Function.Call(Hash.SET_PED_DENSITY_MULTIPLIER_THIS_FRAME, major ? pedMajor : pedSide);    // SET_PED_DENSITY_MULTIPLIER_THIS_FRAME
+            Function.Call(Hash.SET_SCENARIO_PED_DENSITY_MULTIPLIER_THIS_FRAME, major ? pedMajor : pedSide, major ? pedMajor : pedSide); // SET_SCENARIO_PED_DENSITY_MULTIPLIER_THIS_FRAME
 
             if (now > nextScan) { nextScan = now + 600; Scan(me, now); }
             if (now > nextLog)
@@ -165,10 +165,10 @@ public class GtaVietLifeTraffic : Script
                 Ped d = v.Driver;
                 float s = (float)(spd * (0.85 + rnd.NextDouble() * 0.3));   // mỗi xe lệch nhau một chút cho tự nhiên
                 if (isBike) s *= 0.95f; else s *= 0.9f;
-                Function.Call((Hash)0x0E46A3FCBDE2A1B1, v, s + 1.5f);               // SET_ENTITY_MAX_SPEED: trần cứng
-                Function.Call((Hash)0x5C9B84BD7D31D908, d, s);                      // SET_DRIVE_TASK_CRUISE_SPEED
-                Function.Call((Hash)0xA731F608CA104E3C, d, aggressiveness);         // SET_DRIVER_AGGRESSIVENESS
-                Function.Call((Hash)0xB195FFA8042FC5C3, d, 1.0f);                   // SET_DRIVER_ABILITY
+                Function.Call(Hash.SET_ENTITY_MAX_SPEED, v, s + 1.5f);               // SET_ENTITY_MAX_SPEED: trần cứng
+                Function.Call(Hash.SET_DRIVE_TASK_CRUISE_SPEED, d, s);                      // SET_DRIVE_TASK_CRUISE_SPEED
+                Function.Call(Hash.SET_DRIVER_AGGRESSIVENESS, d, aggressiveness);         // SET_DRIVER_AGGRESSIVENESS
+                Function.Call(Hash.SET_DRIVER_ABILITY, d, 1.0f);                   // SET_DRIVER_ABILITY
             }
         }
         nBike = bikes; nCar = cars;
@@ -216,6 +216,15 @@ public class GtaVietLifeTraffic : Script
         }
     }
 
+    // trong tầm nhìn camera? (tính bằng góc, không gọi native lạ)
+    static bool InView(Vector3 p)
+    {
+        Vector3 to = p - GameplayCamera.Position; float len = to.Length(); if (len < 1f) return true;
+        Vector3 dir = GameplayCamera.Direction;
+        float dot = (to.X * dir.X + to.Y * dir.Y + to.Z * dir.Z) / len;
+        return dot > 0.35f;   // ~70 độ mỗi bên: rộng hơn khung hình để chắc chắn khuất
+    }
+
     bool SpawnBike(Ped me)
     {
         Vector3 pp = me.Position;
@@ -226,7 +235,7 @@ public class GtaVietLifeTraffic : Script
         if (st == Vector3.Zero) return false;
         float d = st.DistanceTo(pp);
         if (d < spawnMin * 0.8f || d > spawnMax * 1.4f) return false;
-        if (Function.Call<bool>((Hash)0xDD79DF9839364A12, st.X, st.Y, st.Z, 4f)) return false;   // IS_SPHERE_VISIBLE: không sinh trước mắt
+        if (InView(st)) return false;   // không sinh trước mắt
         // tránh chồng lên xe khác
         if (World.GetNearbyVehicles(st, 6f).Length > 0) return false;
 
@@ -249,9 +258,9 @@ public class GtaVietLifeTraffic : Script
         v.IsPersistent = false;
         rider.IsPersistent = false;
         float s = CruiseSpeed();
-        Function.Call((Hash)0x0E46A3FCBDE2A1B1, v, s + 1.5f);
-        Function.Call((Hash)0xA731F608CA104E3C, rider, aggressiveness);
-        Function.Call((Hash)0xB195FFA8042FC5C3, rider, 1.0f);
+        Function.Call(Hash.SET_ENTITY_MAX_SPEED, v, s + 1.5f);
+        Function.Call(Hash.SET_DRIVER_AGGRESSIVENESS, rider, aggressiveness);
+        Function.Call(Hash.SET_DRIVER_ABILITY, rider, 1.0f);
         rider.Task.CruiseWithVehicle(v, s, DrivingStyle.Normal);
         tuned.Add(v.Handle);
         mine.Add(v);
