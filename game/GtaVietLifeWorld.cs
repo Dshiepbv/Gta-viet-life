@@ -559,20 +559,24 @@ public class GtaVietLifeWorld : Script
         Prop stand = AddProp(standModel, bizPos, bizHeading + standYaw);
         if (stand == null && standModel != "prop_hotdogstand_01") { Log("model quay " + standModel + " khong dung duoc, dung quay hot dog"); stand = AddProp("prop_hotdogstand_01", bizPos, bizHeading + standYaw); }
         if (stand != null) Function.Call(Hash.SET_ENTITY_COLLISION, stand, false, false);   // quay chi de trang tri, nhan vien khong bi day len mat quay
-        string[] parasols = { "prop_parasol_01", "prop_parasol_01", "prop_parasol_03", "prop_parasol_04" };
+        string[] parasols = { "prop_parasol_01", "prop_parasol_03", "prop_parasol_04", "prop_parasol_05" };
+        List<Vector3> tcs = new List<Vector3>();
         int tables = Math.Min(4, bizLevel);   // cap 1: 1 ban, cap 2: 2 ban, cap 3: 3 ban, cap 4: 4 ban
         for (int l = 1; l <= tables; l++)
         {
             int row = (l - 1) / 2;
             float side = (l % 2 == 1) ? 1f : -1f;
             Vector3 c = bizPos + fwd * (3.5f + row * 3.0f) + right * (2.4f * side);
-            Prop tb = AddProp("prop_table_03", c, bizHeading);
+            tcs.Add(c);
+            Prop tb = AddProp(bizLevel >= 3 ? "prop_table_03b" : "prop_table_03", c, bizHeading);
+            if (tb == null && bizLevel >= 3) tb = AddProp("prop_table_03", c, bizHeading);
             if (tb != null) Function.Call(Hash.SET_ENTITY_COLLISION, tb, false, false);   // ngoi vao ban khong bi vat ly hat len troi
-            AddProp("prop_chair_01a", c + right * ChairDist, bizHeading - 90f);
+            string chairM = bizLevel >= 3 ? "prop_chair_01b" : "prop_chair_01a";
+            if (AddProp(chairM, c + right * ChairDist, bizHeading - 90f) == null && bizLevel >= 3) AddProp("prop_chair_01a", c + right * ChairDist, bizHeading - 90f);
             if (bizProps.Count > 0) { chairProps.Add(bizProps[bizProps.Count - 1]); chairBusy.Add(false); chairFace.Add(FaceHeading(c + right * ChairDist, c)); chairTable.Add(c); tableCups.Add(null); }
-            AddProp("prop_chair_01a", c - right * ChairDist, bizHeading + 90f);
+            if (AddProp(chairM, c - right * ChairDist, bizHeading + 90f) == null && bizLevel >= 3) AddProp("prop_chair_01a", c - right * ChairDist, bizHeading + 90f);
             if (bizProps.Count > 0) { chairProps.Add(bizProps[bizProps.Count - 1]); chairBusy.Add(false); chairFace.Add(FaceHeading(c - right * ChairDist, c)); chairTable.Add(c); tableCups.Add(null); }
-            AddProp(parasols[Math.Min(l, 4) - 1], c, bizHeading);
+            AddProp(parasols[Math.Min(bizLevel, 4) - 1], c, bizHeading);   // o che doi mau theo cap
         }
         foreach (Prop chp in chairProps) if (chp != null && chp.Exists()) Function.Call(Hash.SET_ENTITY_COLLISION, chp, false, false);
         for (int ci = 0; ci < chairProps.Count; ci++)
@@ -602,6 +606,30 @@ public class GtaVietLifeWorld : Script
             AddProp("prop_patio_heater_01", bizPos + fwd * 6.5f, bizHeading);
         }
         // do sang hon theo cap: may pha ca phe, tu lanh, cay canh lon, hang rao hoa... (danh sach doi duoc trong .ini)
+        float gz = GroundForBiz();
+        // cap 3+: hang rao cay xanh hai ben, khong gian phan cach voi via he; ly ruou tren ban
+        if (bizLevel >= 3)
+        {
+            for (int k = -1; k <= 4; k++)
+            {
+                Vector3 hl = bizPos - right * 7.4f + fwd * (k * 2.0f);
+                Vector3 hr = bizPos + right * 7.4f + fwd * (k * 2.0f);
+                AddProp("prop_bush_neat_01", hl, bizHeading);
+                AddProp("prop_bush_neat_01", hr, bizHeading);
+            }
+            foreach (Vector3 tc in tcs) AddProp("prop_wine_glass", new Vector3(tc.X + 0.25f, tc.Y + 0.15f, gz + 0.76f), bizHeading, false);
+        }
+        // cap 4: dai phun nuoc, hang rao phia sau, ly champagne + chai ruou tren ban
+        if (bizLevel >= 4)
+        {
+            for (int k = -3; k <= 3; k++) AddProp("prop_bush_neat_01", bizPos - fwd * 6.2f + right * (k * 2.0f), bizHeading + 90f);
+            AddProp("prop_fountain2", bizPos - fwd * 4.8f, bizHeading);
+            foreach (Vector3 tc in tcs)
+            {
+                AddProp("prop_cs_champ_flute", new Vector3(tc.X - 0.25f, tc.Y - 0.15f, gz + 0.76f), bizHeading, false);
+                AddProp("prop_wine_bot_01", new Vector3(tc.X, tc.Y + 0.3f, gz + 0.76f), bizHeading, false);
+            }
+        }
         int slotIdx = 0;
         for (int lv = 2; lv <= bizLevel; lv++)
         {
