@@ -640,7 +640,18 @@ public class GtaVietLifePersonal : Script
         {
             string type = ev[1], data = ev[2];
             if (type == "core.day") OnNewDay();
-            else if (type == "econ.release") { foreach (CarRec c in garage) if (c.InEconPound) { c.Impounded = false; c.InEconPound = false; } Save(); }
+            else if (type == "econ.release")
+            {
+                string rp = Field(data, "plate"), rh = Field(data, "hash");
+                int rhash; bool hasHash = int.TryParse(rh, out rhash);
+                foreach (CarRec c in garage)
+                {
+                    if (!c.InEconPound) continue;
+                    bool match = (rp.Length == 0 && !hasHash) || (c.Plate == rp && (!hasHash || c.Hash == rhash));   // thieu truong thi mo het
+                    if (match) { c.Impounded = false; c.InEconPound = false; }
+                }
+                Save();
+            }
             else if (type == "life.gym") { float min; float.TryParse(Field(data, "minutes"), NumberStyles.Float, CultureInfo.InvariantCulture, out min); TrainMuscle(Math.Max(10f, min) / 30f); }
         }
     }
