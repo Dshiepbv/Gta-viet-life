@@ -554,6 +554,9 @@ public class GtaVietLifeWorld : Script
             mdl.MarkAsNoLongerNeeded();
             if (p == null || !p.Exists()) return;
             p.Heading = bizHeading;
+            p.PlaceOnGround();                 // dat dung len mat dat that (khong tu tinh do cao)
+            pos = p.Position;                  // vi tri dung that cua nhan vien
+            Log("nhan vien #" + staffPeds.Count + " z=" + pos.Z.ToString("0.00") + " nen=" + GroundForBiz().ToString("0.00") + " bizPosZ=" + bizPos.Z.ToString("0.00"));
             p.IsPersistent = true;
             Function.Call(Hash.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS, p, true);
             Function.Call(Hash.SET_PED_KEEP_TASK, p, true);
@@ -833,10 +836,9 @@ public class GtaVietLifeWorld : Script
                 }
                 if (p.IsPositionFrozen)
                 {
-                    // dang dung yen: neu lo lung tren cao (hoac len mat quay) thi ha xuong mat dat that
-                    float target = GroundForBiz() + 1.0f + staffZ;
-                    if (Math.Abs(p.Position.Z - target) > 0.3f && p.Position.DistanceTo2D(bizPos) < 8f)
-                        p.Position = new Vector3(p.Position.X, p.Position.Y, target);
+                    // dang dung yen: neu bi day len cao (hoac lo lung) thi tra ve vi tri dung that
+                    if (Math.Abs(p.Position.Z - staffSlots[i].Z) > 0.3f && p.Position.DistanceTo2D(bizPos) < 8f)
+                        p.Position = staffSlots[i];
                     continue;
                 }
                 // ve cho dung
