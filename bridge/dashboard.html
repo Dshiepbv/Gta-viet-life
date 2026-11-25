@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="vi"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b0f14"><meta name="mobile-web-app-capable" content="yes">
+<title>Dashboard kinh doanh</title>
+<style>
+:root{--bg:#0b0f14;--card:#141b24;--line:#223041;--tx:#e8eef5;--mu:#8a9bb0;--ok:#3ddc84;--bad:#ff5d5d;--warn:#ffc857;--acc:#4da3ff}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.4 system-ui,sans-serif;padding:12px max(16px,env(safe-area-inset-right)) 40px 16px}
+h1{font-size:15px;color:var(--mu);font-weight:600;margin:4px 0 10px;display:flex;justify-content:space-between;align-items:center}
+.pill{font-size:12px;padding:3px 10px;border-radius:99px;border:1px solid var(--line)}
+.on{color:var(--ok);border-color:var(--ok)}.off{color:var(--warn);border-color:var(--warn)}
+.big{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;margin-bottom:12px}
+.big .v{font-size:40px;font-weight:700;letter-spacing:-1px;font-variant-numeric:tabular-nums}
+.lbl{font-size:12px;color:var(--mu);text-transform:uppercase;letter-spacing:.5px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.k{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px}.k .v{font-size:22px;font-weight:650;font-variant-numeric:tabular-nums}
+.pos{color:var(--ok)}.neg{color:var(--bad)}
+.shop{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:10px}
+.shop h3{margin:0 0 2px;font-size:16px}.sub{color:var(--mu);font-size:13px;margin-bottom:8px}
+.row{display:flex;justify-content:space-between;font-size:14px;padding:3px 0;border-top:1px solid var(--line)}
+.bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin:6px 0}.bar i{display:block;height:100%;background:var(--acc)}
+button{background:#1d2a3a;color:var(--tx);border:1px solid var(--line);border-radius:10px;padding:9px 10px;font:inherit;font-size:13px;margin:4px 4px 0 0}button:active{background:var(--acc)}button:disabled{opacity:.35}.msg{font-size:13px;margin:4px 0}.sub b{color:var(--warn)}
+svg{width:100%;height:120px;display:block}.note{color:var(--mu);font-size:12px;margin-top:14px}
+</style></head><body>
+<h1><span>Kinh doanh 24/24</span><span id="st" class="pill">…</span></h1>
+<div class="big"><div class="lbl">Tien mat <span id="est"></span></div><div class="v" id="money">—</div><div class="sub" id="since"></div></div>
+<div class="grid">
+<div class="k"><div class="lbl">Loi nhuan / ngay game</div><div class="v" id="avg">—</div></div>
+<div class="k"><div class="lbl">No</div><div class="v" id="debt">—</div></div>
+<div class="k"><div class="lbl">Uy tin</div><div class="v" id="rep">—</div></div>
+<div class="k"><div class="lbl">B2B hop dong / cong no</div><div class="v" id="b2b">—</div></div>
+</div>
+<div class="big"><div class="lbl">Loi nhuan 14 ngay game gan nhat</div><svg id="chart" viewBox="0 0 300 120" preserveAspectRatio="none"></svg></div>
+<div id="msgs"></div><div id="shops"></div>
+<div class="note" id="note"></div>
+<script>
+const $=id=>document.getElementById(id), f=n=>(n<0?"-":"")+"$"+Math.abs(Math.round(n)).toLocaleString("vi-VN");
+let D=null;
+async function load(){try{const r=await fetch("/data");D=await r.json()}catch(e){D=null}render()}
+function est(d){ // uoc tinh khi game tat: cung cong thuc bu-khi-mo-lai
+  const el=Math.max(0,Date.now()/1000-d.ts), off=el>300;
+  const h=(d.hist||[]).slice(-7), avg=h.length?h.reduce((a,x)=>a+x[6],0)/h.length:0;
+  const days=off?Math.min(el/d.gameDaySec,d.maxOfflineDays):0;
+  return {off,el,avg,days,gain:avg*d.offlineFactor*days}
+}
+function render(){
+  if(!D||D.error){$("st").textContent="chua co du lieu";$("note").textContent=D&&D.error||"Khong ket noi duoc may tinh.";return}
+  const e=est(D);
+  $("st").textContent=e.off?"Game dang tat · uoc tinh":"Game dang chay";$("st").className="pill "+(e.off?"off":"on");
+  $("money").textContent=f(D.money+e.gain);$("est").textContent=e.off?"(uoc tinh)":"";
+  $("since").textContent=e.off?`Tat ${Math.floor(e.el/60)} phut ≈ ${e.days.toFixed(1)} ngay game, +${f(e.gain)} uoc tinh`:"Cap nhat moi 2 phut";
+  $("avg").textContent=f(e.avg);$("avg").className="v "+(e.avg>=0?"pos":"neg");
+  $("debt").textContent=f(D.debt);$("debt").className="v "+(D.debt>0?"neg":"");
+  $("rep").textContent=D.rep;$("b2b").textContent=D.contracts+" / "+D.receivables;
+  // chart
+  const h=(D.hist||[]).slice(-14),svg=$("chart");svg.innerHTML="";
+  if(h.length){const m=Math.max(1,...h.map(x=>Math.abs(x[6]))),w=300/Math.max(14,h.length),z=60;
+    let s=`<line x1="0" x2="300" y1="${z}" y2="${z}" stroke="#223041"/>`;
+    h.forEach((x,i)=>{const hh=Math.abs(x[6])/m*55,y=x[6]>=0?z-hh:z;s+=`<rect x="${i*w+2}" y="${y}" width="${w-4}" height="${Math.max(1,hh)}" rx="2" fill="${x[6]>=0?"#3ddc84":"#ff5d5d"}"/>`});
+    svg.innerHTML=s}
+  $("shops").innerHTML=D.shops.map((s,i)=>{
+    const p=s.lastProfit;return `<div class="shop"><h3>${s.name} · ${s.type}</h3><div class="sub">Kenh ${s.channel} · ${s.mode} · cap ${s.level}</div>
+    <div class="bar"><i style="width:${Math.min(100,s.stock/60*100)}%"></i></div>
+    <div class="row"><span>Hang ton</span><span>${s.stock}</span></div>
+    <div class="row"><span>Nhan su</span><span>${s.staff}</span></div>
+    <div class="row"><span>Doanh thu ngay gan nhat</span><span>${f(s.lastRev)}</span></div>
+    <div class="row"><span>Loi nhuan ngay gan nhat</span><span class="${p>=0?"pos":"neg"}">${f(p)}</span></div>
+    <div>${[1,5,10].map(n=>`<button onclick="cmd('restock',${i},${n})">Nhap ${n} lo ${f(s["pack"+n])}</button>`).join("")}
+    <button onclick="cmd('hire',${i},0)" ${s.staff>=s.maxStaff?"disabled":""}>Thue +1 nguoi</button>
+    <button onclick="cmd('fire',${i},0)" ${s.staff<=0?"disabled":""}>Sa thai 1</button>
+    <button onclick="cmd('upgrade',${i},0)" ${s.upCost<0?"disabled":""}>${s.upCost<0?"Cap toi da":"Nang cap "+f(s.upCost)}</button>
+    <button onclick="cmd('collect',${i},0)">Rut quy ${f(s.cash)}</button></div>
+    ${s.stock===0?'<div class="row neg"><span>HET HANG</span><span></span></div>':""}${s.overdue?'<div class="row neg"><span>Tre tien thue</span><span>'+s.overdue+'/3 ngay</span></div>':""}</div>`}).join("")||'<div class="sub">Chua mo quan nao.</div>';
+  const pn=D.pending||[];
+  $("msgs").innerHTML=(pn.length?`<div class="msg sub"><b>${pn.length} lenh dang cho</b> — game se ap dung khi mo (hoac trong 10 giay neu dang choi).</div>`:"")+(D.cmds||[]).slice(-4).reverse().map(c=>`<div class="msg ${c[1]==="ok"?"pos":"neg"}">${c[1]==="ok"?"✓":"✗"} ${c[2]}</div>`).join("");
+  $("note").textContent=e.off?"So lieu khi game tat la UOC TINH tu 7 ngay gan nhat x 40%. So that duoc chot khi mo game lai.":"1 ngay game = 48 phut thuc.";
+}
+async function cmd(op,idx,arg){
+  let pin=localStorage.getItem("pin")||"";
+  if(D&&D.needPin&&!pin){pin=prompt("Nhap ma PIN dashboard")||"";localStorage.setItem("pin",pin)}
+  try{const r=await (await fetch("/cmd",{method:"POST",body:JSON.stringify({op,idx,arg,pin})})).json();
+    if(!r.ok){if(r.msg==="Sai ma PIN")localStorage.removeItem("pin");alert(r.msg)}}catch(e){alert("Khong gui duoc lenh")}
+  load()}
+load();setInterval(load,5000);setInterval(render,1000);
+let wl;async function lock(){try{wl=await navigator.wakeLock.request("screen")}catch(e){}}
+document.addEventListener("click",()=>{lock();document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen().catch(()=>{})},{once:true});
+</script></body></html>

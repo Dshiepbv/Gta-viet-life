@@ -1,5 +1,7 @@
 {
   "port": 5577,
+  "game_dir": "E:\\GTA-Viet_Life\\GTAV",
+  "dash_pin": "",
 
   "provider": "gemini",
   "gemini_api_key": "",

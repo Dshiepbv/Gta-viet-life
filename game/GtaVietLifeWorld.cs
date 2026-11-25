@@ -146,6 +146,8 @@ public class GtaVietLifeWorld : Script
     readonly Random rnd = new Random();
     int lastMinuteOfDay = -1;
     int dayCounter;
+    readonly List<int[]> dayHist = new List<int[]>();   // lich su: ngay, doanh thu, gia von, luong, thue, mat bang, loi nhuan
+    int dRev, dCogs, dWages, dTax, dRentSum;
     int lastDayTick;
     int prevWanted;
     int nextNeedHurt, nextWarn, nextStatePost, nextSave, nextResidentCheck;
@@ -212,7 +214,8 @@ public class GtaVietLifeWorld : Script
         int now = Game.GameTime;
 
         TickEnterHome(me, now);
-        if (!caughtUp) CatchUpOffline();
+        if (!caughtUp) { ApplyPhoneCmds(); CatchUpOffline(); }
+        else if (now > nextCmdCheck) { nextCmdCheck = now + 10000; ApplyPhoneCmds(); }
         if (now > nextSeenSave) { nextSeenSave = now + 120000; Save(); }
         try { Function.Call(Hash.SET_MINIMAP_HIDE_FOW, true); } catch { }   // mo toan bo ban do, het suong mu
 
@@ -355,6 +358,7 @@ public class GtaVietLifeWorld : Script
     {
         deliveriesToday = 0;
         earnedToday = 0;
+        dRev = 0; dCogs = 0; dWages = 0; dTax = 0; dRentSum = 0;
         string report = "~b~Qua ngay moi.~s~";
 
         if (hasHome)
@@ -394,6 +398,8 @@ public class GtaVietLifeWorld : Script
                 if (Game.Player.Money >= tax) Game.Player.Money = Game.Player.Money - tax;
                 else { debt += tax; report += " ~r~Thieu tien nop thue " + nm + ", ghi no.~s~"; }
                 int profit = totRev - totCogs - wages - tax - sh.Rent;
+                sh.LastProfit = profit; sh.LastRev = totRev;
+                dRev += totRev; dCogs += totCogs; dWages += wages; dTax += tax; dRentSum += sh.Rent;
                 if (sold + sh.SoldToday >= 10) rep += 1;
                 report += " " + nm + " [" + Types[TIdx(sh.Type)].Name + "]: ban " + (sold + sh.SoldToday) + " phan, doanh thu $" + totRev + ", gia von $" + totCogs + ", luong -$" + wages + ", thue -$" + tax;
                 sh.SoldToday = 0; sh.RevToday = 0; sh.CogsToday = 0;
@@ -422,6 +428,8 @@ public class GtaVietLifeWorld : Script
             }
             if (activeShop >= 0) SyncIn(activeShop);
         }
+        dayHist.Add(new int[] { dayCounter, dRev, dCogs, dWages, dTax, dRentSum, dRev - dCogs - dWages - dTax - dRentSum });
+        while (dayHist.Count > 30) dayHist.RemoveAt(0);
         if (catching) { catchLog.Add(report); return; }
         Notify(report);
         Save();
@@ -654,6 +662,80 @@ public class GtaVietLifeWorld : Script
 
     static long NowEpoch() { return (long)(DateTime.UtcNow - new DateTime(1970, 1, 1)).TotalSeconds; }
 
+    // ====== lenh giao dich tu dien thoai: dashboard.py ghi GtaVietLifeCmd.txt, game doc va ap dung ======
+    int nextCmdCheck;
+    readonly List<string[]> cmdResults = new List<string[]>();   // id, ok/fail, noi dung (hien lai tren dien thoai)
+
+    void ApplyPhoneCmds()
+    {
+        const string F = "GtaVietLifeCmd.txt", P = "GtaVietLifeCmd.proc";
+        try
+        {
+            if (!File.Exists(F)) return;
+            if (File.Exists(P)) File.Delete(P);
+            File.Move(F, P);
+            string[] lines = File.ReadAllLines(P);
+            File.Delete(P);
+            if (lines.Length == 0) return;
+            SyncOut();
+            int okN = 0, failN = 0;
+            foreach (string ln in lines)
+            {
+                string[] q = ln.Split('|');
+                if (q.Length < 3) continue;
+                string id = q[0], op = q[1], res;
+                int idx, arg = 0;
+                if (!int.TryParse(q[2], out idx) || idx < 0 || idx >= shops.Count) { res = "fail|Khong co quan nay"; }
+                else
+                {
+                    if (q.Length > 3) int.TryParse(q[3], out arg);
+                    Shop sh = shops[idx];
+                    string nm = "Quan " + (idx + 1);
+                    if (op == "restock")
+                    {
+                        int packs = arg == 10 ? 10 : arg == 5 ? 5 : 1;
+                        int cost = PackCost(sh.Type, packs, true);
+                        if (Game.Player.Money < cost) res = "fail|" + nm + ": thieu tien nhap hang ($" + cost + ")";
+                        else { Game.Player.Money = Game.Player.Money - cost; sh.Stock += StockPack * packs; sh.OutNotified = false; res = "ok|" + nm + ": nhap +" + (StockPack * packs) + " phan (-$" + cost + ")"; }
+                    }
+                    else if (op == "hire")
+                    {
+                        if (sh.Staff >= MaxStaff) res = "fail|" + nm + ": da du nhan vien";
+                        else { sh.Staff++; res = "ok|" + nm + ": thue them 1 nhan vien (luong $" + WagePerDay + "/ngay)"; }
+                    }
+                    else if (op == "fire")
+                    {
+                        if (sh.Staff <= 0) res = "fail|" + nm + ": khong con nhan vien";
+                        else { sh.Staff--; res = "ok|" + nm + ": sa thai 1 nhan vien"; }
+                    }
+                    else if (op == "upgrade")
+                    {
+                        int cost = 2500 * sh.Level;
+                        if (sh.Level >= CapOf(sh)) res = "fail|" + nm + ": da cap toi da";
+                        else if (Game.Player.Money < cost) res = "fail|" + nm + ": thieu tien nang cap ($" + cost + ")";
+                        else { Game.Player.Money = Game.Player.Money - cost; sh.Level++; res = "ok|" + nm + ": nang cap len cap " + sh.Level + " (-$" + cost + ")"; }
+                    }
+                    else if (op == "collect")
+                    {
+                        int c = sh.Cash;
+                        if (c <= 0) res = "fail|" + nm + ": quy quan trong";
+                        else { sh.Cash = 0; Game.Player.Money = Game.Player.Money + c; res = "ok|" + nm + ": rut $" + c + " ve tui"; }
+                    }
+                    else res = "fail|Lenh la";
+                }
+                string[] rr = res.Split('|');
+                if (rr[0] == "ok") okN++; else failN++;
+                cmdResults.Add(new string[] { id, rr[0], rr[1] });
+                Log("[dien thoai] " + op + " -> " + res);
+            }
+            while (cmdResults.Count > 10) cmdResults.RemoveAt(0);
+            if (activeShop >= 0 && activeShop < shops.Count) { SyncIn(activeShop); rebuildAt = Game.GameTime + 500; }
+            if (okN + failN > 0) Notify("~b~Lenh tu dien thoai:~s~ " + okN + " xong" + (failN > 0 ? ", ~r~" + failN + " that bai~s~" : "") + ".");
+            Save();
+        }
+        catch (Exception ex) { Log("lenh dien thoai loi: " + ex.Message); }
+    }
+
     void CatchUpOffline()
     {
         caughtUp = true;
@@ -680,6 +762,7 @@ public class GtaVietLifeWorld : Script
         public Vector3 Pos; public float Heading, Ground;
         public int Level = 1, Stock, Staff, Cash, SoldToday;
         public int Mode, Rent, DaysLeft, Overdue, Paid;
+        public int LastProfit, LastRev;
         public int Type, RevToday, CogsToday;   // loai hinh (Types), doanh thu va gia von hom nay
         public bool Indoor;
         public int NextSale;       // moc thoi gian ban hang tu dong cua quan o xa
@@ -3264,6 +3347,7 @@ public class GtaVietLifeWorld : Script
             l.Add("rep=" + rep);
             l.Add("debt=" + debt);
             l.Add("seen=" + NowEpoch());
+            foreach (int[] h in dayHist) l.Add("hist=" + string.Join(",", Array.ConvertAll(h, x => x.ToString())));
             l.Add("b2bday=" + b2bDay);
             foreach (int[] ct in contracts) l.Add("b2b=" + ct[0] + "," + ct[1]);
             foreach (int[] rv in receivables) l.Add("recv=" + rv[0] + "," + rv[1] + "," + rv[2]);
@@ -3289,8 +3373,45 @@ public class GtaVietLifeWorld : Script
             foreach (Shop sh in shops)
                 l.Add("shop=" + sh.Pos.X.ToString(ci) + "," + sh.Pos.Y.ToString(ci) + "," + sh.Pos.Z.ToString(ci) + "," + sh.Heading.ToString(ci) + "," + sh.Ground.ToString(ci) + "," + sh.Level + "," + sh.Stock + "," + sh.Staff + "," + sh.Cash + "," + sh.SoldToday + "," + sh.Mode + "," + sh.Rent + "," + sh.DaysLeft + "," + sh.Overdue + "," + sh.Paid + "," + (sh.Indoor ? 1 : 0) + "," + sh.Type);
             File.WriteAllLines(SaveFile, l.ToArray());
+            WriteDash();
         }
         catch (Exception ex) { Log("save loi: " + ex.Message); }
+    }
+
+    // Anh chup so lieu kinh doanh cho trang dashboard tren dien thoai (dashboard.py doc file nay)
+    void WriteDash()
+    {
+        try
+        {
+            CultureInfo ci = CultureInfo.InvariantCulture;
+            StringBuilder b = new StringBuilder();
+            b.Append("{\"ts\":" + NowEpoch() + ",\"money\":" + Game.Player.Money + ",\"debt\":" + debt + ",\"rep\":" + rep);
+            b.Append(",\"offlineFactor\":" + OfflineFactor.ToString(ci) + ",\"gameDaySec\":" + GameDaySeconds + ",\"maxOfflineDays\":" + MaxOfflineDays);
+            b.Append(",\"day\":" + dayCounter + ",\"shops\":[");
+            for (int i = 0; i < shops.Count; i++)
+            {
+                Shop sh = shops[i];
+                if (i > 0) b.Append(",");
+                b.Append("{\"name\":\"Quan " + (i + 1) + "\",\"type\":\"" + Types[TIdx(sh.Type)].Name + "\",\"channel\":\"" + (Types[TIdx(sh.Type)].Channel == 0 ? "GT" : "MT") + "\"");
+                b.Append(",\"level\":" + sh.Level + ",\"staff\":" + sh.Staff + ",\"stock\":" + sh.Stock + ",\"cash\":" + sh.Cash + ",\"soldToday\":" + sh.SoldToday);
+                b.Append(",\"mode\":\"" + ModeName[sh.Mode] + "\",\"rent\":" + sh.Rent + ",\"overdue\":" + sh.Overdue + ",\"lastProfit\":" + sh.LastProfit + ",\"lastRev\":" + sh.LastRev + ",\"pack1\":" + PackCost(sh.Type, 1, true) + ",\"pack5\":" + PackCost(sh.Type, 5, true) + ",\"pack10\":" + PackCost(sh.Type, 10, true) + ",\"upCost\":" + (sh.Level >= CapOf(sh) ? -1 : 2500 * sh.Level) + ",\"maxStaff\":" + MaxStaff + ",\"wage\":" + WagePerDay + "}");
+            }
+            b.Append("],\"contracts\":" + contracts.Count + ",\"receivables\":" + receivables.Count + ",\"hist\":[");
+            for (int i = 0; i < dayHist.Count; i++)
+            {
+                if (i > 0) b.Append(",");
+                b.Append("[" + string.Join(",", Array.ConvertAll(dayHist[i], x => x.ToString())) + "]");
+            }
+            b.Append("],\"cmds\":[");
+            for (int i = 0; i < cmdResults.Count; i++)
+            {
+                if (i > 0) b.Append(",");
+                b.Append("[\"" + cmdResults[i][0] + "\",\"" + cmdResults[i][1] + "\",\"" + cmdResults[i][2].Replace("\"", "") + "\"]");
+            }
+            b.Append("]}");
+            File.WriteAllText("GtaVietLifeDash.json", b.ToString(), new UTF8Encoding(false));
+        }
+        catch (Exception ex) { Log("dash loi: " + ex.Message); }
     }
 
     void Load()
@@ -3312,6 +3433,7 @@ public class GtaVietLifeWorld : Script
                     case "rep": rep = int.Parse(v); break;
                     case "debt": debt = int.Parse(v); break;
                     case "seen": lastSeen = long.Parse(v); break;
+                    case "hist": { string[] q = v.Split(','); if (q.Length == 7) { int[] h = new int[7]; for (int z = 0; z < 7; z++) h[z] = int.Parse(q[z]); dayHist.Add(h); } break; }
                     case "b2bday": b2bDay = int.Parse(v); break;
                     case "b2b": { string[] q = v.Split(','); int dd = int.Parse(q[0]); if (dd >= 0 && dd < Deals.Length) contracts.Add(new int[] { dd, int.Parse(q[1]) }); break; }
                     case "recv": { string[] q = v.Split(','); receivables.Add(new int[] { int.Parse(q[0]), int.Parse(q[1]), int.Parse(q[2]) }); break; }

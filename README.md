@@ -80,3 +80,11 @@ Moi 2 phut mod ghi dau thoi gian vao file luu. Khi mo game lai, mod tinh thoi gi
 ## Toa nha that
 
 Muc "Tim mat bang" co them cac cua hang that cua game goc (24/7, LTD, Los Santos Customs) danh dau bang bieu tuong cua hang tren ban do. Toa do gan dung: hay doi chieu voi cham tren ban do roi bao lai neu lech.
+
+## Dashboard tren dien thoai (xem va giao dich 24/24)
+
+1. Tren PC chay `start_dashboard.bat` (khong can mo game, khong can bridge AI). Lan dau Windows hoi tuong lua thi chon Allow (mang rieng).
+2. Dien thoai cung Wi-Fi mo dia chi in ra (dang `http://192.168.x.x:5588`). Bam vao trang de bat che do man hinh luon sang/toan man hinh; dung "Them vao man hinh chinh" cua Chrome de co icon.
+3. Trang hien tien, no, uy tin, loi nhuan 14 ngay, tung quan. Khi game tat, so lieu duoc UOC TINH (7 ngay gan nhat x 40%); so that chot khi mo game.
+4. Giao dich tren dien thoai: nhap hang 1/5/10 lo, thue/sa thai, nang cap, rut quy. Lenh xep hang doi trong `GtaVietLifeCmd.txt`; game ap dung ngay khi mo (truoc luc bu offline) hoac trong 10 giay neu dang choi. Thieu tien thi lenh that bai va hien thong bao tren trang.
+5. Muon dat ma PIN: them `"dash_pin": "1234"` vao `bridge/config.json`. Truy cap tu ngoai nha (4G) can Tailscale hoac tuong tu — chua lam.
