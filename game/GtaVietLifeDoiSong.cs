@@ -23,6 +23,13 @@ using GTA.Native;
 
 public class GtaVietLifeDoiSong : Script
 {
+    // tien: nhan vat tuy bien khong co tien trong game => dung vi cua Core (GVL.CashGet/CashSet), xem docs/CORE.md
+    static int PlayerCash
+    {
+        get { Func<int> g = AppDomain.CurrentDomain.GetData("GVL.CashGet") as Func<int>; return g != null ? g() : Game.Player.Money; }
+        set { Action<int> s = AppDomain.CurrentDomain.GetData("GVL.CashSet") as Action<int>; if (s != null) s(value); else Game.Player.Money = value; }
+    }
+
     const string SaveFile = "GtaVietLifeDoiSong.sav";
     string server = "http://127.0.0.1:5577";
     Keys menuKey = Keys.Y;   // L la menu Kinh te, J Doi song, I Ca nhan
@@ -130,8 +137,8 @@ public class GtaVietLifeDoiSong : Script
         bool ok;
         Func<int, string, string, bool> f = Bus("GVL.Pay") as Func<int, string, string, bool>;
         if (f != null) { try { ok = f(amount, cat, note); } catch { ok = false; } }
-        else if (Game.Player.Money < amount) ok = false;
-        else { Game.Player.Money = Game.Player.Money - amount; ok = true; }
+        else if (PlayerCash < amount) ok = false;
+        else { PlayerCash = PlayerCash - amount; ok = true; }
         if (!ok) Notify("Khong du tien ($" + amount + ").");
         return ok;
     }
@@ -140,7 +147,7 @@ public class GtaVietLifeDoiSong : Script
     {
         Action<int, string, string> f = Bus("GVL.Earn") as Action<int, string, string>;
         if (f != null) { try { f(amount, cat, note); return; } catch { } }
-        Game.Player.Money = Game.Player.Money + amount;
+        PlayerCash = PlayerCash + amount;
     }
 
     // bus su kien chung (docs/CORE.md): Doi song phat loai "life.*"
@@ -307,8 +314,8 @@ public class GtaVietLifeDoiSong : Script
     {
         Func<int, string, string, bool> f = Bus("GVL.Pay") as Func<int, string, string, bool>;
         if (f != null) { try { return f(amount, "bills", "dien nuoc tu tru"); } catch { return false; } }
-        if (Game.Player.Money < amount) return false;
-        Game.Player.Money = Game.Player.Money - amount;
+        if (PlayerCash < amount) return false;
+        PlayerCash = PlayerCash - amount;
         return true;
     }
 

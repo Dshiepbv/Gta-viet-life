@@ -21,12 +21,21 @@ using GTA;
 
 public class GtaVietLifeCore : Script
 {
+    // tien: nhan vat tuy bien khong co tien trong game => dung vi cua Core (GVL.CashGet/CashSet), xem docs/CORE.md
+    static int PlayerCash
+    {
+        get { Func<int> g = AppDomain.CurrentDomain.GetData("GVL.CashGet") as Func<int>; return g != null ? g() : Game.Player.Money; }
+        set { Action<int> s = AppDomain.CurrentDomain.GetData("GVL.CashSet") as Action<int>; if (s != null) s(value); else Game.Player.Money = value; }
+    }
+
     const string SaveFile = "GtaVietLifeCore.sav";
     static readonly string[] Modules = { "Personal", "Legal", "Body", "Social", "Life", "Economy" };
     string server = "http://127.0.0.1:5577";
     bool forward = true, logEvents = true;
 
     long gameDay;
+    int wallet;
+    bool walletOn;
     int lastMinute = -1;
     long lastSeenSeq;
     int nextPublish, nextForward, nextSave;
@@ -43,7 +52,15 @@ public class GtaVietLifeCore : Script
         Load();
         if (Get("GVL.Pay") == null) { Func<int, string, string, bool> pay = DefaultPay; Set("GVL.Pay", pay); Set("GVL.PayOwner", "core"); }
         if (Get("GVL.Earn") == null) { Action<int, string, string> earn = DefaultEarn; Set("GVL.Earn", earn); }
-        Set("GVL.CoreVersion", 1);
+        // vi tien: nhan vat tuy bien (freemode) khong co tien trong game, nen Core giu vi rieng (xem docs/CORE.md)
+        Func<int> cashGet = delegate { return walletOn ? wallet : Game.Player.Money; };   // RAW_MONEY
+        Action<int> cashSet = delegate (int v) { v = Math.Max(0, v); if (walletOn) wallet = v; else Game.Player.Money = v; };   // RAW_MONEY
+        Action<int> walletEnter = delegate (int start) { wallet = Math.Max(0, start); walletOn = true; Set("GVL.CustomMoney", true); Save(); };
+        Func<int> walletLeave = delegate { int w = wallet; walletOn = false; Set("GVL.CustomMoney", false); Save(); return w; };
+        Set("GVL.CashGet", cashGet); Set("GVL.CashSet", cashSet);
+        Set("GVL.WalletEnter", walletEnter); Set("GVL.WalletLeave", walletLeave);
+        Set("GVL.CustomMoney", walletOn);
+        Set("GVL.CoreVersion", 2);
         Tick += OnTick;
         Aborted += delegate { Save(); };
     }
@@ -69,8 +86,8 @@ public class GtaVietLifeCore : Script
     static bool DefaultPay(int amount, string cat, string note)
     {
         if (amount <= 0) return true;
-        if (Game.Player.Money < amount) return false;
-        Game.Player.Money = Game.Player.Money - amount;
+        if (PlayerCash < amount) return false;
+        PlayerCash = PlayerCash - amount;
         Emit("ledger.expense", "amount=" + amount + ";cat=" + cat + ";note=" + Clean(note));
         return true;
     }
@@ -78,7 +95,7 @@ public class GtaVietLifeCore : Script
     static void DefaultEarn(int amount, string cat, string note)
     {
         if (amount <= 0) return;
-        Game.Player.Money = Game.Player.Money + amount;
+        PlayerCash = PlayerCash + amount;
         Emit("ledger.income", "amount=" + amount + ";cat=" + cat + ";note=" + Clean(note));
     }
 
@@ -105,7 +122,7 @@ public class GtaVietLifeCore : Script
             DrainEvents();
         }
         if (now > nextForward && outbox.Count > 0) { nextForward = now + 3000; Forward(); }
-        if (now > nextSave) { nextSave = now + 120000; Save(); }
+        if (now > nextSave) { nextSave = now + 15000; Save(); }
     }
 
     // doc su kien moi: ghi log, gui cau noi, cat bot danh sach (giu 300 dong cuoi)
@@ -155,7 +172,7 @@ public class GtaVietLifeCore : Script
 
     void Save()
     {
-        try { File.WriteAllLines(SaveFile, new string[] { "day=" + gameDay }); } catch { }
+        try { File.WriteAllLines(SaveFile, new string[] { "day=" + gameDay, "wallet=" + wallet, "walletOn=" + (walletOn ? 1 : 0) }); } catch { }
     }
 
     void Load()
@@ -164,7 +181,11 @@ public class GtaVietLifeCore : Script
         {
             if (!File.Exists(SaveFile)) return;
             foreach (string line in File.ReadAllLines(SaveFile))
+            {
                 if (line.StartsWith("day=")) long.TryParse(line.Substring(4), out gameDay);
+                else if (line.StartsWith("wallet=")) int.TryParse(line.Substring(7), out wallet);
+                else if (line.StartsWith("walletOn=")) walletOn = line.Substring(9) == "1";
+            }
         }
         catch { }
     }

@@ -25,6 +25,13 @@ using GTA.Native;
 
 public class GtaVietLife : Script
 {
+    // tien: nhan vat tuy bien khong co tien trong game => dung vi cua Core (GVL.CashGet/CashSet), xem docs/CORE.md
+    static int PlayerCash
+    {
+        get { Func<int> g = AppDomain.CurrentDomain.GetData("GVL.CashGet") as Func<int>; return g != null ? g() : Game.Player.Money; }
+        set { Action<int> s = AppDomain.CurrentDomain.GetData("GVL.CashSet") as Action<int>; if (s != null) s(value); else Game.Player.Money = value; }
+    }
+
     string server = "http://127.0.0.1:5577";
     Keys talkKey = Keys.N;
     Keys markKey = Keys.K;
@@ -173,7 +180,7 @@ public class GtaVietLife : Script
             var pc = new NameValueCollection();
             pc["key"] = key; pc["gender"] = "male"; pc["pedtype"] = "4"; pc["phone"] = "1";
             pc["hour"] = World.CurrentTimeOfDay.Hours.ToString(); pc["minute"] = World.CurrentTimeOfDay.Minutes.ToString("00");
-            pc["weather"] = World.Weather.ToString(); pc["wanted"] = Game.Player.WantedLevel.ToString(); pc["money"] = Game.Player.Money.ToString();
+            pc["weather"] = World.Weather.ToString(); pc["wanted"] = Game.Player.WantedLevel.ToString(); pc["money"] = PlayerCash.ToString();
             pc["street"] = "(đang nói qua điện thoại)"; pc["zone"] = "?";
             Task.Run(() =>
             {
@@ -252,7 +259,7 @@ public class GtaVietLife : Script
         c["weather"] = World.Weather.ToString();
         c["in_vehicle"] = me.IsInVehicle() ? "1" : "0";
         c["wanted"] = Game.Player.WantedLevel.ToString();
-        c["money"] = Game.Player.Money.ToString();
+        c["money"] = PlayerCash.ToString();
         c["following"] = followers.Contains(p.Handle) ? "1" : "0";
         c["weapon"] = me.Weapons.Current != null && me.Weapons.Current.Hash != WeaponHash.Unarmed ? "1" : "0";
         string[] ri = ResidentInfo(p);

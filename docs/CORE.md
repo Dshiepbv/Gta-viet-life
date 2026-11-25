@@ -10,6 +10,10 @@ Thread **Cá nhân** sở hữu tài liệu này và `game/GtaVietLifeCore.cs`. 
 4. **Mỗi module bật/tắt được** trong `GtaVietLifeCore.ini` mục `[Modules]`.
 5. **SQLite chỉ ở cầu nối Python** (`memory.db`, đã có sẵn). Trong game chỉ dùng file `key=value`.
 
+## Tiền mặt (bắt buộc)
+
+Mỗi script thêm thuộc tính `PlayerCash` bằng lệnh `python3 tools/apply_cash_shim.py game/*.cs` (chạy lại được nhiều lần; gặp xung đột khi gộp main thì chọn bản của mình rồi chạy lại). Sau đó dùng `PlayerCash` ở mọi chỗ cần đọc/ghi tiền mặt. Dòng nào cần tiền thật của game thì ghi chú `// RAW_MONEY` để script bỏ qua.
+
 ## Bus: AppDomain data
 
 Mọi script SHVDN chạy chung một AppDomain, nên trao đổi qua `AppDomain.CurrentDomain.GetData/SetData`. Chỉ dùng kiểu có sẵn của .NET (`bool`, `int`, `long`, `float[]`, `string[]`, `List<string>`, `Func<>`, `Action<>`), vì mỗi file `.cs` được biên dịch thành một assembly riêng.
@@ -38,7 +42,15 @@ Mọi script SHVDN chạy chung một AppDomain, nên trao đổi qua `AppDomain
 | `GVL.Slept` | `int` | Đời sống | Đếm số lần ngủ |
 | `GVL.HygAdd` / `GVL.RepAdd` | `float` / `int` | ai cũng cộng dồn | Đời sống đọc rồi xoá (cộng vệ sinh, uy tín) |
 | `GVL.PayOwner` | `string` | Core / Kinh tế | `core` hoặc `economy`: ai đang giữ cổng trả tiền |
+| `GVL.CashGet` / `GVL.CashSet` | `Func<int>` / `Action<int>` | Core | **Tiền mặt của người chơi.** Mọi script đọc/ghi qua đây, KHÔNG dùng `Game.Player.Money` (nhân vật tuỳ biến freemode luôn có 0 tiền trong game). Core dùng ví riêng khi đang là nhân vật tuỳ biến |
+| `GVL.CustomMoney` | `bool` | Core | `true` khi tiền đang nằm ở ví của Core |
+| `GVL.WalletEnter` / `GVL.WalletLeave` | `Action<int>` / `Func<int>` | Core, Cá nhân gọi | Chuyển tiền sang/ra khỏi ví khi đổi nhân vật |
 | `GVL.Bank` | `int` | Kinh tế | Số dư tài khoản ngân hàng |
+| `GVL.PriceZone` | `Func<float,float,float,float>` | Kinh tế | Hệ số giá theo khu `(x,y,z)`; không có thì coi là 1.0. Cá nhân nhân vào giá đồ túi và cắt tóc theo chỗ Sếp đứng |
+| `GVL.AddDebt` | `Action<int,string,string>` | Kinh tế | Ghi nợ `(soTien, nhom, ghiChu)` khi không trả nổi phạt/án phí. Cá nhân gọi, không tự ghi tiền án thay nợ nếu khoá này có |
+| `GVL.ImpoundCar` | `Action<int,int,int,string>` | Kinh tế | Giao xe vào bãi Davis `(hashModel, mau1, mau2, bienSo)`. Cá nhân gọi khi CSGT giữ xe; lấy xe ở menu L (phí `GVL.Fee.Impound` + `GVL.Fee.ImpoundDay`/ngày). Thiếu khoá này thì Cá nhân tự giữ xe 1 ngày, lấy lại $200 ở menu Giấy tờ |
+| `GVL.Debt` | `int` | Kinh tế | Tổng nợ đang ghi |
+| `GVL.Fee.Impound` / `GVL.Fee.ImpoundDay` | `int` | Kinh tế | Phí lấy xe ($250) và phí mỗi ngày ($25) |
 | `GVL.Credit` | `int` | Kinh tế | Điểm tín dụng 300-850 |
 | `GVL.EconMenu` | `bool` | Kinh tế | Menu Kinh tế (phím L) đang mở |
 | `GVL.Assets` | `int` | Đời sống | Tổng giá trị bất động sản |
