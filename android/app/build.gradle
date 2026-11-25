@@ -1,0 +1,13 @@
+plugins { id 'com.android.application' }
+android {
+    namespace 'vn.hiep.gtadash'
+    compileSdk 34
+    defaultConfig {
+        applicationId 'vn.hiep.gtadash'
+        minSdk 24
+        targetSdk 34
+        versionCode (System.getenv('RUN_NUMBER') ?: '1').toInteger()
+        versionName "1.${System.getenv('RUN_NUMBER') ?: '0'}"
+    }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+}

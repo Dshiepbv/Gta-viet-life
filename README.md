@@ -88,3 +88,6 @@ Muc "Tim mat bang" co them cac cua hang that cua game goc (24/7, LTD, Los Santos
 3. Trang hien tien, no, uy tin, loi nhuan 14 ngay, tung quan. Khi game tat, so lieu duoc UOC TINH (7 ngay gan nhat x 40%); so that chot khi mo game.
 4. Giao dich tren dien thoai: nhap hang 1/5/10 lo, thue/sa thai, nang cap, rut quy. Lenh xep hang doi trong `GtaVietLifeCmd.txt`; game ap dung ngay khi mo (truoc luc bu offline) hoac trong 10 giay neu dang choi. Thieu tien thi lenh that bai va hien thong bao tren trang.
 5. Muon dat ma PIN: them `"dash_pin": "1234"` vao `bridge/config.json`. Truy cap tu ngoai nha (4G) can Tailscale hoac tuong tu — chua lam.
+
+### APK cho dien thoai Android
+GitHub tu build `GtaDashboard-N.apk` (muc Releases, tag `dash-N`). Cai xong mo len, nhap `http://IP-may-tinh:5588` mot lan. Doi dia chi: giu nut Back. Man hinh luon sang. APK ky debug nen cai thang, can cho phep "cai tu nguon khong ro".
