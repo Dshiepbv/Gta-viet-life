@@ -1,5 +1,6 @@
 """Bộ não NPC: Gemini (gói miễn phí) là chính, Ollama chạy local là dự phòng."""
 import json
+import time
 import urllib.error
 import urllib.request
 
@@ -91,31 +92,49 @@ class Brain:
         self.model = first
         self.dead = set()
 
+    def _hedged(self, call):
+        """Gọi Gemini; nếu model đầu chưa trả lời sau 2.5 giây (hoặc lỗi) thì gọi thêm model kế tiếp song song, lấy kết quả về trước."""
+        import concurrent.futures as cf
+        models = ([self.model] + [m for m in self.candidates if m != self.model and m not in self.dead])[:4]
+        ex = cf.ThreadPoolExecutor(max_workers=len(models))
+        futs, nxt, launched, last = {}, 0, 0.0, None
+        try:
+            while True:
+                if nxt < len(models) and (not futs or time.time() - launched >= 2.5):
+                    m = models[nxt]
+                    futs[ex.submit(call, m)] = m
+                    nxt += 1
+                    launched = time.time()
+                done, _ = cf.wait(list(futs), timeout=0.2, return_when=cf.FIRST_COMPLETED)
+                for f in done:
+                    m = futs.pop(f)
+                    try:
+                        result = f.result()
+                        self.model = m
+                        return result
+                    except urllib.error.HTTPError as e:
+                        last = e
+                        print(f"[llm] gemini model {m} lỗi {e.code}")
+                        if e.code in (404, 400):
+                            self.dead.add(m)
+                    except Exception as e:
+                        last = e
+                        print(f"[llm] gemini model {m} lỗi: {e}")
+                if not futs and nxt >= len(models):
+                    raise RuntimeError(f"mọi model Gemini đều lỗi: {last}")
+        finally:
+            ex.shutdown(wait=False)
+
     def chat(self, npc: dict, ctx: dict, history: list, player_text: str) -> dict:
         system = SYSTEM + "\n\n" + build_context(npc, ctx)
         order = ["gemini", "ollama"] if self.cfg.get("provider", "gemini") == "gemini" else ["ollama", "gemini"]
         last_err = None
         for name in order:
             if name == "gemini" and self.cfg.get("gemini_api_key"):
-                # thử model đang dùng trước, lỗi thì lần lượt thử các model khác
-                tried = [self.model] + [m for m in self.candidates if m != self.model and m not in self.dead]
-                for m in tried:
-                    try:
-                        self.model = m
-                        result = self._gemini(system, history, player_text)
-                        return result
-                    except urllib.error.HTTPError as e:
-                        last_err = e
-                        print(f"[llm] gemini model {m} lỗi {e.code}")
-                        if e.code in (404, 400):
-                            self.dead.add(m)
-                            if m == self.model:
-                                self.model = self.PREFERRED[0] if self.PREFERRED[0] not in self.dead else self.model
-                        continue
-                    except (urllib.error.URLError, TimeoutError, KeyError, IndexError, ValueError) as e:
-                        last_err = e
-                        print(f"[llm] gemini model {m} lỗi: {e}")
-                        break
+                try:
+                    return self._hedged(lambda m: self._gemini(system, history, player_text, model=m))
+                except Exception as e:
+                    last_err = e
             elif name == "ollama" and self.cfg.get("ollama_enabled", True):
                 try:
                     return self._ollama(system, history, player_text)
@@ -133,24 +152,9 @@ class Brain:
     def chat_audio(self, npc: dict, ctx: dict, history: list, wav_bytes: bytes) -> dict:
         """Gửi thẳng âm thanh cho Gemini: nghe và trả lời trong 1 lần gọi (nhanh hơn Whisper trên CPU)."""
         system = SYSTEM + "\n\n" + build_context(npc, ctx) + self.AUDIO_NOTE
-        tried = [self.model] + [m for m in self.candidates if m != self.model and m not in self.dead]
-        last_err = None
-        for m in tried:
-            try:
-                self.model = m
-                return self._gemini(system, history, None, audio=wav_bytes)
-            except urllib.error.HTTPError as e:
-                last_err = e
-                print(f"[llm] gemini model {m} lỗi {e.code}")
-                if e.code in (404, 400):
-                    self.dead.add(m)
-            except (urllib.error.URLError, TimeoutError, KeyError, IndexError, ValueError) as e:
-                last_err = e
-                print(f"[llm] gemini model {m} lỗi: {e}")
-                break
-        raise RuntimeError(f"Gemini không nhận âm thanh: {last_err}")
+        return self._hedged(lambda m: self._gemini(system, history, None, audio=wav_bytes, model=m))
 
-    def _gemini(self, system: str, history: list, player_text, audio: bytes = None) -> dict:
+    def _gemini(self, system: str, history: list, player_text, audio: bytes = None, model: str = None) -> dict:
         contents = [{"role": "user" if r == "player" else "model", "parts": [{"text": t}]} for r, t in history]
         if audio is not None:
             import base64
@@ -164,7 +168,7 @@ class Brain:
         if budget is not None:
             gen["thinkingConfig"] = {"thinkingBudget": budget}
         body = {"systemInstruction": {"parts": [{"text": system}]}, "contents": contents, "generationConfig": gen}
-        url = (f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
+        url = (f"https://generativelanguage.googleapis.com/v1beta/models/{model or self.model}:generateContent"
                f"?key={self.cfg['gemini_api_key']}")
         data = _post_json(url, body)
         text = "".join(p.get("text", "") for p in data["candidates"][0]["content"]["parts"])

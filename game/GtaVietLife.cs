@@ -160,12 +160,15 @@ public class GtaVietLife : Script
         Function.Call(Hash.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS, p, true);
         if (followers.Contains(p.Handle)) { p.Task.LookAt(me, 15000); return; }
         p.Task.ClearAll();
+        Vector3 d = me.Position - p.Position;
+        p.Heading = (float)(Math.Atan2(-d.X, d.Y) * 180.0 / Math.PI);   // quay mặt về người chơi ngay
         TaskSequence seq = new TaskSequence();
-        seq.AddTask.TurnTo(me, 1500);
         seq.AddTask.StandStill(120000);
         seq.Close();
         p.Task.PerformSequence(seq);
         seq.Dispose();
+        Function.Call(Hash.SET_PED_KEEP_TASK, p, true);
+        p.IsPositionFrozen = true;                          // đứng im hẳn cho tới khi nói xong
         p.Task.LookAt(me, 60000);
     }
 
@@ -173,6 +176,7 @@ public class GtaVietLife : Script
     {
         if (p == null || !p.Exists()) return;
         Function.Call((Hash)0x9D64D7405520E3D3, p, false);
+        p.IsPositionFrozen = false;
         if (followers.Contains(p.Handle)) return;
         Function.Call(Hash.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS, p, false);
         if (p.IsAlive) p.Task.WanderAround();
