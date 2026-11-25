@@ -27,6 +27,7 @@ public class GtaVietLifeWorld : Script
     const int FoodPrice = 15;
     const int DrinkPrice = 5;
     const int RentPerDay = 150;
+    const int MoveFar = 400;
     const int BizPrice = 5000;
     const int StockPrice = 500;
     const int StockPack = 50;
@@ -446,7 +447,7 @@ public class GtaVietLifeWorld : Script
         CreateBizBlip();
         BuildBizProps();
         for (int i = 0; i < Math.Min(staff, MaxVisibleStaff); i++) SpawnStaff();
-        Notify("Da doi quan sang cho phang gan Sep.");
+        Notify("Da doi quan ve cho Sep dang dung. Cham xanh tren ban do da cap nhat.");
     }
 
     void CreateBizBlip()
@@ -1228,6 +1229,12 @@ public class GtaVietLifeWorld : Script
         else if (!NearBiz())
         {
             Item("(Hay den gan quan - cham xanh tren ban do)", delegate { });
+            Item("Doi quan ve cho Sep dang dung  (-$" + MoveFar + ", giu nguyen hang, nhan vien, cap)", delegate
+            {
+                if (Game.Player.Character.IsInVehicle()) { Notify("Xuong xe roi hay doi quan."); return; }
+                if (Spend(MoveFar)) { RelocateBiz(); }
+                ShowBiz();
+            });
         }
         else
         {
