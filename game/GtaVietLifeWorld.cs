@@ -34,6 +34,7 @@ public class GtaVietLifeWorld : Script
     const int SalePrice = 22;
     const int WagePerDay = 100;
     const int MaxStaff = 4;
+    const int MaxVisibleStaff = 2;   // chi 2 nhan vien hien ra (thu ngan + phuc vu ban); nguoi con lai lam ca khac, van tinh luong va khach
     const int FinePerStar = 150;
 
     string server = "http://127.0.0.1:5577";
@@ -142,7 +143,7 @@ public class GtaVietLifeWorld : Script
         Aborted += OnAborted;
         Notify("~g~GTA Viet Life: Doi song~s~ da bat. Bam ~y~M~s~ de mo menu.");
         if (hasBiz) { CreateBizBlip(); BuildBizProps(); }
-        for (int i = 0; i < bizStaff; i++) SpawnStaff();
+        for (int i = 0; i < Math.Min(bizStaff, MaxVisibleStaff); i++) SpawnStaff();
     }
 
     // ------------------------------------------------------------ vòng lặp
@@ -410,7 +411,7 @@ public class GtaVietLifeWorld : Script
         PlaceBizOnFlatGround();
         CreateBizBlip();
         BuildBizProps();
-        for (int i = 0; i < staff; i++) SpawnStaff();
+        for (int i = 0; i < Math.Min(staff, MaxVisibleStaff); i++) SpawnStaff();
         Notify("Da doi quan sang cho phang gan Sep.");
     }
 
@@ -467,7 +468,8 @@ public class GtaVietLifeWorld : Script
         float h = bizHeading * (float)Math.PI / 180f;
         Vector3 right = new Vector3((float)Math.Cos(h), (float)Math.Sin(h), 0f);
         Vector3 fwd = new Vector3(-(float)Math.Sin(h), (float)Math.Cos(h), 0f);
-        AddProp("prop_hotdogstand_01", bizPos, bizHeading);
+        Prop stand = AddProp("prop_hotdogstand_01", bizPos, bizHeading);
+        if (stand != null) Function.Call(Hash.SET_ENTITY_COLLISION, stand, false, false);   // quay chi de trang tri, nhan vien khong bi day len mat quay
         string[] parasols = { "prop_parasol_01", "prop_parasol_01", "prop_parasol_03", "prop_parasol_04" };
         int tables = Math.Min(4, bizLevel);   // cap 1: 1 ban, cap 2: 2 ban, cap 3: 3 ban, cap 4: 4 ban
         for (int l = 1; l <= tables; l++)
@@ -533,7 +535,8 @@ public class GtaVietLifeWorld : Script
             // nhan vien dung sau quay (k=0) hoac ben canh quay, quay mat ve phia khach
             Vector3 pos0 = bizPos - fwd * 1.6f + right * (k == 0 ? 0f : (k % 2 == 1 ? 1f : -1f) * 1.2f * ((k + 1) / 2));
             // bizPos.Z = do cao tam nguoi choi luc dat quan (cho phang) => dung luon cho nhan vien, khong lay Z cua quay (tam quay cao hon dat)
-            Vector3 pos = new Vector3(pos0.X, pos0.Y, bizPos.Z + staffZ);
+            float gz = World.GetGroundHeight(new Vector3(pos0.X, pos0.Y, bizPos.Z + 0.5f));
+            Vector3 pos = new Vector3(pos0.X, pos0.Y, (gz > -100f ? gz + 1.0f : bizPos.Z) + staffZ);
             Ped p = World.CreatePed(mdl, pos);
             mdl.MarkAsNoLongerNeeded();
             if (p == null || !p.Exists()) return;
@@ -614,7 +617,7 @@ public class GtaVietLifeWorld : Script
         if (c.Chair >= 0 && c.Chair < chairBusy.Count)
         {
             chairBusy[c.Chair] = false;
-            if (c.Stage == 2 && bizStaff > 1) { StaffTask t = new StaffTask(); t.Type = 2; t.Chair = c.Chair; staffTasks.Add(t); }
+            if (c.Stage == 2 && staffPeds.Count > 1) { StaffTask t = new StaffTask(); t.Type = 2; t.Chair = c.Chair; staffTasks.Add(t); }
         }
         DeleteProp(c.Cup);
         c.Cup = null;
@@ -680,7 +683,7 @@ public class GtaVietLifeWorld : Script
                     c.T = now;
                     p.Task.ClearAll();
                     Function.Call(Hash.TASK_START_SCENARIO_AT_POSITION, p, "PROP_HUMAN_SEAT_CHAIR", ch.Position.X, ch.Position.Y, ch.Position.Z + seatZ, c.Chair < chairFace.Count ? chairFace[c.Chair] : ch.Heading, 40000, true, true);
-                    if (bizStaff > 1) { StaffTask t = new StaffTask(); t.Type = 1; t.Chair = c.Chair; t.Target = c; staffTasks.Add(t); }
+                    if (staffPeds.Count > 1) { StaffTask t = new StaffTask(); t.Type = 1; t.Chair = c.Chair; t.Target = c; staffTasks.Add(t); }
                     else PutCupOnTable(c.Chair, MakeCup());
                 }
                 else
@@ -697,7 +700,7 @@ public class GtaVietLifeWorld : Script
                 Release(c);
                 customers.RemoveAt(i);
             }
-            else if (c.Stage == 2 && now - c.T > (bizStaff > 1 ? 24000 : 14000))
+            else if (c.Stage == 2 && now - c.T > (staffPeds.Count > 1 ? 24000 : 14000))
             {
                 Release(c);
                 customers.RemoveAt(i);
@@ -1064,12 +1067,12 @@ public class GtaVietLifeWorld : Script
             });
             Item("Thue nhan vien  (luong $" + WagePerDay + "/ngay)  hien: " + bizStaff + "/" + MaxStaff, delegate
             {
-                if (bizStaff < MaxStaff) { bizStaff++; SpawnStaff(); } else Notify("Da du nhan vien.");
+                if (bizStaff < MaxStaff) { bizStaff++; if (staffPeds.Count < MaxVisibleStaff) SpawnStaff(); } else Notify("Da du nhan vien.");
                 ShowBiz();
             });
             Item("Sa thai 1 nhan vien", delegate
             {
-                if (bizStaff > 0) { bizStaff--; FireStaff(); }
+                if (bizStaff > 0) { bizStaff--; if (staffPeds.Count > Math.Min(bizStaff, MaxVisibleStaff)) FireStaff(); }
                 ShowBiz();
             });
             Item("Rut tien quan  ($" + bizCash + ")", delegate
