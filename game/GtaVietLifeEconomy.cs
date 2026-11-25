@@ -9,7 +9,10 @@
 //   GVL.Pay  Func<int,string,string,bool>  file này ĐĂNG KÝ ĐÈ bản của lõi: trừ tài khoản trước, thiếu thì tiền mặt, ghi sổ cái.
 //   GVL.Earn Action<int,string,string>     file này đăng ký: tiền vào tài khoản, ghi sổ cái.
 //   Sự kiện phát ra: ledger.expense / ledger.income, econ.loan, econ.repay, econ.late, econ.foreclose, econ.impound, econ.release, econ.fuel, econ.repair.
-//   GVL.Bank     (int)            số dư tài khoản, cập nhật mỗi tick.
+//   GVL.Bank     (int)            số dư tài khoản, cập nhật mỗi tick. GVL.Debt (int) tổng nợ ngân hàng + dư nợ vay.
+//   GVL.AddDebt  Action<int,string,string>   ghi nợ vào MỘT sổ nợ duy nhất (lãi 2%/ngày, tự trừ khi tài khoản có tiền).
+//   GVL.ImpoundCar Action<int,int,int,string> (hash, màu 1, màu 2, biển) đưa xe vào MỘT bãi giữ xe duy nhất (Davis).
+//   GVL.Fee.Impound / GVL.Fee.ImpoundDay (int) phí bãi xe chuẩn.
 //   GVL.Credit   (int)            điểm tín dụng 300..850.
 //   GVL.EconMenu (bool)           menu Kinh tế đang mở.
 //   Đọc: GVL.Assets (int, tổng giá trị BĐS do file Đời sống công bố), GVL.Record (int tiền án: >0 thì không cho vay),
@@ -96,7 +99,7 @@ public class GtaVietLifeEconomy : Script
         fuelPrice = ReadF("Fuel", "PricePerLiter", fuelPrice);
         fuelMul = ReadF("Fuel", "ConsumeMul", fuelMul);
         Load();
-        payFn = BusPay; earnFn = BusEarn;
+        payFn = BusPay; earnFn = BusEarn; addDebtFn = BusAddDebt; impoundFn = BusImpound;
         try
         {
             if (modBank) foreach (Vector3 b in Banks) AddBlip(b, BlipColor.Green, "Ngan hang (gui/rut, vay)");
@@ -139,6 +142,26 @@ public class GtaVietLifeEconomy : Script
         object cur = Bus("GVL.Pay");
         if (cur != null && Bus("GVL.PayOwner") as string == "economy" && cur == payFn) return;
         BusSet("GVL.Pay", payFn); BusSet("GVL.Earn", earnFn); BusSet("GVL.PayOwner", "economy");
+        BusSet("GVL.AddDebt", addDebtFn); BusSet("GVL.ImpoundCar", impoundFn);
+        BusSet("GVL.Fee.Impound", ImpoundFee); BusSet("GVL.Fee.ImpoundDay", ImpoundPerDay);
+    }
+    Action<int, string, string> addDebtFn; Action<int, int, int, string> impoundFn;
+
+    // MOT loai no duy nhat cho ca game: file khac (no cu cua Doi song, phat chua tra...) day vao day
+    void BusAddDebt(int amount, string cat, string note)
+    {
+        if (amount <= 0) return;
+        bankDebt += amount; Post("no", -amount, cat, note + " (ghi no)");
+        credit = Math.Max(300, credit - Math.Min(30, 2 + amount / 200));
+    }
+
+    // MOT bai giu xe duy nhat: file Ca nhan (canh sat giam xe) dua xe vao bai cua Kinh te
+    void BusImpound(int hash, int prim, int sec, string plate)
+    {
+        impounded.Add(new Impounded { Hash = hash, Prim = prim, Sec = sec, Plate = plate ?? "", Day = dayNo, Key = hash + ":" + (plate ?? "").Trim() });
+        while (impounded.Count > 5) impounded.RemoveAt(0);
+        Emit("econ.impound", "plate=" + Clean((plate ?? "").Trim()) + ";fee=" + ImpoundFee + ";by=police");
+        Save();
     }
     Func<int, string, string, bool> payFn; Action<int, string, string> earnFn;
 
@@ -208,6 +231,7 @@ public class GtaVietLifeEconomy : Script
         if (now > nextPumpCheck) { nextPumpCheck = now + 1000; ScanPlaces(me); }
         if (rescueAt > 0 && now > rescueAt) { rescueAt = 0; FinishRescue(); }
         BusSet("GVL.Bank", bank);
+        BusSet("GVL.Debt", bankDebt + Sum());
         BusSet("GVL.Credit", credit);
         if (now > nextSave) { nextSave = now + 60000; Save(); }
         if (BusFlag("GVL.WorldMenu") || BusFlag("GVL.PersonalMenu")) { if (menuOpen) CloseMenu(); }
