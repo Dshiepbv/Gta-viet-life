@@ -84,6 +84,7 @@ public class GtaVietLifeWorld : Script
     readonly List<Prop> tableCups = new List<Prop>();
     float seatZ = 0.55f;
     float staffZ = 0f;
+    float bizGround;   // do cao mat dat that tai quan (do luc dat quan, truoc khi dung props)
     float standYaw = -90f;   // xoay quay de mat quay (bang menu, dung cu) huong ve phia khach; neu nguoc thi doi thanh 90
     class Cust
     {
@@ -370,6 +371,7 @@ public class GtaVietLifeWorld : Script
         float bestRange = 999f;
         Vector3 bestPos = me.Position + me.ForwardVector * 4f;
         float bestHead = me.Heading + 180f;
+        float bestGround = me.Position.Z - 1f;
         foreach (float dist in dists)
         {
             foreach (float turn in turns)
@@ -392,12 +394,13 @@ public class GtaVietLifeWorld : Script
                 }
                 if (bad) continue;
                 float range = hi - lo;
-                if (range < bestRange) { bestRange = range; bestPos = c; bestHead = hd + 180f; }
-                if (range < 0.25f) { bizPos = c; bizHeading = hd + 180f; return; }
+                if (range < bestRange) { bestRange = range; bestPos = c; bestHead = hd + 180f; bestGround = lo; }
+                if (range < 0.25f) { bizPos = c; bizHeading = hd + 180f; bizGround = lo; return; }
             }
         }
         bizPos = bestPos;
         bizHeading = bestHead;
+        bizGround = bestGround;
         Log("khong tim duoc cho that phang, chon cho chenh " + bestRange.ToString("0.00") + " m");
     }
 
@@ -410,6 +413,7 @@ public class GtaVietLifeWorld : Script
         staffSlots.Clear();
         staffStates.Clear();
         staffTasks.Clear();
+        ClearBizProps();
         PlaceBizOnFlatGround();
         CreateBizBlip();
         BuildBizProps();
@@ -537,8 +541,7 @@ public class GtaVietLifeWorld : Script
             // nhan vien dung sau quay (k=0) hoac ben canh quay, quay mat ve phia khach
             Vector3 pos0 = bizPos - fwd * 0.3f + right * (k == 0 ? -0.5f : (k % 2 == 1 ? 1f : -1f) * 0.9f * ((k + 1) / 2) - 0.5f);   // dung phia trong quay
             // bizPos.Z = do cao tam nguoi choi luc dat quan (cho phang) => dung luon cho nhan vien, khong lay Z cua quay (tam quay cao hon dat)
-            float gz = World.GetGroundHeight(new Vector3(pos0.X, pos0.Y, bizPos.Z + 0.5f));
-            Vector3 pos = new Vector3(pos0.X, pos0.Y, (gz > -100f ? gz + 1.0f : bizPos.Z) + staffZ);
+            Vector3 pos = new Vector3(pos0.X, pos0.Y, GroundForBiz() + 1.0f + staffZ);
             Ped p = World.CreatePed(mdl, pos);
             mdl.MarkAsNoLongerNeeded();
             if (p == null || !p.Exists()) return;
@@ -711,6 +714,11 @@ public class GtaVietLifeWorld : Script
     }
 
     // Giu nhan vien o dung cho (sau khi noi chuyen xong script kia co the cho ho di lang thang)
+    float GroundForBiz()
+    {
+        return bizGround != 0f ? bizGround : bizPos.Z - 1f;   // save cu khong co: tam nguoi choi luc dat quan cao hon dat ~1 m
+    }
+
     static float GroundZ(Vector3 v)
     {
         float z = World.GetGroundHeight(new Vector3(v.X, v.Y, v.Z + 0.5f));
@@ -816,10 +824,10 @@ public class GtaVietLifeWorld : Script
                 }
                 if (p.IsPositionFrozen)
                 {
-                    // dang dung yen: neu lo lung tren cao thi ha xuong mat dat
-                    float g = World.GetGroundHeight(new Vector3(p.Position.X, p.Position.Y, p.Position.Z + 0.3f));
-                    if (g > -100f && Math.Abs(p.Position.Z - (g + 1.0f)) > 0.35f)
-                        p.Position = new Vector3(p.Position.X, p.Position.Y, g + 1.0f + staffZ);
+                    // dang dung yen: neu lo lung tren cao (hoac len mat quay) thi ha xuong mat dat that
+                    float target = GroundForBiz() + 1.0f + staffZ;
+                    if (Math.Abs(p.Position.Z - target) > 0.3f && p.Position.DistanceTo2D(bizPos) < 8f)
+                        p.Position = new Vector3(p.Position.X, p.Position.Y, target);
                     continue;
                 }
                 // ve cho dung
@@ -1243,6 +1251,7 @@ public class GtaVietLifeWorld : Script
             l.Add("cash=" + bizCash);
             l.Add("level=" + bizLevel);
             l.Add("heading=" + bizHeading.ToString(ci));
+            l.Add("ground=" + bizGround.ToString(ci));
             File.WriteAllLines(SaveFile, l.ToArray());
         }
         catch (Exception ex) { Log("save loi: " + ex.Message); }
@@ -1277,6 +1286,7 @@ public class GtaVietLifeWorld : Script
                     case "cash": bizCash = int.Parse(v); break;
                     case "level": bizLevel = int.Parse(v); break;
                     case "heading": bizHeading = float.Parse(v, ci); break;
+                    case "ground": bizGround = float.Parse(v, ci); break;
                 }
             }
         }
