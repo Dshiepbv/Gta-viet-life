@@ -212,6 +212,8 @@ public class GtaVietLifeWorld : Script
         int now = Game.GameTime;
 
         TickEnterHome(me, now);
+        if (!caughtUp) CatchUpOffline();
+        if (now > nextSeenSave) { nextSeenSave = now + 120000; Save(); }
         try { Function.Call(Hash.SET_MINIMAP_HIDE_FOW, true); } catch { }   // mo toan bo ban do, het suong mu
 
         if (safeUntil > 0 && now > safeUntil) { safeUntil = 0; Function.Call(Hash.SET_ENTITY_INVINCIBLE, me, false); }
@@ -377,7 +379,7 @@ public class GtaVietLifeWorld : Script
             {
                 Shop sh = shops[i];
                 string nm = "Quan " + (i + 1);
-                int target = sh.Staff <= 0 ? 0 : (int)((15 + (sh.Level - 1) * 8 + sh.Staff * 12 + rnd.Next(0, 11) + Math.Max(0, rep / 5)) * ModeTraffic[sh.Mode] * ZoneMult(sh.Pos) * (sh.Indoor ? 1.15f : 1f) * Types[TIdx(sh.Type)].Traffic);
+                int target = sh.Staff <= 0 ? 0 : (int)((15 + (sh.Level - 1) * 8 + sh.Staff * 12 + rnd.Next(0, 11) + Math.Max(0, rep / 5)) * ModeTraffic[sh.Mode] * ZoneMult(sh.Pos) * (sh.Indoor ? 1.15f : 1f) * Types[TIdx(sh.Type)].Traffic * (catching ? OfflineFactor : 1f));
                 int remain = Math.Max(0, target - sh.SoldToday);   // khach thay tan mat da ban theo thoi gian thuc
                 int sold = Math.Min(sh.Stock, remain);
                 sh.Stock -= sold;
@@ -420,6 +422,7 @@ public class GtaVietLifeWorld : Script
             }
             if (activeShop >= 0) SyncIn(activeShop);
         }
+        if (catching) { catchLog.Add(report); return; }
         Notify(report);
         Save();
     }
@@ -642,6 +645,35 @@ public class GtaVietLifeWorld : Script
         Item("Quay lai", delegate { ShowBiz(); });
     }
 
+    // ====== chay 24/24: khi bat game lai, tinh phan quan da hoat dong luc tat may (ban cham hon luc choi) ======
+    const float OfflineFactor = 0.4f;        // luc tat may chi ban bang 40% so khach moi ngay luc dang choi
+    const double GameDaySeconds = 2880.0;    // 1 ngay trong game = 48 phut thuc
+    const int MaxOfflineDays = 14;
+    bool catching, caughtUp; long lastSeen; int nextSeenSave;
+    readonly List<string> catchLog = new List<string>();
+
+    static long NowEpoch() { return (long)(DateTime.UtcNow - new DateTime(1970, 1, 1)).TotalSeconds; }
+
+    void CatchUpOffline()
+    {
+        caughtUp = true;
+        if (lastSeen <= 0 || (shops.Count == 0 && contracts.Count == 0 && receivables.Count == 0 && !hasHome)) return;
+        long el = NowEpoch() - lastSeen;
+        if (el < 600) return;
+        int days = (int)Math.Min(MaxOfflineDays, el / GameDaySeconds);
+        if (days < 1) return;
+        int before = Game.Player.Money, debtBefore = debt, shopsBefore = shops.Count;
+        catching = true; catchLog.Clear();
+        try { for (int d = 0; d < days; d++) DailyTick(); }
+        catch (Exception ex) { Log("catch-up loi: " + ex.Message); }
+        catching = false;
+        foreach (string r in catchLog) Log("[offline] " + r);
+        int delta = Game.Player.Money - before;
+        string hours = (el / 3600.0).ToString("0.0", CultureInfo.InvariantCulture);
+        Notify("~b~Quan chay luc Sep tat may~s~ (" + hours + " gio thuc = " + days + " ngay game, ban cham hon 60%): tien " + (delta >= 0 ? "~g~+$" : "~r~-$") + Math.Abs(delta) + "~s~" + (debt > debtBefore ? ", no tang $" + (debt - debtBefore) : "") + (shops.Count < shopsBefore ? ", ~r~mat " + (shopsBefore - shops.Count) + " mat bang vi thieu tien thue~s~" : "") + ".");
+        Save();
+    }
+
     // ====== nhieu quan + cac hinh thuc thue mat bang ======
     class Shop
     {
@@ -837,7 +869,21 @@ public class GtaVietLifeWorld : Script
         new object[] { "Paleto Bay", -100f, 6450f },
         new object[] { "Vanilla Unicorn (nha co noi that)", 127f, -1298f, true },
         new object[] { "Tequi-la-la (nha co noi that)", -564f, 275f, true },
-        new object[] { "Yellow Jack Inn (nha co noi that)", 1991f, 3051f, true } };
+        new object[] { "Yellow Jack Inn (nha co noi that)", 1991f, 3051f, true },
+        // toa nha that cua game goc (cua hang co san tren ban do, toa do gan dung, doi chieu bang cham tren ban do)
+        new object[] { "24/7 Strawberry (Innocence Blvd)", 24.5f, -1346.9f, "real" },
+        new object[] { "24/7 Little Seoul", -707.4f, -914.2f, "real" },
+        new object[] { "24/7 Vinewood (Clinton Ave)", 373.8f, 326.5f, "real" },
+        new object[] { "24/7 Banham Canyon", -1820.5f, 792.7f, "real" },
+        new object[] { "24/7 Chumash", -3039.1f, 585.2f, "real" },
+        new object[] { "24/7 Chumash (Barbareno Rd)", -3243.9f, 1000.4f, "real" },
+        new object[] { "24/7 Tataviam", 2557.4f, 382.3f, "real" },
+        new object[] { "24/7 Harmony", 547.4f, 2671.7f, "real" },
+        new object[] { "24/7 Sandy Shores", 1961.1f, 3740.7f, "real" },
+        new object[] { "24/7 Mount Chiliad", 1729.5f, 6414.1f, "real" },
+        new object[] { "LTD Gasoline Davis", -47.4f, -1757.5f, "real" },
+        new object[] { "LTD Gasoline Mirror Park", 1163.4f, -323.8f, "real" },
+        new object[] { "Los Santos Customs Burton", -361.8f, -132.6f, "real" } };
     readonly List<Blip> listingBlips = new List<Blip>();
 
     void ShowListings()
@@ -853,7 +899,7 @@ public class GtaVietLifeWorld : Script
             bool taken = false;
             foreach (Shop sh in shops) if (sh.Pos.DistanceTo2D(lp) < ShopGap) taken = true;
             int idx = i;
-            Item(nm + (taken ? " [da co quan cua Sep]" : "") + (Listings[i].Length > 3 ? " [vao ben trong roi mo quan]" : "") + "  (" + ZoneName(lp) + ", khach x" + zm.ToString("0.0", CultureInfo.InvariantCulture) + ", thue $" + (int)(ModeRent[1] * zm) + "/ngay, mua dut $" + (int)(ModeSetup[3] * zm) + ", " + (int)pp.DistanceTo2D(lp) + " m)", delegate
+            Item(nm + (taken ? " [da co quan cua Sep]" : "") + (Listings[i].Length > 3 ? (Listings[i][3] is bool ? " [vao ben trong roi mo quan]" : " [TOA NHA THAT cua game]") : "") + "  (" + ZoneName(lp) + ", khach x" + zm.ToString("0.0", CultureInfo.InvariantCulture) + ", thue $" + (int)(ModeRent[1] * zm) + "/ngay, mua dut $" + (int)(ModeSetup[3] * zm) + ", " + (int)pp.DistanceTo2D(lp) + " m)", delegate
             {
                 Vector3 q = new Vector3((float)Listings[idx][1], (float)Listings[idx][2], 0f);
                 Function.Call(Hash.SET_NEW_WAYPOINT, q.X, q.Y);
@@ -870,6 +916,7 @@ public class GtaVietLifeWorld : Script
                 Blip bl = World.CreateBlip(new Vector3((float)Listings[j][1], (float)Listings[j][2], 0f));
                 bl.Color = BlipColor.Yellow;
                 bl.Name = "Mat bang cho thue: " + (string)Listings[j][0];
+                if (Listings[j].Length > 3 && !(Listings[j][3] is bool)) bl.Sprite = BlipSprite.Store;
                 listingBlips.Add(bl);
             }
             Notify("Da danh dau " + listingBlips.Count + " khu mat bang (cham vang tren ban do).");
@@ -3216,6 +3263,7 @@ public class GtaVietLifeWorld : Script
             l.Add("energy=" + energy.ToString(ci));
             l.Add("rep=" + rep);
             l.Add("debt=" + debt);
+            l.Add("seen=" + NowEpoch());
             l.Add("b2bday=" + b2bDay);
             foreach (int[] ct in contracts) l.Add("b2b=" + ct[0] + "," + ct[1]);
             foreach (int[] rv in receivables) l.Add("recv=" + rv[0] + "," + rv[1] + "," + rv[2]);
@@ -3263,6 +3311,7 @@ public class GtaVietLifeWorld : Script
                     case "energy": energy = float.Parse(v, ci); break;
                     case "rep": rep = int.Parse(v); break;
                     case "debt": debt = int.Parse(v); break;
+                    case "seen": lastSeen = long.Parse(v); break;
                     case "b2bday": b2bDay = int.Parse(v); break;
                     case "b2b": { string[] q = v.Split(','); int dd = int.Parse(q[0]); if (dd >= 0 && dd < Deals.Length) contracts.Add(new int[] { dd, int.Parse(q[1]) }); break; }
                     case "recv": { string[] q = v.Split(','); receivables.Add(new int[] { int.Parse(q[0]), int.Parse(q[1]), int.Parse(q[2]) }); break; }

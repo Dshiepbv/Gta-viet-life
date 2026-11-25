@@ -72,3 +72,11 @@ Phạt khi bị truy nã rồi thoát, nợ có lãi, uy tín tăng/giảm. Tr�
 - **San pham**: danh muc F&B va FMCG co gia von / gia ban rieng; moi quan chi ban nhom mat hang cua loai hinh. Loi nhuan moi ngay = doanh thu - gia von - luong - thue - tien thue mat bang.
 - **Nhap hang tu nha phan phoi**: lo 1 / 5 / 10, chiet khau 0 / 7% / 12%, MT duoc them 5%.
 - **B2B**: menu Kinh doanh > "Ban si B2B": ky hop dong cung ung cho cua hang/quan khac, giao hang moi ngay tu kho mot quan, gia si thap hon gia le, thu tien sau 5-45 ngay, co rui ro vo no.
+
+## Chay 24/24 (offline)
+
+Moi 2 phut mod ghi dau thoi gian vao file luu. Khi mo game lai, mod tinh thoi gian da tat (1 ngay game = 48 phut thuc, toi da 14 ngay): quan co nhan vien van ban hang (cham hon luc choi: 40% so khach), van tra luong, thue, tien thue mat bang, giao hang B2B va thu cong no. Ket qua hien thanh mot thong bao tong ket, chi tiet nam trong GtaVietLifeWorld.log (dong "[offline]"). Neu thieu tien tra thue mat bang 3 ngay se mat mat bang nhu luc dang choi.
+
+## Toa nha that
+
+Muc "Tim mat bang" co them cac cua hang that cua game goc (24/7, LTD, Los Santos Customs) danh dau bang bieu tuong cua hang tren ban do. Toa do gan dung: hay doi chieu voi cham tren ban do roi bao lai neu lech.
