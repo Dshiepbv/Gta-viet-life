@@ -377,7 +377,7 @@ public class GtaVietLife : Script
         if (d == null) return;
         foreach (Ped p in World.GetNearbyPeds(me, 4f))
         {
-            if (!d.ContainsKey(p.Handle) || !p.IsAlive) continue;
+            if (!d.ContainsKey(p.Handle) || !p.IsAlive || !p.IsOnScreen) continue;
             int last; if (greeted.TryGetValue(p.Handle, out last) && now - last < 240000) continue;
             greeted[p.Handle] = now;
             var c = new NameValueCollection();
@@ -436,13 +436,13 @@ public class GtaVietLife : Script
         nextBanter = now + banterEvery * 1000 + rnd.Next(0, 20000);
         Ped me = Game.Player.Character;
         if (me.IsInVehicle()) return;
-        Ped[] near = World.GetNearbyPeds(me, 25f);
+        Ped[] near = World.GetNearbyPeds(me, 10f);   // giọng phát ra loa, nên chỉ cho NPC gần và thấy được nói chuyện
         for (int i = 0; i < near.Length; i++)
         {
-            if (!FreePed(near[i], me)) continue;
+            if (!FreePed(near[i], me) || !near[i].IsOnScreen) continue;
             for (int j = i + 1; j < near.Length; j++)
             {
-                if (!FreePed(near[j], me)) continue;
+                if (!FreePed(near[j], me) || !near[j].IsOnScreen) continue;
                 if (near[i].Position.DistanceTo(near[j].Position) > 4.5f) continue;
                 StartBanter(near[i], near[j]);
                 return;
