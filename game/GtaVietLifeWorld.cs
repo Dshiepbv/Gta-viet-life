@@ -39,6 +39,7 @@ public class GtaVietLifeWorld : Script
 
     string server = "http://127.0.0.1:5577";
     Keys menuKey = Keys.F6;   // M la phim Interaction Menu cua game, tranh trung
+    Keys navUp = Keys.PageUp, navDown = Keys.PageDown, navOk = Keys.Return;   // mui ten bi trung phim dien thoai cua game
     string MK { get { return menuKey.ToString(); } }
     Keys sitKey = Keys.E;
     int sitIdx = -1;
@@ -171,6 +172,9 @@ public class GtaVietLifeWorld : Script
         int port = Settings.GetValue("Bridge", "Port", 5577);
         server = "http://127.0.0.1:" + port;
         menuKey = Settings.GetValue("Keys", "Menu", menuKey);
+        navUp = Settings.GetValue("Keys", "Up", navUp);
+        navDown = Settings.GetValue("Keys", "Down", navDown);
+        navOk = Settings.GetValue("Keys", "Ok", navOk);
         sitKey = Settings.GetValue("Keys", "Sit", sitKey);
         seatZ = ReadF("Business", "SeatZ", seatZ);
         ChairDist = ReadF("Business", "ChairDist", ChairDist);
@@ -2028,9 +2032,9 @@ public class GtaVietLifeWorld : Script
             return;
         }
         if (menuSel < 0 || menuSel >= menuActions.Count || menuActions[menuSel] == null) menuSel = NextActionable(-1, 1);
-        if (e.KeyCode == Keys.Up) { menuSel = NextActionable(menuSel, -1); return; }
-        if (e.KeyCode == Keys.Down) { menuSel = NextActionable(menuSel, 1); return; }
-        if (e.KeyCode == Keys.Return)
+        if (e.KeyCode == navUp) { menuSel = NextActionable(menuSel, -1); return; }
+        if (e.KeyCode == navDown) { menuSel = NextActionable(menuSel, 1); return; }
+        if (e.KeyCode == navOk)
         {
             if (menuSel >= 0 && menuSel < menuActions.Count && menuActions[menuSel] != null) pendingActs.Enqueue(menuActions[menuSel]);
             return;
@@ -2142,7 +2146,7 @@ public class GtaVietLifeWorld : Script
             cy += rh;
         }
         if (total > maxRows) DrawText((first > 0 ? "^ " : "  ") + "(" + (menuSel + 1) + "/" + total + ")" + (last < total ? " v" : ""), x + w - 110f, y + 8f, 0.32f, Color.FromArgb(255, 180, 184, 196));
-        DrawText("Mui ten Len/Xuong chon  -  Enter hoac so: chay  -  Backspace: quay lai  -  " + MK + ": dong", x + pad, y + h - 26f, 0.29f, Color.FromArgb(255, 150, 156, 170));
+        DrawText("PageUp/PageDown: chon  -  Enter hoac phim so: chay  -  Backspace: quay lai  -  " + MK + ": dong", x + pad, y + h - 26f, 0.29f, Color.FromArgb(255, 150, 156, 170));
     }
 
     // ------------------------------------------------------------ cầu nối AI
