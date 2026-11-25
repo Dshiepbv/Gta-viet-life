@@ -1010,7 +1010,7 @@ public class GtaVietLifeWorld : Script
     // ====== chay 24/24: khi bat game lai, tinh phan quan da hoat dong luc tat may (ban cham hon luc choi) ======
     const float OfflineFactor = 0.6f;        // luc tat may ban bang 60% so khach moi ngay luc dang choi (Sep chon; neu nhanh qua thi giam)
     const double GameDaySeconds = 2880.0;    // 1 ngay trong game = 48 phut thuc
-    const int MaxOfflineDays = 14;
+    const int MaxOfflineDays = 3650;   // khong gioi han thuc te: 3650 ngay game ~ 8 nam thuc
     bool catching, caughtUp; long lastSeen; int nextSeenSave;
     readonly List<string> catchLog = new List<string>();
 
