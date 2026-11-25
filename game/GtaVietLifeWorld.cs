@@ -167,15 +167,15 @@ public class GtaVietLifeWorld : Script
         server = "http://127.0.0.1:" + port;
         menuKey = Settings.GetValue("Keys", "Menu", menuKey);
         sitKey = Settings.GetValue("Keys", "Sit", sitKey);
-        seatZ = Settings.GetValue("Business", "SeatZ", seatZ);
-        staffZ = Settings.GetValue("Business", "StaffZ", staffZ);
-        staffBack = Settings.GetValue("Business", "StaffBack", staffBack);
-        standYaw = Settings.GetValue("Business", "StandYaw", standYaw);
+        seatZ = ReadF("Business", "SeatZ", seatZ);
+        staffZ = ReadF("Business", "StaffZ", staffZ);
+        staffBack = ReadF("Business", "StaffBack", staffBack);
+        standYaw = ReadF("Business", "StandYaw", standYaw);
         standModel = Settings.GetValue("Business", "StandModel", standModel);
-        cupX = Settings.GetValue("Business", "CupHandX", cupX);
-        cupY = Settings.GetValue("Business", "CupHandY", cupY);
-        cupZ = Settings.GetValue("Business", "CupHandZ", cupZ);
-        cupTable = Settings.GetValue("Business", "CupTableZ", cupTable);
+        cupX = ReadF("Business", "CupHandX", cupX);
+        cupY = ReadF("Business", "CupHandY", cupY);
+        cupZ = ReadF("Business", "CupHandZ", cupZ);
+        cupTable = ReadF("Business", "CupTableZ", cupTable);
 
         Load();
 
@@ -1092,6 +1092,20 @@ public class GtaVietLifeWorld : Script
         if (!Spend(DrinkPrice)) return;
         thirst = Clamp(thirst + 40f);
         Notify("Da uong nuoc (-$" + DrinkPrice + ").");
+    }
+
+    // doc so thap phan trong .ini bat ke may dung dau cham hay dau phay (may VN: "0.55" bi doc thanh 55!)
+    float ReadF(string section, string key, float def)
+    {
+        try
+        {
+            string v = Settings.GetValue(section, key, def.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            v = v.Trim().Replace(',', '.');
+            float f;
+            if (float.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out f)) return f;
+        }
+        catch { }
+        return def;
     }
 
     // ---- tim nha thue
