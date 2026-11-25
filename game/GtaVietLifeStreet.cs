@@ -37,12 +37,12 @@ public class GtaVietLifeStreet : Script
     readonly Random rnd = new Random();
 
     // loại cụm: tên, mô hình quầy, mô hình bàn, mô hình ghế, có khách ngồi, giờ hợp (từ, đến)
-    class Kind { public string Name, Stall, Table, Seat, Menu; public int H1, H2, Seats; }   // Menu: "Ten mon:gia:no:khat;..."
+    class Kind { public string Name, Stall, Table, Seat, Extra, Menu; public int H1, H2, Seats; }   // Menu: "Ten mon:gia:no:khat;..."
     static readonly Kind[] Kinds = {
-        new Kind { Name = "banh mi / pho", Stall = "prop_hotdogstand_01", Table = "prop_table_03", Seat = "prop_bar_stool_01", Menu = "Banh mi:6:30:0;Pho bo:15:45:0;Ca phe sua:5:0:25", H1 = 5,  H2 = 10, Seats = 3 },
-        new Kind { Name = "com tam",       Stall = "prop_hotdogstand_01", Table = "prop_table_03", Seat = "prop_bar_stool_01", Menu = "Com tam:12:45:0;Ga ran:14:35:0;Tra da:2:0:20", H1 = 10, H2 = 15, Seats = 4 },
-        new Kind { Name = "ca phe coc",    Stall = "prop_hotdogstand_01", Table = "prop_table_03", Seat = "prop_bar_stool_01", Menu = "Ca phe sua:5:0:25;Tra da:2:0:20;Nuoc ep:6:0:30;Banh ngot:5:20:0", H1 = 14, H2 = 20, Seats = 4 },
-        new Kind { Name = "tra da / nhau", Stall = "prop_hotdogstand_01", Table = "prop_table_03", Seat = "prop_bar_stool_01", Menu = "Tra da:2:0:20;Bia hoi:4:0:15;Ga ran:14:35:0;Mi goi:2:20:0", H1 = 17, H2 = 24, Seats = 5 },
+        new Kind { Name = "banh mi / pho", Extra = "", Stall = "prop_hotdogstand_01", Table = "prop_table_03", Seat = "prop_chair_01a", Menu = "Banh mi:6:30:0;Pho bo:15:45:0;Ca phe sua:5:0:25", H1 = 5,  H2 = 10, Seats = 3 },
+        new Kind { Name = "com tam", Extra = "prop_parasol_01", Stall = "prop_food_van_01", Table = "prop_table_03", Seat = "prop_chair_01a", Menu = "Com tam:12:45:0;Ga ran:14:35:0;Tra da:2:0:20", H1 = 10, H2 = 15, Seats = 4 },
+        new Kind { Name = "ca phe coc", Extra = "prop_parasol_01", Stall = "prop_vend_coffe_01", Table = "prop_table_03", Seat = "prop_chair_01a", Menu = "Ca phe sua:5:0:25;Tra da:2:0:20;Nuoc ep:6:0:30;Banh ngot:5:20:0", H1 = 14, H2 = 20, Seats = 4 },
+        new Kind { Name = "tra da / nhau", Extra = "prop_beer_box_01", Stall = "prop_bbq_1", Table = "prop_table_03", Seat = "prop_chair_01a", Menu = "Tra da:2:0:20;Bia hoi:4:0:15;Ga ran:14:35:0;Mi goi:2:20:0", H1 = 17, H2 = 24, Seats = 5 },
     };
     readonly string[] vendorModels = { "a_f_m_ktown_01", "a_m_m_ktown_01", "a_f_y_ktown_01" };
     readonly string[] guestModels = { "a_m_y_ktown_01", "a_f_y_ktown_01", "a_m_m_ktown_01", "a_f_m_ktown_01", "a_m_y_ktown_02", "a_f_y_ktown_02" };
@@ -133,6 +133,14 @@ public class GtaVietLifeStreet : Script
         if (h.Mark != null && h.Mark.Exists()) h.Mark.Delete();
     }
 
+    // đặt vật xuống đúng mặt đất rồi mới đóng băng (tránh lơ lửng/chìm)
+    static void Ground(Prop p)
+    {
+        if (p == null || !p.Exists()) return;
+        Function.Call(Hash.PLACE_OBJECT_ON_GROUND_PROPERLY, p.Handle);
+        p.IsPositionFrozen = true;
+    }
+
     Kind PickKind(int hour)
     {
         var fit = new List<Kind>();
@@ -165,7 +173,8 @@ public class GtaVietLifeStreet : Script
         Vector3 st = World.GetNextPositionOnStreet(pos);
         float heading = (st == Vector3.Zero) ? (float)(rnd.NextDouble() * 360.0) : (st - pos).ToHeading();
 
-        Model stallM = Load(kind.Stall), tableM = Load(kind.Table), seatM = Load(kind.Seat);
+        Model stallM = Load(kind.Stall); if (stallM == null) stallM = Load("prop_hotdogstand_01");
+        Model tableM = Load(kind.Table), seatM = Load(kind.Seat);
         Model vm = Load(vendorModels[rnd.Next(vendorModels.Length)]);
         if (stallM == null || vm == null) return;
 
@@ -176,7 +185,7 @@ public class GtaVietLifeStreet : Script
 
         // quầy/xe đẩy
         Prop stall = World.CreateProp(stallM, pos, new Vector3(0f, 0f, heading + 180f), false, false);
-        if (stall != null && stall.Exists()) { stall.IsPositionFrozen = true; hub.Props.Add(stall); }
+        if (stall != null && stall.Exists()) { Ground(stall); hub.Props.Add(stall); }
 
         // chủ quán đứng sau quầy
         Vector3 vpos = pos - fwd * 1.0f;
@@ -198,7 +207,7 @@ public class GtaVietLifeStreet : Script
             if (seatM != null)
             {
                 Prop seat = World.CreateProp(seatM, sp, new Vector3(0f, 0f, heading), false, false);
-                if (seat != null && seat.Exists()) { seat.IsPositionFrozen = true; hub.Props.Add(seat); }
+                if (seat != null && seat.Exists()) { Ground(seat); hub.Props.Add(seat); sp = seat.Position; }
             }
             if (i < crowd)
             {
@@ -216,7 +225,18 @@ public class GtaVietLifeStreet : Script
         if (tableM != null)
         {
             Prop tb = World.CreateProp(tableM, pos + fwd * 3.0f, new Vector3(0f, 0f, heading), false, false);
-            if (tb != null && tb.Exists()) { tb.IsPositionFrozen = true; hub.Props.Add(tb); }
+            if (tb != null && tb.Exists()) { Ground(tb); hub.Props.Add(tb); }
+        }
+
+        if (kind.Extra.Length > 0)
+        {
+            Model em = Load(kind.Extra);
+            if (em != null)
+            {
+                Vector3 ep = kind.Extra.Contains("parasol") ? pos + fwd * 3.0f : pos + right * 1.6f + fwd * 0.5f;
+                Prop ex = World.CreateProp(em, ep, new Vector3(0f, 0f, heading), false, false);
+                if (ex != null && ex.Exists()) { Ground(ex); hub.Props.Add(ex); }
+            }
         }
 
         // xe máy dựng sát lề (2-3 chiếc)
