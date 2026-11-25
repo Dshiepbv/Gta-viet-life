@@ -120,8 +120,8 @@ public class GtaVietLifeDoiSong : Script
     static bool InsideHome() { int[] h = Bus("GVL.Home") as int[]; return h != null && h.Length > 1 && h[1] == 1; }
     static bool OtherMenuOpen()
     {
-        object a = Bus("GVL.WorldMenu"), b = Bus("GVL.PersonalMenu");
-        return (a is bool && (bool)a) || (b is bool && (bool)b);
+        foreach (string k in new[] { "GVL.WorldMenu", "GVL.PersonalMenu", "GVL.EconMenu" }) { object o = Bus(k); if (o is bool && (bool)o) return true; }
+        return false;
     }
 
     // tra tien qua cong chung GVL.Pay cua Core (Kinh te ghi de de tru tai khoan, ghi so); khong co Core thi tru tien mat
