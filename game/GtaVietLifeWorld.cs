@@ -249,7 +249,7 @@ public class GtaVietLifeWorld : Script
             int remain = Math.Max(0, target - soldToday);   // khach thay tan mat da ban theo thoi gian thuc
             int sold = Math.Min(bizStock, remain);
             bizStock -= sold;
-            int revenue = sold * SalePrice;
+            int revenue = sold * Price();
             Game.Player.Money = Game.Player.Money + revenue;
             int wages = bizStaff * WagePerDay;
             if (Game.Player.Money >= wages) Game.Player.Money = Game.Player.Money - wages;
@@ -465,17 +465,52 @@ public class GtaVietLifeWorld : Script
         Prop box1 = AddProp("prop_cs_cardbox_01", bizPos + right * 1.5f - fwd * 0.8f, bizHeading);
         if (box1 != null)
             AddProp("prop_cs_cardbox_01", box1.Position + new Vector3(0f, 0f, 0.4f), bizHeading + 8f, false);
-        for (int l = 1; l <= bizLevel; l++)
+        string[] parasols = { "prop_parasol_01", "prop_parasol_01", "prop_parasol_03", "prop_parasol_04" };
+        int tables = Math.Min(4, bizLevel);   // cap 1: 1 ban, cap 2: 2 ban, cap 3: 3 ban, cap 4: 4 ban
+        for (int l = 1; l <= tables; l++)
         {
-            Vector3 c = bizPos + fwd * (3f + l * 2.5f) + right * ((l % 2 == 0) ? -2.5f : 2.5f);
+            int row = (l - 1) / 2;
+            float side = (l % 2 == 1) ? 1f : -1f;
+            Vector3 c = bizPos + fwd * (3.5f + row * 3.0f) + right * (2.4f * side);
             AddProp("prop_table_03", c, bizHeading);
             AddProp("prop_chair_01a", c + right * 1.1f, bizHeading - 90f);
             if (bizProps.Count > 0) { chairProps.Add(bizProps[bizProps.Count - 1]); chairBusy.Add(false); chairFace.Add(FaceHeading(c + right * 1.1f, c)); }
             AddProp("prop_chair_01a", c - right * 1.1f, bizHeading + 90f);
             if (bizProps.Count > 0) { chairProps.Add(bizProps[bizProps.Count - 1]); chairBusy.Add(false); chairFace.Add(FaceHeading(c - right * 1.1f, c)); }
-            AddProp("prop_parasol_01", c, bizHeading);
+            AddProp(parasols[Math.Min(l, 4) - 1], c, bizHeading);
+        }
+        // cap 2: chau cay hai ben quay
+        if (bizLevel >= 2)
+        {
+            AddProp("prop_pot_plant_05a", bizPos + right * 2.2f + fwd * 0.6f, bizHeading);
+            AddProp("prop_pot_plant_05a", bizPos - right * 2.2f + fwd * 0.6f, bizHeading);
+        }
+        // cap 3: den suoi, thung rac, ghe da
+        if (bizLevel >= 3)
+        {
+            AddProp("prop_patio_heater_01", bizPos + fwd * 3.0f + right * 0.0f, bizHeading);
+            AddProp("prop_bin_01a", bizPos + right * 2.8f - fwd * 0.4f, bizHeading);
+            AddProp("prop_bench_01a", bizPos - right * 3.2f + fwd * 1.5f, bizHeading + 90f);
+        }
+        // cap 4: ghe quay bar, hang cay xanh, them den suoi
+        if (bizLevel >= 4)
+        {
+            AddProp("prop_bar_stool_01", bizPos - right * 1.4f + fwd * 1.0f, bizHeading);
+            AddProp("prop_bar_stool_01", bizPos - right * 2.0f + fwd * 1.0f, bizHeading);
+            AddProp("prop_pot_plant_05a", bizPos + right * 4.4f + fwd * 3.0f, bizHeading);
+            AddProp("prop_pot_plant_05a", bizPos - right * 4.4f + fwd * 3.0f, bizHeading);
+            AddProp("prop_patio_heater_01", bizPos + fwd * 6.5f, bizHeading);
         }
     }
+
+    static readonly string[] TierName = { "Xe day", "Quay via he", "Quan nuoc co mai che", "Quan sang trong" };
+    static readonly string[] TierPerk = {
+        "1 ban",
+        "2 ban, chau cay",
+        "3 ban, o che mau, den suoi, ghe da, thung rac",
+        "4 ban, ghe quay bar, cay xanh, nhieu den suoi" };
+
+    int Price() { return SalePrice + (bizLevel - 1) * 6; }
 
     bool NearBiz()
     {
@@ -630,7 +665,7 @@ public class GtaVietLifeWorld : Script
                 if (qty <= 0) { Release(c); customers.RemoveAt(i); continue; }
                 bizStock -= qty;
                 soldToday += qty;
-                int pay = qty * SalePrice;
+                int pay = qty * Price();
                 Game.Player.Money = Game.Player.Money + pay;
                 Notify("~g~+$" + pay + "~s~ ban " + qty + " phan (kho con " + bizStock + ").");
                 if (c.Chair >= 0 && c.Chair < chairProps.Count && chairProps[c.Chair] != null && chairProps[c.Chair].Exists())
@@ -981,10 +1016,11 @@ public class GtaVietLifeWorld : Script
                 ShowBiz();
             });
             Item("Doi quan sang cho phang gan day (mien phi)", delegate { RelocateBiz(); ShowBiz(); });
-            Item("Nang cap quan (them ban ghe)  (-$" + (2500 * bizLevel) + ")  cap " + bizLevel + "/4", delegate
+            Item("Hien tai: cap " + bizLevel + " - " + TierName[bizLevel - 1] + "  (gia ban $" + Price() + "/phan)", delegate { });
+            Item(bizLevel >= 4 ? "Quan da dat cap toi da" : "Nang cap len cap " + (bizLevel + 1) + " " + TierName[bizLevel] + " (" + TierPerk[bizLevel] + ")  -$" + (2500 * bizLevel), delegate
             {
                 if (bizLevel >= 4) Notify("Quan da toi da.");
-                else if (Spend(2500 * bizLevel)) { bizLevel++; BuildBizProps(); Notify("~g~Da nang cap quan len cap " + bizLevel + "~s~."); }
+                else if (Spend(2500 * bizLevel)) { bizLevel++; BuildBizProps(); Notify("~g~Nang cap thanh cong: " + TierName[bizLevel - 1] + "~s~. Gia ban $" + Price() + "/phan, them khach."); }
                 ShowBiz();
             });
             Item("Thue nhan vien  (luong $" + WagePerDay + "/ngay)  hien: " + bizStaff + "/" + MaxStaff, delegate
@@ -1014,7 +1050,7 @@ public class GtaVietLifeWorld : Script
         Item("Tien: $" + Game.Player.Money + "   No: $" + debt, delegate { });
         Item("Uy tin: " + rep + "   Giao hang hom nay: " + deliveriesToday + " don ($" + earnedToday + ")", delegate { });
         Item("Nha: " + (hasHome ? "co ($" + RentPerDay + "/ngay)" : "chua thue"), delegate { });
-        Item("Quan: " + (hasBiz ? "kho " + bizStock + ", nv " + bizStaff + ", quy $" + bizCash : "chua co"), delegate { });
+        Item("Quan: " + (hasBiz ? "cap " + bizLevel + " " + TierName[bizLevel - 1] + ", kho " + bizStock + ", nv " + bizStaff + ", quy $" + bizCash : "chua co"), delegate { });
         Item("Cu dan co lich: " + residents.Count, delegate { });
         Item("Quay lai", delegate { ShowMain(); });
     }
