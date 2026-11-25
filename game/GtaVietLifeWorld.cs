@@ -762,6 +762,7 @@ public class GtaVietLifeWorld : Script
             Cust c = customers[i];
             Ped p = c.P;
             if (p == null || !p.Exists() || !p.IsAlive || !near) { Release(c); customers.RemoveAt(i); continue; }
+            if (c.Stage == 2 && c.Chair >= 0) KeepOnSeat(p, c.Chair);
             if (c.Stage == 0)
             {
                 bool arrived = p.Position.DistanceTo(bizPos) < 3.2f;
@@ -1398,7 +1399,11 @@ public class GtaVietLifeWorld : Script
             float mx = Function.Call<float>(Hash.GET_CONTROL_NORMAL, 0, 30);
             float my = Function.Call<float>(Hash.GET_CONTROL_NORMAL, 0, 31);
             if (!ok || me.IsInVehicle() || Math.Abs(mx) > 0.6f || Math.Abs(my) > 0.6f) StandUp(me);
-            else GTA.UI.Screen.ShowSubtitle("~y~" + sitKey + "~s~: dung day", 100);
+            else
+            {
+                if (sitIdx != 9999) KeepOnSeat(me, sitIdx);
+                GTA.UI.Screen.ShowSubtitle("~y~" + sitKey + "~s~: dung day", 100);
+            }
             return;
         }
         if (hasBiz && !me.IsInVehicle() && (NearestFreeChair(me) >= 0 || NearestBench(me) != null))
@@ -1435,6 +1440,23 @@ public class GtaVietLifeWorld : Script
         chairBusy[i] = true;
         me.Task.ClearAllImmediately();
         Function.Call(Hash.TASK_START_SCENARIO_AT_POSITION, me, "PROP_HUMAN_SEAT_CHAIR", ch.Position.X, ch.Position.Y, ch.Position.Z + seatZ, i < chairFace.Count ? chairFace[i] : ch.Heading, -1, true, true);
+    }
+
+    // ngoi vao ghe ma bi game hat len cao thi keo ve dung cho ngoi (va ghi log de tim nguyen nhan)
+    int seatFixLogs;
+    void KeepOnSeat(Ped p, int chairIdx)
+    {
+        if (p == null || !p.Exists() || chairIdx < 0 || chairIdx >= chairProps.Count) return;
+        Prop ch = chairProps[chairIdx];
+        if (ch == null || !ch.Exists()) return;
+        float expect = ch.Position.Z + seatZ;
+        float dz = p.Position.Z - expect;
+        if (dz > 1.0f || dz < -1.5f || p.Position.DistanceTo2D(ch.Position) > 1.5f)
+        {
+            if (seatFixLogs++ < 12) Log("ngoi bi lech: ghe z=" + ch.Position.Z.ToString("0.00") + " nguoi z=" + p.Position.Z.ToString("0.00") + " dz=" + dz.ToString("0.00") + " cach ghe " + p.Position.DistanceTo2D(ch.Position).ToString("0.0") + " m");
+            Function.Call(Hash.SET_ENTITY_COORDS_NO_OFFSET, p, ch.Position.X, ch.Position.Y, expect, false, false, false);
+            p.Heading = (chairIdx < chairFace.Count) ? chairFace[chairIdx] : ch.Heading;
+        }
     }
 
     // neu bi day len cao bat thuong quanh quan thi dua ve mat dat (chong roi chet)
