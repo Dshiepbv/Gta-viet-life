@@ -62,6 +62,19 @@ public class GtaVietLifeWorld : Script
     readonly List<Ped> staffPeds = new List<Ped>();
     readonly List<Vector3> staffSlots = new List<Vector3>();
     int nextStaffCheck;
+    readonly List<Prop> chairProps = new List<Prop>();
+    readonly List<bool> chairBusy = new List<bool>();
+    class Cust
+    {
+        public Ped P;
+        public int Stage;      // 0 = di toi quay, 1 = dang cho/mua, 2 = ngoi o ghe
+        public int T;
+        public int Chair = -1;
+        public int Qty = 1;
+    }
+    readonly List<Cust> customers = new List<Cust>();
+    int nextCustomer;
+    int soldToday;
     int bizLevel = 1;
     float bizHeading;
     readonly List<Prop> bizProps = new List<Prop>();
@@ -125,6 +138,7 @@ public class GtaVietLifeWorld : Script
         UpdateDelivery(me, now);
         UpdateResidents(now);
         UpdateStaff(now);
+        UpdateCustomers(now, me);
 
         if (now > nextStatePost) { nextStatePost = now + 15000; PostState(); }
         if (now > nextSave) { nextSave = now + 30000; Save(); }
@@ -139,6 +153,7 @@ public class GtaVietLifeWorld : Script
     {
         Save();
         foreach (Ped p in staffPeds) if (p != null && p.Exists()) p.Delete();
+        foreach (Cust c in customers) if (c.P != null && c.P.Exists()) c.P.Delete();
         ClearBizProps();
         if (bizBlip != null && bizBlip.Exists()) bizBlip.Delete();
         if (destBlip != null && destBlip.Exists()) destBlip.Delete();
@@ -210,15 +225,18 @@ public class GtaVietLifeWorld : Script
         }
         if (hasBiz)
         {
-            int customers = 15 + (bizLevel - 1) * 8 + bizStaff * 12 + rnd.Next(0, 11) + Math.Max(0, rep / 5);
-            int sold = Math.Min(bizStock, customers);
+            int target = 15 + (bizLevel - 1) * 8 + bizStaff * 12 + rnd.Next(0, 11) + Math.Max(0, rep / 5);
+            int remain = Math.Max(0, target - soldToday);   // khach thay tan mat da ban theo thoi gian thuc
+            int sold = Math.Min(bizStock, remain);
             bizStock -= sold;
             int revenue = sold * SalePrice;
+            Game.Player.Money = Game.Player.Money + revenue;
             int wages = bizStaff * WagePerDay;
-            bizCash += revenue - wages;
-            if (bizCash < 0) { debt += -bizCash; bizCash = 0; }
-            if (sold >= 10) rep += 1;
-            report += " Quan: ban " + sold + " phan, thu $" + revenue + ", luong -$" + wages + ".";
+            if (Game.Player.Money >= wages) Game.Player.Money = Game.Player.Money - wages;
+            else { debt += wages; report += " ~r~Thieu tien tra luong, ghi no.~s~"; }
+            if (sold + soldToday >= 10) rep += 1;
+            report += " Quan: ban " + (sold + soldToday) + " phan, luong -$" + wages + ".";
+            soldToday = 0;
             if (bizStock == 0) report += " ~y~Het hang!~s~";
         }
         Notify(report);
@@ -328,6 +346,8 @@ public class GtaVietLifeWorld : Script
     {
         foreach (Prop p in bizProps) if (p != null && p.Exists()) p.Delete();
         bizProps.Clear();
+        chairProps.Clear();
+        chairBusy.Clear();
     }
 
     void AddProp(string model, Vector3 pos, float heading)
@@ -361,7 +381,9 @@ public class GtaVietLifeWorld : Script
             Vector3 c = bizPos + fwd * (3f + l * 2.5f) + right * ((l % 2 == 0) ? -2.5f : 2.5f);
             AddProp("prop_table_03", c, bizHeading);
             AddProp("prop_chair_01a", c + right * 1.1f, bizHeading - 90f);
+            if (bizProps.Count > 0) { chairProps.Add(bizProps[bizProps.Count - 1]); chairBusy.Add(false); }
             AddProp("prop_chair_01a", c - right * 1.1f, bizHeading + 90f);
+            if (bizProps.Count > 0) { chairProps.Add(bizProps[bizProps.Count - 1]); chairBusy.Add(false); }
             AddProp("prop_parasol_01", c, bizHeading);
         }
     }
@@ -405,6 +427,120 @@ public class GtaVietLifeWorld : Script
         staffPeds.RemoveAt(staffPeds.Count - 1);
         staffSlots.RemoveAt(staffSlots.Count - 1);
         if (p != null && p.Exists()) { p.IsPersistent = false; p.Task.WanderAround(); }
+    }
+
+    // ---- khach hang thoi gian thuc
+    static readonly string[] CustModels = { "a_m_y_hipster_01", "a_f_y_hipster_01", "a_m_y_beach_01", "a_f_y_beach_01", "a_m_y_vinewood_01", "a_f_y_vinewood_01" };
+
+    void SpawnCustomer(Ped me)
+    {
+        try
+        {
+            Vector3 raw = bizPos + new Vector3((float)(rnd.NextDouble() * 2 - 1), (float)(rnd.NextDouble() * 2 - 1), 0f) * 40f;
+            Vector3 sp = World.GetSafeCoordForPed(raw, true);
+            if (sp == Vector3.Zero || sp.DistanceTo(me.Position) < 15f) return;
+            Model mdl = new Model(CustModels[rnd.Next(CustModels.Length)]);
+            if (!mdl.Request(1000)) return;
+            Ped p = World.CreatePed(mdl, sp);
+            mdl.MarkAsNoLongerNeeded();
+            if (p == null || !p.Exists()) return;
+            Cust c = new Cust();
+            c.P = p;
+            c.T = Game.GameTime;
+            c.Qty = 1 + rnd.Next(2);
+            // neu co ghe trong thi 50% ngoi lai
+            for (int i = 0; i < chairProps.Count; i++)
+                if (!chairBusy[i] && rnd.Next(2) == 0) { c.Chair = i; chairBusy[i] = true; c.Qty += 1; break; }
+            p.IsPersistent = true;
+            Function.Call(Hash.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS, p, true);
+            Vector3 dest2 = QueueSpot();
+            Function.Call(Hash.TASK_FOLLOW_NAV_MESH_TO_COORD, p, dest2.X, dest2.Y, dest2.Z, 1.0f, 25000, 1.5f, false, 0f);
+            customers.Add(c);
+        }
+        catch (Exception ex) { Log("SpawnCustomer loi: " + ex.Message); }
+    }
+
+    Vector3 QueueSpot()
+    {
+        float h = bizHeading * (float)Math.PI / 180f;
+        Vector3 right = new Vector3((float)Math.Cos(h), (float)Math.Sin(h), 0f);
+        Vector3 fwd = new Vector3(-(float)Math.Sin(h), (float)Math.Cos(h), 0f);
+        return bizPos + fwd * 1.8f + right * (float)(rnd.NextDouble() * 1.2 - 0.6);
+    }
+
+    void Release(Cust c)
+    {
+        if (c.Chair >= 0 && c.Chair < chairBusy.Count) chairBusy[c.Chair] = false;
+        Ped p = c.P;
+        if (p != null && p.Exists())
+        {
+            p.IsPersistent = false;
+            Function.Call(Hash.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS, p, false);
+            p.Task.ClearAll();
+            p.Task.WanderAround();
+            p.MarkAsNoLongerNeeded();
+        }
+    }
+
+    void UpdateCustomers(int now, Ped me)
+    {
+        if (!hasBiz) return;
+        bool near = me.Position.DistanceTo(bizPos) < 120f;
+        // sinh khach moi
+        if (near && bizStock > 0 && now > nextCustomer && customers.Count < 5)
+        {
+            int gap = 40000 - bizStaff * 5000 - bizLevel * 4000 + rnd.Next(0, 8000);
+            nextCustomer = now + Math.Max(9000, gap);
+            SpawnCustomer(me);
+        }
+        for (int i = customers.Count - 1; i >= 0; i--)
+        {
+            Cust c = customers[i];
+            Ped p = c.P;
+            if (p == null || !p.Exists() || !p.IsAlive || !near) { Release(c); customers.RemoveAt(i); continue; }
+            if (c.Stage == 0)
+            {
+                bool arrived = p.Position.DistanceTo(bizPos) < 3.2f;
+                if (arrived || now - c.T > 30000)
+                {
+                    if (!arrived) { Release(c); customers.RemoveAt(i); continue; }
+                    bool served = bizStaff > 0 || me.Position.DistanceTo(bizPos) < 8f;
+                    if (!served)
+                    {
+                        if (now - c.T > 45000) { Notify("Khach bo di vi khong ai phuc vu. Thue nhan vien hoac dung gan quan."); Release(c); customers.RemoveAt(i); }
+                        continue;
+                    }
+                    c.Stage = 1;
+                    c.T = now;
+                    p.Task.ClearAll();
+                    Function.Call(Hash.TASK_START_SCENARIO_IN_PLACE, p, "WORLD_HUMAN_STAND_IMPATIENT", 0, true);
+                }
+            }
+            else if (c.Stage == 1 && now - c.T > 4000)
+            {
+                int qty = Math.Min(bizStock, c.Qty);
+                if (qty <= 0) { Release(c); customers.RemoveAt(i); continue; }
+                bizStock -= qty;
+                soldToday += qty;
+                int pay = qty * SalePrice;
+                Game.Player.Money = Game.Player.Money + pay;
+                Notify("~g~+$" + pay + "~s~ ban " + qty + " phan (kho con " + bizStock + ").");
+                if (c.Chair >= 0 && c.Chair < chairProps.Count && chairProps[c.Chair] != null && chairProps[c.Chair].Exists())
+                {
+                    Prop ch = chairProps[c.Chair];
+                    c.Stage = 2;
+                    c.T = now;
+                    p.Task.ClearAll();
+                    Function.Call(Hash.TASK_START_SCENARIO_AT_POSITION, p, "PROP_HUMAN_SEAT_CHAIR", ch.Position.X, ch.Position.Y, ch.Position.Z, ch.Heading, 14000, true, true);
+                }
+                else { Release(c); customers.RemoveAt(i); }
+            }
+            else if (c.Stage == 2 && now - c.T > 15000)
+            {
+                Release(c);
+                customers.RemoveAt(i);
+            }
+        }
     }
 
     // Giu nhan vien o dung cho (sau khi noi chuyen xong script kia co the cho ho di lang thang)
