@@ -63,17 +63,28 @@ class Bridge:
     def __init__(self, cfg: dict, overlay):
         from llm import Brain
         from memory import Memory
-        from stt import STT, Recorder
+        from stt import Recorder
         from tts import Voice
         self.cfg = cfg
         self.overlay = overlay
         self.recorder = Recorder(cfg.get("mic_device"))
-        print("[init] Đang nạp mô hình nghe (lần đầu sẽ tải về, hơi lâu)...")
-        self.stt = STT(cfg)
+        self.stt = None
+        self.stt_mode = cfg.get("stt_mode", "gemini") if cfg.get("gemini_api_key") else "local"
+        if self.stt_mode == "local":
+            self._get_stt()
+        else:
+            print("[init] Nghe bằng Gemini (không cần nạp Whisper). Whisper chỉ nạp khi Gemini lỗi.")
         self.brain = Brain(cfg)
         self.voice = Voice(cfg)
         self.memory = Memory(os.path.join(HERE, cfg.get("memory_db", "memory.db")))
         self.busy = threading.Lock()
+
+    def _get_stt(self):
+        if self.stt is None:
+            from stt import STT
+            print("[init] Đang nạp mô hình nghe (lần đầu sẽ tải về, hơi lâu)...")
+            self.stt = STT(self.cfg)
+        return self.stt
 
     def start(self):
         self.voice.stop()
@@ -83,16 +94,42 @@ class Bridge:
     def stop(self, ctx: dict) -> str:
         audio = self.recorder.stop()
         with self.busy:
+            from stt import wav_bytes
             t0 = time.time()
-            text = self.stt.transcribe(audio)
-            t1 = time.time()
-            if not text:
+            dur = audio.size / 16000
+            peak = float(abs(audio).max()) if audio.size else 0.0
+            print(f"[mic] thu {dur:.1f}s, âm lượng đỉnh {peak:.4f}")
+            if dur < 0.4 or peak < 0.02:
+                print("[mic] quá ngắn hoặc quá nhỏ, bỏ qua")
                 self.overlay.show("player", "(không nghe rõ, Sếp nói lại nhé)", 2500)
                 return "none\n0\n"
-            self.overlay.show("player", text)
             key = ctx.get("key") or "tmp_0"
             npc = self.memory.get_or_create(key, ctx.get("gender", "male"), int(ctx.get("pedtype", "4") or 4))
-            result = self.brain.chat(npc, ctx, self.memory.history(key), text)
+            history = self.memory.history(key)
+            result, text, by_audio = None, "", False
+            if self.stt_mode == "gemini":
+                try:
+                    result = self.brain.chat_audio(npc, ctx, history, wav_bytes(audio))
+                    text = result.get("heard", "")
+                    by_audio = True
+                    if not text:
+                        print("[mic] Gemini không nghe ra lời nói")
+                        self.overlay.show("player", "(không nghe rõ, Sếp nói lại nhé)", 2500)
+                        return "none\n0\n"
+                except Exception as e:
+                    print(f"[stt] Gemini nghe lỗi, chuyển sang Whisper: {e}")
+                    result = None
+            t1 = time.time()
+            if result is None:
+                text = self._get_stt().transcribe(audio)
+                t1 = time.time()
+                if not text:
+                    self.overlay.show("player", "(không nghe rõ, Sếp nói lại nhé)", 2500)
+                    return "none\n0\n"
+                self.overlay.show("player", text)
+                result = self.brain.chat(npc, ctx, history, text)
+            else:
+                self.overlay.show("player", text)
             t2 = time.time()
             self.memory.add(key, "player", text)
             self.memory.add(key, "npc", result["reply"])
@@ -110,7 +147,9 @@ class Bridge:
 
             threading.Thread(target=speak, daemon=True).start()
             t3 = time.time()
-            print(f"[{npc['name']}] nghe {t1 - t0:.1f}s · nghĩ {t2 - t1:.1f}s | "
+            timing = (f"Gemini nghe+nghĩ {t2 - t0:.1f}s" if by_audio
+                      else f"nghe {t1 - t0:.1f}s · nghĩ {t2 - t1:.1f}s")
+            print(f"[{npc['name']}] {timing} | "
                   f"Bạn: {text} → {result['reply']} ({result['action']})")
             return f"{result['action']}\n{ms}\n{ascii_name(npc['name'])}"
 

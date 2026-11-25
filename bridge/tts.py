@@ -56,6 +56,14 @@ class Voice:
                     if use_params:
                         self.use_params = False  # lần sau bỏ qua chỉnh cao độ/tốc độ cho nhanh
             if not ok:
+                try:  # dự phòng: giọng Google (1 giọng nữ, miễn phí)
+                    from gtts import gTTS
+                    gTTS(text, lang="vi").save(path)
+                    ok = True
+                    print("[tts] dùng giọng dự phòng Google")
+                except Exception as e:
+                    print(f"[tts] giọng dự phòng cũng lỗi: {e}")
+            if not ok:
                 raise RuntimeError("không tạo được giọng nói")
             if my_epoch != self.epoch:
                 return 0  # Sếp đã bắt đầu nói lượt mới, bỏ giọng cũ

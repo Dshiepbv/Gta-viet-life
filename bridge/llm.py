@@ -55,7 +55,7 @@ def _parse(text: str) -> dict:
         delta = max(-2, min(2, int(data.get("affinity_delta", 0))))
     except (ValueError, TypeError):
         delta = 0
-    return {"reply": reply, "action": action, "affinity_delta": delta}
+    return {"reply": reply, "action": action, "affinity_delta": delta, "heard": str(data.get("heard", "")).strip()}
 
 
 def build_context(npc: dict, ctx: dict) -> str:
@@ -125,9 +125,40 @@ class Brain:
         print(f"[llm] không có bộ não nào trả lời được: {last_err}")
         return {"reply": "Xin lỗi, tôi đang vội.", "action": "none", "affinity_delta": 0}
 
-    def _gemini(self, system: str, history: list, player_text: str) -> dict:
+    AUDIO_NOTE = ("\n\nNgười chơi nói bằng giọng, bạn nhận được file âm thanh tiếng Việt. Hãy nghe, chép lại nguyên văn "
+                  "lời họ vào trường \"heard\" (để trống \"\" nếu không có tiếng người nói rõ hoặc chỉ là tiếng ồn), "
+                  "rồi trả lời như bình thường. Chỉ trả về JSON dạng: "
+                  "{\"heard\": \"...\", \"reply\": \"...\", \"action\": \"none\", \"affinity_delta\": 0}")
+
+    def chat_audio(self, npc: dict, ctx: dict, history: list, wav_bytes: bytes) -> dict:
+        """Gửi thẳng âm thanh cho Gemini: nghe và trả lời trong 1 lần gọi (nhanh hơn Whisper trên CPU)."""
+        system = SYSTEM + "\n\n" + build_context(npc, ctx) + self.AUDIO_NOTE
+        tried = [self.model] + [m for m in self.candidates if m != self.model and m not in self.dead]
+        last_err = None
+        for m in tried:
+            try:
+                self.model = m
+                return self._gemini(system, history, None, audio=wav_bytes)
+            except urllib.error.HTTPError as e:
+                last_err = e
+                print(f"[llm] gemini model {m} lỗi {e.code}")
+                if e.code in (404, 400):
+                    self.dead.add(m)
+            except (urllib.error.URLError, TimeoutError, KeyError, IndexError, ValueError) as e:
+                last_err = e
+                print(f"[llm] gemini model {m} lỗi: {e}")
+                break
+        raise RuntimeError(f"Gemini không nhận âm thanh: {last_err}")
+
+    def _gemini(self, system: str, history: list, player_text, audio: bytes = None) -> dict:
         contents = [{"role": "user" if r == "player" else "model", "parts": [{"text": t}]} for r, t in history]
-        contents.append({"role": "user", "parts": [{"text": player_text}]})
+        if audio is not None:
+            import base64
+            contents.append({"role": "user", "parts": [
+                {"inlineData": {"mimeType": "audio/wav", "data": base64.b64encode(audio).decode("ascii")}},
+                {"text": "(Lời người chơi vừa nói, ở file âm thanh trên.)"}]})
+        else:
+            contents.append({"role": "user", "parts": [{"text": player_text}]})
         gen = {"responseMimeType": "application/json", "temperature": 0.9, "maxOutputTokens": 300}
         budget = self.cfg.get("gemini_thinking_budget", 0)
         if budget is not None:

@@ -10,6 +10,8 @@
   "ollama_url": "http://127.0.0.1:11434",
   "ollama_model": "qwen2.5:3b",
 
+  "stt_mode": "gemini",
+
   "whisper_model": "large-v3-turbo",
   "whisper_compute": "int8_float16",
   "whisper_cpu_model": "small",

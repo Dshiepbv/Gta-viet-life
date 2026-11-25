@@ -24,6 +24,18 @@ def _add_cuda_dlls():
                 pass
 
 
+def wav_bytes(audio: np.ndarray) -> bytes:
+    import io
+    import wave
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(RATE)
+        w.writeframes((np.clip(audio, -1, 1) * 32767).astype(np.int16).tobytes())
+    return buf.getvalue()
+
+
 def _save_wav(audio: np.ndarray):
     """Lưu lần thu gần nhất vào bridge/last.wav để kiểm tra chất lượng micro."""
     try:

@@ -6,3 +6,4 @@ pygame>=2.5
 # Cho faster-whisper chạy trên GPU NVIDIA (CUDA 12):
 nvidia-cublas-cu12
 nvidia-cudnn-cu12==9.*
+gTTS>=2.5

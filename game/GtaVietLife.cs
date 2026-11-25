@@ -90,8 +90,7 @@ public class GtaVietLife : Script
         // Nói xong thì để NPC đi tiếp việc của mình
         if (releasePed != null && now > releaseAt)
         {
-            if (releasePed.Exists() && !followers.Contains(releasePed.Handle) && releasePed.IsAlive)
-                releasePed.Task.WanderAround();
+            Unhold(releasePed);
             releasePed = null;
         }
 
@@ -116,12 +115,7 @@ public class GtaVietLife : Script
             if (p == null) { Notify("Khong co ai o gan de noi chuyen."); return; }
             target = p;
             recording = true;
-            if (!followers.Contains(p.Handle))
-            {
-                p.Task.ClearAll();
-                p.Task.TurnTo(Game.Player.Character, -1);
-            }
-            p.Task.LookAt(Game.Player.Character, 10000);
+            Hold(p);
             Task.Run(() => { try { Post("/start", null); } catch (Exception ex) { Log("/start loi: " + ex); Notify("~r~Cau noi AI loi:~s~ " + Short(ex)); } });
         }
         else if (e.KeyCode == markKey)
@@ -154,6 +148,34 @@ public class GtaVietLife : Script
             }
             mainThread.Enqueue(() => HandleReply(p, resp));
         });
+    }
+
+    // ----------------------------------------------------------------- giữ / thả NPC
+
+    // Giữ NPC đứng yên, quay mặt về người chơi, không tự nói tiếng Anh của game, không bỏ đi
+    void Hold(Ped p)
+    {
+        Ped me = Game.Player.Character;
+        Function.Call((Hash)0x9D64D7405520E3D3, p, true);   // STOP_PED_SPEAKING: NPC không tự lẩm bẩm theo lời thoại của game
+        Function.Call(Hash.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS, p, true);
+        if (followers.Contains(p.Handle)) { p.Task.LookAt(me, 15000); return; }
+        p.Task.ClearAll();
+        TaskSequence seq = new TaskSequence();
+        seq.AddTask.TurnTo(me, 1500);
+        seq.AddTask.StandStill(120000);
+        seq.Close();
+        p.Task.PerformSequence(seq);
+        seq.Dispose();
+        p.Task.LookAt(me, 60000);
+    }
+
+    void Unhold(Ped p)
+    {
+        if (p == null || !p.Exists()) return;
+        Function.Call((Hash)0x9D64D7405520E3D3, p, false);
+        if (followers.Contains(p.Handle)) return;
+        Function.Call(Hash.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS, p, false);
+        if (p.IsAlive) p.Task.WanderAround();
     }
 
     // ----------------------------------------------------------------- xử lý
@@ -192,9 +214,8 @@ public class GtaVietLife : Script
 
         Ped me = Game.Player.Character;
         speakingPed = p;
-        speakUntil = Game.GameTime + ms;
-        nextFacial = 0;
-        p.Task.LookAt(me, ms + 1500);
+        speakUntil = Game.GameTime + ms + 5000;
+        nextFacial = Game.GameTime + 1500;
 
         switch (action)
         {
@@ -215,19 +236,21 @@ public class GtaVietLife : Script
                     p.LeaveGroup();
                     Notify(Name(lines) + " da roi nhom.");
                 }
-                ReleaseLater(p, ms + 1500);
+                ReleaseLater(p, ms + 6000);
                 break;
             case "flee":
                 speakingPed = null;
+                Function.Call(Hash.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS, p, false);
                 p.Task.FleeFrom(me);
                 break;
             case "fight":
                 speakingPed = null;
+                Function.Call(Hash.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS, p, false);
                 if (followers.Remove(p.Handle)) p.LeaveGroup();
                 p.Task.Combat(me);
                 break;
             default:
-                if (!followers.Contains(p.Handle)) ReleaseLater(p, ms + 2500);
+                if (!followers.Contains(p.Handle)) ReleaseLater(p, ms + 7000);
                 break;
         }
     }
