@@ -107,6 +107,8 @@ public class GtaVietLifeWorld : Script
     readonly List<Prop> tableCups = new List<Prop>();
     float seatZ = 0.55f;
     float staffZ = 0f;
+    float staffBack = 1.45f;
+    int staffAngle = 0;   // 0..3: nhan vien dung phia nao cua quay (F9 de xoay cho dung)
     string standModel = "prop_hotdogstand_01";
     float cupX = 0.06f, cupY = 0f, cupZ = 0f, cupTable = 0.9f;
     float bizGround;   // do cao mat dat that tai quan (do luc dat quan, truoc khi dung props)
@@ -163,6 +165,7 @@ public class GtaVietLifeWorld : Script
         sitKey = Settings.GetValue("Keys", "Sit", sitKey);
         seatZ = Settings.GetValue("Business", "SeatZ", seatZ);
         staffZ = Settings.GetValue("Business", "StaffZ", staffZ);
+        staffBack = Settings.GetValue("Business", "StaffBack", staffBack);
         standYaw = Settings.GetValue("Business", "StandYaw", standYaw);
         standModel = Settings.GetValue("Business", "StandModel", standModel);
         cupX = Settings.GetValue("Business", "CupHandX", cupX);
@@ -462,12 +465,33 @@ public class GtaVietLifeWorld : Script
         bizBlip.Name = "Quan cua Sep";
     }
 
+    // vi tri dung cua nhan vien thu k: phia sau quay (xoay theo staffAngle), lech sang hai ben
+    Vector3 StaffSlot(int k)
+    {
+        float h = (bizHeading + 180f + staffAngle * 90f) * (float)Math.PI / 180f;
+        Vector3 dir = new Vector3(-(float)Math.Sin(h), (float)Math.Cos(h), 0f);   // huong tu quay ra cho nhan vien
+        Vector3 lat = new Vector3(dir.Y, -dir.X, 0f);
+        Vector3 p0 = bizPos + dir * staffBack + lat * (k == 0 ? 0f : (k % 2 == 1 ? 1f : -1f) * 0.9f * ((k + 1) / 2));
+        return new Vector3(p0.X, p0.Y, GroundForBiz() + 1.0f + staffZ);
+    }
+
+    void ReslotStaff()
+    {
+        for (int i = 0; i < staffPeds.Count && i < staffSlots.Count; i++)
+        {
+            Ped p = staffPeds[i];
+            if (p == null || !p.Exists()) continue;
+            Vector3 sl = StaffSlot(i);
+            staffSlots[i] = sl;
+            Function.Call(Hash.SET_ENTITY_COORDS_NO_OFFSET, p, sl.X, sl.Y, sl.Z, false, false, false);
+            p.Heading = StaffFacing(sl);
+        }
+    }
+
     // nhan vien quay mat ra phia ban khach (phia truoc quay), khong quay vao quay
     float StaffFacing(Vector3 from)
     {
-        float h = bizHeading * (float)Math.PI / 180f;
-        Vector3 fwd = new Vector3(-(float)Math.Sin(h), (float)Math.Cos(h), 0f);
-        return FaceHeading(from, bizPos + fwd * 4f);
+        return FaceHeading(from, bizPos);   // nguoi ban quay mat ve phia quay (dung sau quay phuc vu)
     }
 
     static float FaceHeading(Vector3 from, Vector3 to)
@@ -603,9 +627,7 @@ public class GtaVietLifeWorld : Script
             Vector3 fwd = new Vector3(-(float)Math.Sin(h), (float)Math.Cos(h), 0f);
             int k = staffPeds.Count;
             // nhan vien dung sau quay (k=0) hoac ben canh quay, quay mat ve phia khach
-            Vector3 pos0 = bizPos - fwd * 1.25f + right * (k == 0 ? 0f : (k % 2 == 1 ? 1f : -1f) * 0.9f * ((k + 1) / 2));   // nguoi ban dung sau quay (phia tay day), tren mat dat, khong chen vao than quay
-            // bizPos.Z = do cao tam nguoi choi luc dat quan (cho phang) => dung luon cho nhan vien, khong lay Z cua quay (tam quay cao hon dat)
-            Vector3 pos = new Vector3(pos0.X, pos0.Y, GroundForBiz() + 1.0f + staffZ);
+            Vector3 pos = StaffSlot(k);
             Ped p = World.CreatePed(mdl, pos);
             mdl.MarkAsNoLongerNeeded();
             if (p == null || !p.Exists()) return;
@@ -1383,6 +1405,13 @@ public class GtaVietLifeWorld : Script
 
     void OnKeyDown(object sender, KeyEventArgs e)
     {
+        if (e.KeyCode == Keys.F9 && hasBiz)
+        {
+            staffAngle = (staffAngle + 1) % 4;
+            ReslotStaff();
+            Notify("Cho dung cua nhan vien: huong " + (staffAngle + 1) + "/4 (F9 de xoay tiep)");
+            Save();
+        }
         if (e.KeyCode == sitKey && !menuOpen)
         {
             Ped pl = Game.Player.Character;
@@ -1523,6 +1552,7 @@ public class GtaVietLifeWorld : Script
             l.Add("homeIdx=" + homeIdx);
             l.Add("rent=" + rentPerDay);
             l.Add("homeEnergy=" + homeEnergy.ToString(ci));
+            l.Add("staffAngle=" + staffAngle);
             l.Add("home=" + home.X.ToString(ci) + "," + home.Y.ToString(ci) + "," + home.Z.ToString(ci));
             l.Add("hasBiz=" + (hasBiz ? 1 : 0));
             l.Add("biz=" + bizPos.X.ToString(ci) + "," + bizPos.Y.ToString(ci) + "," + bizPos.Z.ToString(ci));
@@ -1561,6 +1591,7 @@ public class GtaVietLifeWorld : Script
                     case "homeIdx": homeIdx = int.Parse(v); if (homeIdx >= 0 && homeIdx < Homes.Length) homeName = Homes[homeIdx].Name; break;
                     case "rent": rentPerDay = int.Parse(v); break;
                     case "homeEnergy": homeEnergy = float.Parse(v, ci); break;
+                    case "staffAngle": staffAngle = int.Parse(v) % 4; break;
                     case "home": home = ParseVec(v); break;
                     case "hasBiz": hasBiz = v == "1"; break;
                     case "biz": bizPos = ParseVec(v); break;
