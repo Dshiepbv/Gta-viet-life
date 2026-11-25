@@ -78,6 +78,24 @@ Phạt khi bị truy nã rồi thoát, nợ có lãi, uy tín tăng/giảm. Tr�
   gọi cứu hộ sửa xe tại chỗ (giá theo độ hỏng), ngủ nhà nghỉ $60/đêm (tắm + ngủ 8 tiếng, không bị cướp).
   Toạ độ tiệm rửa xe và nhà nghỉ là ước lượng, cần kiểm tra trong game.
 
+### Đời sống 2 (GtaVietLifeDoiSong.cs)
+Chép `game/GtaVietLifeDoiSong.cs` và `GtaVietLifeDoiSong.ini` vào `scripts`. Phím `L` mở menu. Mỗi phần bật/tắt được trong ini mục `[Modules]`.
+Mọi chỉ số chỉ chạy khi đang chơi (tắt game thì không ốm thêm, đồ ăn không hỏng, hoá đơn không tới hạn).
+- **Căng thẳng 0-100**: tăng khi bị truy nã, máu thấp, đói khát, thức lâu, bẩn, ốm. Giảm khi ngủ, ở nhà, cuối tuần, giải trí. Trên 90% thì nhanh kiệt sức, màn hình rung. NPC thấy Sếp cộc, dễ cáu.
+- **Thời tiết**: dầm mưa hoặc đi xe máy dưới mưa thì người ướt dần, ướt lâu dễ bị cảm. Nắng gắt buổi trưa thì khát nhanh.
+- **Bệnh và chấn thương**: cảm (2 ngày, không chạy nhanh), ngộ độc khi ăn quán (3,5%, bẩn thì 8%) hoặc ăn đồ hỏng trong tủ lạnh, gãy chân khi tai nạn xe hoặc ngã mạnh (đi tập tễnh tới khi bó bột).
+  Chữa ở bệnh viện (Pillbox, Mount Zonah, Sandy, Paleto) hoặc đặt thuốc ship tận nơi. Viện phí trả qua `GVL.Pay` (nhóm `medical`).
+- **Say rượu**: uống ở bar thì dáng đi loạng choạng, màn hình nhoè, lái xe gần cảnh sát dễ bị truy nã.
+- **Thức quá lâu**: trên 20 tiếng thì mắt mờ, trên 26 tiếng có thể ngất xỉu.
+- **Nhà cửa**: hoá đơn điện nước + internet mỗi 7 ngày game, tự trừ nếu đủ tiền. Nợ quá 3 ngày thì bị cắt điện: trong nhà tắt đèn, tủ lạnh hỏng nhanh gấp 3.
+  Tủ lạnh có hạn dùng từng món. Đi chợ ở cửa hàng 24/7 hoặc đặt ship (+$5/món). Bấm E ở tủ lạnh thì tự nấu món sắp hết hạn.
+- **Giải trí**: bar, rạp phim, gym (phát `life.gym` để file Cá nhân tăng cơ bắp), biển, công viên, câu cá (có thể câu được cá bỏ tủ lạnh).
+- **Sự kiện ngẫu nhiên** (6-12 phút một lần): cướp giật (đuổi, xô ngã tên cướp được thưởng, tăng uy tín), người ngã quỵ (lại gần bấm `L` để sơ cứu), cháy, mất điện cả khu ban đêm.
+- **Bản tin radio** lúc 7h và 18h (hoặc chọn trong menu): cầu nối `POST /news` nhờ AI tổng hợp sự kiện gần đây thành bản tin có giọng đọc.
+- Sự kiện phát lên bus: `life.sick` (kind), `life.injury`, `life.hospital` (amount), `life.bill` (amount, paid), `life.powercut`, `life.eat` (src, food, spoiled),
+  `life.leisure` / `life.gym` (minutes, place), `life.event` (kind = snatch/help/fire/blackout).
+- Toạ độ bar, rạp, gym, biển, cửa hàng 24/7, bệnh viện là ước lượng, cần kiểm tra trong game.
+
 ## Mo hinh kinh doanh (GT / MT / B2C / B2B)
 
 - **Loai hinh** (chon khi mo quan): Quan nuoc via he, Tap hoa, Quan an (kenh GT, von nho); Cua hang tien loi, Sieu thi mini, Nha hang/ca phe chuoi (kenh MT, von lon, dong khach, nop VAT, can mat bang thue tu "Thue ki-ot").

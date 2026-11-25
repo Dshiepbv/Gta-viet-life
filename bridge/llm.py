@@ -394,6 +394,38 @@ class Brain:
             print(f"[banter] không đọc được JSON: {e}")
             return []
 
+    NEWS = ("Bạn là phát thanh viên đài phát thanh thành phố, đọc bản tin ngắn bằng tiếng Việt tự nhiên, "
+            "giọng thời sự nhưng gần gũi. Viết 3 đến 4 câu, mỗi câu một tin, dưới 30 từ. Câu đầu chào khán giả kèm giờ "
+            "và thứ trong tuần, sau đó điểm các sự kiện gần đây (chỉ dùng sự kiện được cung cấp, không bịa thêm vụ việc), "
+            "câu cuối là thời tiết và lời khuyên đi đường. Không nhắc tới game. "
+            "Chỉ trả về JSON: {\"lines\": [\"...\", \"...\"]}")
+
+    def news(self, ctx: dict, events: list) -> list:
+        """Ban tin radio tu cac su kien gan day. Loi thi tra ve [] (cau noi tu doc tin don tho)."""
+        user = (f"Bây giờ là {ctx.get('hour', '?')} giờ, {ctx.get('weekday', '')}, thời tiết {ctx.get('weather', '?')}. "
+                "Sự kiện gần đây: " + (" | ".join(events) if events else "không có gì đặc biệt, thành phố bình yên."))
+        msgs = [{"role": "system", "content": self.NEWS}, {"role": "user", "content": user}]
+        text = None
+        if self.cfg.get("groq_api_key"):
+            try:
+                text = self._groq_text(msgs)
+            except Exception as e:
+                print(f"[news] groq lỗi: {e}")
+        if text is None and self.cfg.get("ollama_enabled", True):
+            try:
+                text = self._ollama_text(msgs, num_predict=350)
+            except Exception as e:
+                print(f"[news] ollama lỗi: {e}")
+        if not text:
+            return []
+        try:
+            t = text.strip()
+            data = json.loads(t[t.find("{"):t.rfind("}") + 1])
+            return [str(x).strip() for x in data.get("lines", []) if str(x).strip()][:5]
+        except (ValueError, TypeError, AttributeError) as e:
+            print(f"[news] không đọc được JSON: {e}")
+            return []
+
     def _ollama(self, system: str, history: list, player_text: str) -> dict:
         msgs = [{"role": "system", "content": system}]
         msgs += [{"role": "user" if r == "player" else "assistant", "content": t} for r, t in history]

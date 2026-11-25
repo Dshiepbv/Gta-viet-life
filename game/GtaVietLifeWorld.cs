@@ -266,6 +266,7 @@ public class GtaVietLifeWorld : Script
         }
 
         UpdateCityRhythm();
+        SyncLifeBus();
         if (sleepAt > 0 && now > sleepAt) { sleepAt = 0; FinishSleep(); }
         if (sleepAt > 0) return;
         UpdateClock();
@@ -2078,7 +2079,7 @@ public class GtaVietLifeWorld : Script
                 GTA.UI.Screen.ShowSubtitle("~y~" + sitKey + "~s~: ra ngoai", 100);
         }
         if (nearFurn.Length > 0 && enterUntil <= 0 && !menuOpen)
-            GTA.UI.Screen.ShowSubtitle("~y~" + sitKey + "~s~: " + (nearFurn == "bed" ? "ngu (tua 8 gio)" : nearFurn == "fridge" ? "mo tu lanh (an uong mien phi)" : "nghi tren sofa"), 100);
+            GTA.UI.Screen.ShowSubtitle("~y~" + sitKey + "~s~: " + (nearFurn == "bed" ? "ngu (tua 8 gio)" : nearFurn == "fridge" ? (LifeFridgeOn() ? "mo tu lanh, nau an" : "mo tu lanh (an uong mien phi)") : "nghi tren sofa"), 100);
         if (enterUntil <= 0) return;
         Function.Call(Hash.REQUEST_COLLISION_AT_COORD, enterTarget.X, enterTarget.Y, enterTarget.Z);
         Function.Call(Hash.SET_FOCUS_POS_AND_VEL, enterTarget.X, enterTarget.Y, enterTarget.Z, 0f, 0f, 0f);
@@ -2243,6 +2244,10 @@ public class GtaVietLifeWorld : Script
     void UseFurniture()
     {
         if (nearFurn == "bed") { CloseMenu(); Sleep(); }
+        else if (nearFurn == "fridge" && LifeFridgeOn())
+        {
+            AppDomain.CurrentDomain.SetData("GVL.FridgeReq", true);   // file Doi song 2 lo: an mon trong tu lanh (co han dung)
+        }
         else if (nearFurn == "fridge")
         {
             hunger = Clamp(hunger + 30f); thirst = Clamp(thirst + 30f);
@@ -2358,6 +2363,7 @@ public class GtaVietLifeWorld : Script
     void FinishSleep()
     {
         Ped me = Game.Player.Character;
+        if (fadeAction == 1 || fadeAction == 2 || fadeAction == 4) sleptCount++;
         if (FinishLifeAction(me)) { fadeAction = 0; Save(); return; }
         if (fadeAction == 3)
         {
@@ -2935,6 +2941,35 @@ public class GtaVietLifeWorld : Script
         }
         catch { }
     }
+
+    // ---- cau noi voi file Doi song 2 (GtaVietLifeDoiSong.cs) qua AppDomain data, xem docs/CORE.md
+    int sleptCount;
+    readonly float[] lifeNeedsPub = new float[3];
+    void SyncLifeBus()
+    {
+        try
+        {
+            AppDomain d = AppDomain.CurrentDomain;
+            float[] add = d.GetData("GVL.NeedsAdd") as float[];   // file Ca nhan cung doc khoa nay; ai doc truoc thi cong roi xoa
+            if (add != null && add.Length >= 3)
+            {
+                d.SetData("GVL.NeedsAdd", null);
+                hunger = Clamp(hunger + add[0]); thirst = Clamp(thirst + add[1]); energy = Clamp(energy + add[2]);
+            }
+            object ha = d.GetData("GVL.HygAdd");
+            if (ha is float) { d.SetData("GVL.HygAdd", null); hygiene = Clamp(hygiene + (float)ha); }
+            object ra = d.GetData("GVL.RepAdd");
+            if (ra is int) { d.SetData("GVL.RepAdd", null); rep += (int)ra; }
+            lifeNeedsPub[0] = hunger; lifeNeedsPub[1] = thirst; lifeNeedsPub[2] = energy;
+            d.SetData("GVL.Needs", lifeNeedsPub);
+            d.SetData("GVL.Hygiene", hygiene);
+            d.SetData("GVL.Home", new int[] { hasHome ? 1 : 0, insideHome ? 1 : 0 });
+            d.SetData("GVL.Slept", sleptCount);
+        }
+        catch { }
+    }
+
+    static bool LifeFridgeOn() { try { object o = AppDomain.CurrentDomain.GetData("GVL.LifeOn"); return o is bool && (bool)o; } catch { return false; } }
 
     // ---- ve sinh ca nhan: giam dan theo gio game (chi khi dang choi), tam o nha/nha nghi. NPC thay Sep ban thi noi.
     float hygiene = 90f;

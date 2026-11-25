@@ -77,8 +77,12 @@ class Life:
             return
         with self.lock:
             self.rumors.append((time.time(), text))
-            self.rumors = self.rumors[-8:]
+            self.rumors = self.rumors[-12:]
         print(f"[tin đồn] {text}")
+
+    def recent(self, n: int = 8) -> list:
+        with self.lock:
+            return [t for _, t in self.rumors[-n:]]
 
     def context(self, npc: dict, res_activity: str = "") -> str:
         """Các dòng bổ sung đưa vào prompt NPC."""
@@ -96,6 +100,8 @@ class Life:
         else:
             lines.append(f"Việc bạn đang làm lúc này: {activity(npc['job'], hour)}.")
         lines.append(f"Với người chơi, bạn coi họ là: {relation(npc['affinity'])}.")
+        if st.get("weekday"):
+            lines.append(f"Hôm nay là {st['weekday']}.")
         p = []
         if st.get("job"):
             p.append(f"đang làm {st['job']}")
@@ -118,6 +124,12 @@ class Life:
                 needs.append(w)
         if needs:
             p.append("trông " + ", ".join(needs))
+        stress = _level(st.get("stress"), [(60, None), (80, "có vẻ căng thẳng, hơi cộc"), (999, "căng thẳng tột độ, dễ cáu gắt")])
+        if stress:
+            p.append(stress)
+        note = st.get("health_note")
+        if note and note != "-":
+            p.append(note)
         if p:
             lines.append("Điều bạn biết/nhìn thấy ở người chơi: " + "; ".join(p) + ".")
         if rumors:
