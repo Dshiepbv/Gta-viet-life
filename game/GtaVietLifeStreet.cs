@@ -22,7 +22,7 @@ public class GtaVietLifeStreet : Script
 
     bool enabled = true;
     int maxHubs = 7;                 // số cụm tối đa cùng lúc quanh người chơi
-    float spawnMin = 45f, spawnMax = 110f, despawnDist = 170f;
+    float spawnMin = 30f, spawnMax = 80f, despawnDist = 160f;
     int customerMax = 5;
     float rushHourBoost = 1.0f;
 
@@ -31,7 +31,7 @@ public class GtaVietLifeStreet : Script
         public Vector3 Pos; public float Heading; public int Kind;
         public List<Prop> Props = new List<Prop>();
         public List<Ped> Peds = new List<Ped>();
-        public List<Vehicle> Bikes = new List<Vehicle>();
+        public List<Vehicle> Bikes = new List<Vehicle>(); public Blip Mark;
     }
     readonly List<Hub> hubs = new List<Hub>();
     readonly Random rnd = new Random();
@@ -122,6 +122,7 @@ public class GtaVietLifeStreet : Script
         foreach (Ped p in h.Peds) if (p != null && p.Exists()) p.Delete();
         foreach (Prop p in h.Props) if (p != null && p.Exists()) p.Delete();
         foreach (Vehicle v in h.Bikes) if (v != null && v.Exists()) v.Delete();
+        if (h.Mark != null && h.Mark.Exists()) h.Mark.Delete();
     }
 
     Kind PickKind(int hour)
@@ -139,7 +140,7 @@ public class GtaVietLifeStreet : Script
         if (kind == null) kind = Kinds[3];
 
         Vector3 pp = me.Position;
-        double ang = rnd.NextDouble() * Math.PI * 2;
+        double ang = (me.Heading + 90.0 + (rnd.NextDouble() - 0.5) * 140.0) * Math.PI / 180.0;   // thiên về phía trước mặt
         float dist = spawnMin + (float)rnd.NextDouble() * (spawnMax - spawnMin);
         Vector3 raw = pp + new Vector3((float)Math.Cos(ang) * dist, (float)Math.Sin(ang) * dist, 0f);
         var outPos = new OutputArgument();
@@ -221,6 +222,8 @@ public class GtaVietLifeStreet : Script
             if (b != null && b.Exists()) { b.IsPersistent = false; b.IsEngineRunning = false; hub.Bikes.Add(b); }
         }
 
+        try { hub.Mark = World.CreateBlip(pos); hub.Mark.Sprite = BlipSprite.Store; hub.Mark.Scale = 0.6f; hub.Mark.Color = BlipColor.Yellow; hub.Mark.Name = "Hang quan: " + kind.Name; hub.Mark.IsShortRange = true; } catch { }
+        Log("lap cum '" + kind.Name + "' tai " + (int)pos.X + "," + (int)pos.Y + " | quay " + hub.Props.Count + " vat | " + hub.Peds.Count + " nguoi | " + hub.Bikes.Count + " xe may");
         hubs.Add(hub); nMade++;
     }
 }

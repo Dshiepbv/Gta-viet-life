@@ -14,7 +14,7 @@ public class GtaVietLifeIpl : Script
 {
     const string LogFile = "GtaVietLifeIpl.log";
     bool done;
-    int startAt;
+    int startAt, recheck, recheckAt;
 
     static readonly Dictionary<string, string[]> Groups = new Dictionary<string, string[]>
     {
@@ -37,10 +37,20 @@ public class GtaVietLifeIpl : Script
 
     void Log(string s) { try { File.AppendAllText(LogFile, DateTime.Now.ToString("HH:mm:ss") + " " + s + "\r\n"); } catch { } }
 
+    void Report(string tag)
+    {
+        foreach (KeyValuePair<string, string[]> g in Groups)
+        {
+            int on = 0; foreach (string n in g.Value) if (Function.Call<bool>(Hash.IS_IPL_ACTIVE, n)) on++;
+            Log("[" + tag + "] " + g.Key + ": " + on + "/" + g.Value.Length);
+        }
+    }
+
     void OnTick(object sender, EventArgs e)
     {
+        if (recheck > 0 && Game.GameTime > recheckAt) { recheckAt = Game.GameTime + 15000; recheck--; Report("kiem tra lai"); return; }
         if (done || Game.GameTime < startAt) return;
-        done = true;
+        done = true; recheck = 3; recheckAt = Game.GameTime + 10000;
         try
         {
             if (!Settings.GetValue("Ipl", "Enabled", true)) { Log("tat trong ini"); return; }
