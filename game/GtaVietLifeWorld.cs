@@ -2017,7 +2017,7 @@ public class GtaVietLifeWorld : Script
         {
             // Sep bam F lai gan xe: tu dua len ghe sau, tranh keo tai xe ra khoi ghe lai
             bool entering = false;
-            try { entering = me.IsGettingIntoAVehicle; } catch { }
+            try { entering = Function.Call<bool>(Hash.IS_PED_GETTING_INTO_A_VEHICLE, me); } catch { }
             if (entering && !me.IsInVehicle(r.Veh) && me.Position.DistanceTo(r.Veh.Position) < 12f && r.Kind != 1)
             {
                 me.Task.ClearAll();
@@ -2427,25 +2427,28 @@ public class GtaVietLifeWorld : Script
         DrawText(label + " " + (int)value + "%", x + 6f, y - 3f, 0.34f, Color.White);
     }
 
-    // bieu tuong PNG trong thu muc GtaVietLifeIcons canh script (neu thieu thi khong ve icon)
-    readonly Dictionary<string, GTA.UI.CustomSprite> icons = new Dictionary<string, GTA.UI.CustomSprite>();
+    // bieu tuong ve bang cac o vuong nho (12x12), khong can file anh. 0 = trong suot, con lai la mau RGB.
+    static readonly Dictionary<string, int[]> IconData = new Dictionary<string, int[]> {
+        { "food", new int[] { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xEEA140, 0xECA040, 0xEEA84E, 0xECA244, 0xECA040, 0xEEA240, 0, 0, 0, 0, 0, 0xECA140, 0xEDA649, 0xEEA84E, 0xEDA446, 0xECA141, 0xEFAD56, 0xECA040, 0xEDA040, 0, 0, 0, 0xEEA141, 0xECA040, 0xECA040, 0xEEA64A, 0xEDA64A, 0xEDA346, 0xEEA84E, 0xECA040, 0xECA040, 0xEEA240, 0, 0, 0xAFB442, 0xAAB543, 0xAAB543, 0xAAB543, 0xAAB543, 0xAAB543, 0xAAB543, 0xAAB543, 0xAAB543, 0xAEB442, 0, 0, 0x70C045, 0x6FB342, 0x6FB342, 0x6FB342, 0x6FB342, 0x6FB342, 0x6FB342, 0x6FB342, 0x6FB342, 0x70C044, 0, 0, 0x703D29, 0x6F3C29, 0x6F3C29, 0x6F3C29, 0x6F3C29, 0x6F3C29, 0x6F3C29, 0x6F3C29, 0x6F3C29, 0x703D28, 0, 0, 0xD0883B, 0xC48039, 0xC48039, 0xC48039, 0xC48039, 0xC48039, 0xC48039, 0xC48039, 0xC48039, 0xCF893A, 0, 0, 0xEDA141, 0xECA040, 0xECA040, 0xECA040, 0xECA040, 0xECA040, 0xECA040, 0xECA040, 0xECA040, 0xECA040, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 } },
+        { "drink", new int[] { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x47ABF5, 0x46ABF7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x46AAF5, 0x46AAF5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x46ABF6, 0x46AAF5, 0x46AAF5, 0x46ABF5, 0, 0, 0, 0, 0, 0, 0, 0x47ADF6, 0x46AAF5, 0x46AAF5, 0x46AAF5, 0x46AAF5, 0x47ADF9, 0, 0, 0, 0, 0, 0, 0x46ACF6, 0x4DAEF6, 0x46AAF5, 0x46AAF5, 0x46AAF5, 0x46ABF6, 0, 0, 0, 0, 0, 0, 0x45AAF5, 0xB1E0FE, 0x68BBF8, 0x46AAF5, 0x46AAF5, 0x46AAF5, 0x47ACF8, 0, 0, 0, 0, 0, 0x46A9F4, 0x9DD5FC, 0x5BB5F7, 0x46AAF5, 0x46AAF5, 0x46AAF5, 0, 0, 0, 0, 0, 0, 0x46ABF5, 0x45AAF5, 0x46AAF5, 0x46AAF5, 0x46AAF5, 0x46ABF7, 0, 0, 0, 0, 0, 0, 0, 0x48ACF7, 0x46ABF6, 0x47ACF6, 0x46ACF7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 } },
+        { "energy", new int[] { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xF6D53A, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xF8D73B, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xF9D63B, 0xF9D73B, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xF8D53C, 0xFAD63C, 0xF7D53B, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xF9D63C, 0xFAD63C, 0xFAD63C, 0xF9D53C, 0xF8D63A, 0, 0, 0, 0, 0, 0, 0xF8D83B, 0xFAD73B, 0xF9D63B, 0xFAD63C, 0xFAD73C, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xF9D53A, 0xF9D63B, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xF8D53B, 0xF9D73B, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xF9D83B, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 } },
+        { "stock", new int[] { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x966B39, 0x966A38, 0x966A38, 0x966A38, 0x966A38, 0x966A38, 0x966A38, 0x966A38, 0x966A38, 0x976A38, 0, 0, 0x986D3A, 0xA47540, 0x9D703D, 0xA47540, 0xA1733F, 0xA0723E, 0xA47540, 0x9D713D, 0xA47540, 0x986C3A, 0, 0, 0x986E3B, 0xB08048, 0x9C713E, 0xB08048, 0xA87A44, 0xA47742, 0xB08048, 0x9D713E, 0xB08048, 0x996E3B, 0, 0, 0x8C6435, 0x9C703E, 0x8F6537, 0x9C703E, 0x966C3B, 0x946A39, 0x9C703E, 0x8F6537, 0x9C703E, 0x8B6435, 0, 0, 0x986E3B, 0xB08048, 0x9C713E, 0xB08048, 0xA87A44, 0xA47742, 0xB08048, 0x9D713E, 0xB08048, 0x996E3B, 0, 0, 0x986E3B, 0xB08048, 0x9C713E, 0xB08048, 0xA87A44, 0xA47742, 0xB08048, 0x9D713E, 0xB08048, 0x996E3B, 0, 0, 0x986E3B, 0xB08048, 0x9C713E, 0xB08048, 0xA87A44, 0xA47742, 0xB08048, 0x9D713E, 0xB08048, 0x996E3B, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 } },
+        { "money", new int[] { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xCCA41B, 0xE0BA29, 0xDAB52B, 0xD9B42B, 0xE0BA2A, 0xCDA41C, 0, 0, 0, 0, 0, 0xD4AC22, 0xF6D139, 0xEFC531, 0xCCA326, 0xC9A125, 0xEFC531, 0xF6D139, 0xD5AE22, 0, 0, 0, 0xCBA31B, 0xF6D139, 0xEEC430, 0xD7B22E, 0x9E7717, 0x9E7617, 0xD6B12E, 0xEEC430, 0xF7D139, 0xCDA41B, 0, 0, 0xDFBA29, 0xEFC631, 0xFBD73C, 0xA7801B, 0xCAA529, 0xC9A329, 0xA57E1A, 0xFBD73C, 0xEFC531, 0xE0BB2B, 0, 0, 0xEAC531, 0xEFC631, 0xFAD63C, 0xECC836, 0xD2AC2C, 0xC29C26, 0xBA9423, 0xFAD63C, 0xEFC631, 0xEAC632, 0, 0, 0xEAC531, 0xEFC631, 0xFAD63C, 0xBE9824, 0xC39D26, 0xD0AA2B, 0xEDC837, 0xFAD63C, 0xEFC631, 0xEAC632, 0, 0, 0xE0BA2A, 0xEFC531, 0xFBD73C, 0xA57E1A, 0xCCA629, 0xCAA429, 0xA77F1B, 0xFAD73C, 0xEFC531, 0xE2BB2B, 0, 0, 0xCCA41C, 0xF6D139, 0xEEC430, 0xD6B02D, 0x9D7517, 0x9D7516, 0xD4AF2D, 0xEEC530, 0xF6D139, 0xCCA41D, 0, 0, 0, 0xD5AE22, 0xF6D139, 0xEFC531, 0xCCA326, 0xCAA125, 0xEFC531, 0xF6D139, 0xD7B023, 0, 0, 0, 0, 0, 0xCEA51C, 0xE2BB2B, 0xDAB52B, 0xD9B42B, 0xE2BC2B, 0xCDA51D, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 } },
+    };
+
     void DrawIcon(string name, float x, float y, float size)
     {
-        try
-        {
-            GTA.UI.CustomSprite sp;
-            if (!icons.TryGetValue(name, out sp))
+        int[] d;
+        if (!IconData.TryGetValue(name, out d)) return;
+        const int N = 12;
+        float c = size / N;
+        for (int j = 0; j < N; j++)
+            for (int i = 0; i < N; i++)
             {
-                string f = Path.Combine(Path.Combine(Path.GetDirectoryName(Filename), "GtaVietLifeIcons"), name + ".png");
-                sp = File.Exists(f) ? new GTA.UI.CustomSprite(f, new SizeF(size, size), new PointF(x, y)) : null;
-                icons[name] = sp;
+                int v = d[j * N + i];
+                if (v == 0) continue;
+                new GTA.UI.ContainerElement(new PointF(x + i * c, y + j * c), new SizeF(c + 0.6f, c + 0.6f), Color.FromArgb(255, (v >> 16) & 255, (v >> 8) & 255, v & 255)).Draw();
             }
-            if (sp == null) return;
-            sp.Size = new SizeF(size, size);
-            sp.Position = new PointF(x, y);
-            sp.Draw();
-        }
-        catch { }
     }
 
     void DrawStat(string icon, string fallback, float value, float x, float y, Color fill)
