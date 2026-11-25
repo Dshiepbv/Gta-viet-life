@@ -198,7 +198,7 @@ class Brain:
     def chat(self, npc: dict, ctx: dict, history: list, player_text: str) -> dict:
         system = SYSTEM + "\n\n" + build_context(npc, ctx)
         prov = self.cfg.get("provider", "gemini")
-        order = {"groq": ["groq", "gemini", "ollama"], "gemini": ["gemini", "groq", "ollama"]}.get(prov, ["ollama", "gemini"])
+        order = {"groq": ["groq", "ollama", "gemini"], "gemini": ["gemini", "groq", "ollama"]}.get(prov, ["ollama", "groq", "gemini"])
         last_err = None
         for name in order:
             if name == "groq" and self.cfg.get("groq_api_key"):
@@ -317,7 +317,21 @@ class Brain:
         msgs += [{"role": "user" if r == "player" else "assistant", "content": t} for r, t in history]
         msgs.append({"role": "user", "content": player_text})
         body = {"model": self.cfg.get("ollama_model", "qwen2.5:3b"), "messages": msgs,
-                "stream": False, "format": "json", "options": {"temperature": 0.9, "num_predict": 200}}
+                "stream": False, "format": "json", "keep_alive": "60m",
+                "options": {"temperature": 0.9, "num_predict": 150, "num_ctx": 2048,
+                            "num_gpu": int(self.cfg.get("ollama_gpu_layers", 0))}}   # 0 = chạy CPU, nhường card đồ hoạ cho game
         url = self.cfg.get("ollama_url", "http://127.0.0.1:11434") + "/api/chat"
-        data = _post_json(url, body, timeout=30.0)
+        data = _post_json(url, body, timeout=45.0)
         return _parse(data["message"]["content"])
+
+    def warmup_ollama(self):
+        """Nạp sẵn model Ollama vào RAM để lần dự phòng đầu tiên không bị chờ lâu."""
+        if not self.cfg.get("ollama_enabled", True):
+            return
+        try:
+            body = {"model": self.cfg.get("ollama_model", "qwen2.5:7b"), "prompt": "", "keep_alive": "60m",
+                    "options": {"num_gpu": int(self.cfg.get("ollama_gpu_layers", 0))}}
+            _post_json(self.cfg.get("ollama_url", "http://127.0.0.1:11434") + "/api/generate", body, timeout=120.0)
+            print("[llm] Ollama đã nạp sẵn model trên máy (dự phòng không giới hạn).")
+        except Exception:
+            print("[llm] Chưa thấy Ollama chạy trên máy (chưa cài thì bỏ qua, vẫn dùng Groq).")

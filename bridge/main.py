@@ -77,6 +77,7 @@ class Bridge:
         else:
             print("[init] Nghe bằng Gemini (không cần nạp Whisper). Whisper chỉ nạp khi Gemini lỗi.")
         self.brain = Brain(cfg)
+        threading.Thread(target=self.brain.warmup_ollama, daemon=True).start()
         self.voice = Voice(cfg)
         self.memory = Memory(os.path.join(HERE, cfg.get("memory_db", "memory.db")))
         from life import Life
