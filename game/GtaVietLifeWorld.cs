@@ -694,6 +694,7 @@ public class GtaVietLifeWorld : Script
         {
             for (int k = -3; k <= 5; k++)   // hang rao hai ben tu sau quay den sat cong
             {
+                if (k == 2 || k == 3) continue;   // loi vao ben hong, rong ~5 m
                 Vector3 hl = bizPos - right * 9.0f + fwd * (k * 2.0f);
                 Vector3 hr = bizPos + right * 9.0f + fwd * (k * 2.0f);
                 AddProp("prop_bush_neat_01", hl, bizHeading);
@@ -722,7 +723,7 @@ public class GtaVietLifeWorld : Script
         // cap 4: dai phun nuoc, hang rao phia sau, ly champagne + chai ruou tren ban
         if (bizLevel >= 4)
         {
-            for (int k = -4; k <= 4; k++) AddProp("prop_bush_neat_01", bizPos - fwd * 7.4f + right * (k * 2.0f), bizHeading + 90f);
+            for (int k = -4; k <= 4; k++) { if (k >= -1 && k <= 1) continue; AddProp("prop_bush_neat_01", bizPos - fwd * 7.4f + right * (k * 2.0f), bizHeading + 90f); }   // chua loi vao phia sau o giua
             Vector3 fp = bizPos - fwd * 5.0f;
             Prop fnt = AddProp("prop_fountain2", fp, bizHeading);
             if (fnt != null) StartFountainWater(new Vector3(fp.X, fp.Y, fnt.Position.Z));
