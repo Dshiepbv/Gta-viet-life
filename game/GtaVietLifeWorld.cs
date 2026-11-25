@@ -60,6 +60,9 @@ public class GtaVietLifeWorld : Script
     Blip bizBlip;
     int bizStock, bizStaff, bizCash;
     readonly List<Ped> staffPeds = new List<Ped>();
+    int bizLevel = 1;
+    float bizHeading;
+    readonly List<Prop> bizProps = new List<Prop>();
 
     // ------------------------------------------------------------ nội bộ
     readonly Random rnd = new Random();
@@ -101,7 +104,7 @@ public class GtaVietLifeWorld : Script
         KeyDown += OnKeyDown;
         Aborted += OnAborted;
         Notify("~g~GTA Viet Life: Doi song~s~ da bat. Bam ~y~M~s~ de mo menu.");
-        if (hasBiz) CreateBizBlip();
+        if (hasBiz) { CreateBizBlip(); BuildBizProps(); }
         for (int i = 0; i < bizStaff; i++) SpawnStaff();
     }
 
@@ -123,6 +126,8 @@ public class GtaVietLifeWorld : Script
         if (now > nextStatePost) { nextStatePost = now + 15000; PostState(); }
         if (now > nextSave) { nextSave = now + 30000; Save(); }
 
+        if (hasBiz && me.Position.DistanceTo(bizPos) < 60f)
+            World.DrawMarker(MarkerType.VerticalCylinder, bizPos + new Vector3(0f, 0f, 0.1f), Vector3.Zero, Vector3.Zero, new Vector3(1.2f, 1.2f, 0.8f), Color.FromArgb(120, 60, 220, 90));
         DrawHud();
         if (menuOpen) DrawMenu();
     }
@@ -131,6 +136,7 @@ public class GtaVietLifeWorld : Script
     {
         Save();
         foreach (Ped p in staffPeds) if (p != null && p.Exists()) p.Delete();
+        ClearBizProps();
         if (bizBlip != null && bizBlip.Exists()) bizBlip.Delete();
         if (destBlip != null && destBlip.Exists()) destBlip.Delete();
         foreach (Resident r in residents) if (r.P != null && r.P.Exists()) r.P.IsPersistent = false;
@@ -201,7 +207,7 @@ public class GtaVietLifeWorld : Script
         }
         if (hasBiz)
         {
-            int customers = 15 + bizStaff * 12 + rnd.Next(0, 11) + Math.Max(0, rep / 5);
+            int customers = 15 + (bizLevel - 1) * 8 + bizStaff * 12 + rnd.Next(0, 11) + Math.Max(0, rep / 5);
             int sold = Math.Min(bizStock, customers);
             bizStock -= sold;
             int revenue = sold * SalePrice;
@@ -295,11 +301,14 @@ public class GtaVietLifeWorld : Script
         if (Game.Player.Money < BizPrice) { Notify("Khong du $" + BizPrice + " de mo quan."); return; }
         Game.Player.Money = Game.Player.Money - BizPrice;
         hasBiz = true;
-        bizPos = Game.Player.Character.Position;
+        bizPos = Game.Player.Character.Position + Game.Player.Character.ForwardVector * 3f;
+        bizHeading = Game.Player.Character.Heading + 180f;
+        bizLevel = 1;
         bizStock = 30;
         bizStaff = 0;
         bizCash = 0;
         CreateBizBlip();
+        BuildBizProps();
         Notify("~g~Da mo quan!~s~ Tang 30 phan hang. Dung gan quan bam M de quan ly.");
         PostEvent("Có gã vừa mở một quán nhỏ ở " + SafeStreet(bizPos) + ".");
     }
@@ -310,6 +319,48 @@ public class GtaVietLifeWorld : Script
         bizBlip = World.CreateBlip(bizPos);
         bizBlip.Color = BlipColor.Green;
         bizBlip.Name = "Quan cua Sep";
+    }
+
+    void ClearBizProps()
+    {
+        foreach (Prop p in bizProps) if (p != null && p.Exists()) p.Delete();
+        bizProps.Clear();
+    }
+
+    void AddProp(string model, Vector3 pos, float heading)
+    {
+        try
+        {
+            Model m = new Model(model);
+            if (!m.IsValid || !m.Request(1500)) { Log("khong nap duoc prop " + model); return; }
+            Prop p = World.CreateProp(m, pos, new Vector3(0f, 0f, heading), false, true);
+            m.MarkAsNoLongerNeeded();
+            if (p == null || !p.Exists()) return;
+            p.IsPersistent = true;
+            Function.Call(Hash.FREEZE_ENTITY_POSITION, p, true);
+            bizProps.Add(p);
+        }
+        catch (Exception ex) { Log("AddProp loi: " + ex.Message); }
+    }
+
+    // Quan: lv1 = quay + thung hang + ban nho; moi cap nang cap them bo ban ghe + o che
+    void BuildBizProps()
+    {
+        ClearBizProps();
+        float h = bizHeading * (float)Math.PI / 180f;
+        Vector3 right = new Vector3((float)Math.Cos(h), (float)Math.Sin(h), 0f);
+        Vector3 fwd = new Vector3(-(float)Math.Sin(h), (float)Math.Cos(h), 0f);
+        AddProp("prop_hotdogstand_01", bizPos, bizHeading);
+        AddProp("prop_box_wood02a", bizPos - right * 2f - fwd * 1.2f, bizHeading);
+        AddProp("prop_box_wood02a", bizPos - right * 2f - fwd * 2.2f, bizHeading + 20f);
+        for (int l = 1; l <= bizLevel; l++)
+        {
+            Vector3 c = bizPos + fwd * (3f + l * 2.5f) + right * ((l % 2 == 0) ? -2.5f : 2.5f);
+            AddProp("prop_table_03", c, bizHeading);
+            AddProp("prop_chair_01a", c + right * 1.1f, bizHeading + 90f);
+            AddProp("prop_chair_01a", c - right * 1.1f, bizHeading - 90f);
+            AddProp("prop_parasol_01", c, bizHeading);
+        }
     }
 
     bool NearBiz()
@@ -535,6 +586,12 @@ public class GtaVietLifeWorld : Script
                 if (Spend(StockPrice)) { bizStock += StockPack; }
                 ShowBiz();
             });
+            Item("Nang cap quan (them ban ghe)  (-$" + (2500 * bizLevel) + ")  cap " + bizLevel + "/4", delegate
+            {
+                if (bizLevel >= 4) Notify("Quan da toi da.");
+                else if (Spend(2500 * bizLevel)) { bizLevel++; BuildBizProps(); Notify("~g~Da nang cap quan len cap " + bizLevel + "~s~."); }
+                ShowBiz();
+            });
             Item("Thue nhan vien  (luong $" + WagePerDay + "/ngay)  hien: " + bizStaff + "/" + MaxStaff, delegate
             {
                 if (bizStaff < MaxStaff) { bizStaff++; SpawnStaff(); } else Notify("Da du nhan vien.");
@@ -702,6 +759,8 @@ public class GtaVietLifeWorld : Script
             l.Add("stock=" + bizStock);
             l.Add("staff=" + bizStaff);
             l.Add("cash=" + bizCash);
+            l.Add("level=" + bizLevel);
+            l.Add("heading=" + bizHeading.ToString(ci));
             File.WriteAllLines(SaveFile, l.ToArray());
         }
         catch (Exception ex) { Log("save loi: " + ex.Message); }
@@ -734,6 +793,8 @@ public class GtaVietLifeWorld : Script
                     case "stock": bizStock = int.Parse(v); break;
                     case "staff": bizStaff = int.Parse(v); break;
                     case "cash": bizCash = int.Parse(v); break;
+                    case "level": bizLevel = int.Parse(v); break;
+                    case "heading": bizHeading = float.Parse(v, ci); break;
                 }
             }
         }
