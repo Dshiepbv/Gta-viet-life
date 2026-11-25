@@ -39,6 +39,8 @@ public class GtaVietLifeWorld : Script
 
     string server = "http://127.0.0.1:5577";
     Keys menuKey = Keys.M;
+    Keys sitKey = Keys.E;
+    int sitIdx = -1;
 
     // ------------------------------------------------------------ trạng thái đời sống
     float hunger = 80, thirst = 80, energy = 90;
@@ -158,6 +160,7 @@ public class GtaVietLifeWorld : Script
         int port = Settings.GetValue("Bridge", "Port", 5577);
         server = "http://127.0.0.1:" + port;
         menuKey = Settings.GetValue("Keys", "Menu", menuKey);
+        sitKey = Settings.GetValue("Keys", "Sit", sitKey);
         seatZ = Settings.GetValue("Business", "SeatZ", seatZ);
         staffZ = Settings.GetValue("Business", "StaffZ", staffZ);
         standYaw = Settings.GetValue("Business", "StandYaw", standYaw);
@@ -193,6 +196,7 @@ public class GtaVietLifeWorld : Script
         UpdateResidents(now);
         UpdateStaff(now);
         UpdateCustomers(now, me);
+        UpdatePlayerSeat(me);
         UpdateTraffic(me, now);
 
         if (now > nextStatePost) { nextStatePost = now + 15000; PostState(); }
@@ -476,6 +480,7 @@ public class GtaVietLifeWorld : Script
     {
         foreach (Prop p in bizProps) if (p != null && p.Exists()) p.Delete();
         bizProps.Clear();
+        sitIdx = -1;
         chairProps.Clear();
         chairBusy.Clear();
         chairFace.Clear();
@@ -1328,8 +1333,62 @@ public class GtaVietLifeWorld : Script
         Notify("Da tra no $" + pay + (debt > 0 ? ", con $" + debt : ", het no!"));
     }
 
+    // ---- Sep tu ngoi vao ghe cua quan
+    int NearestFreeChair(Ped me)
+    {
+        int best = -1; float bd = 1.7f;
+        for (int i = 0; i < chairProps.Count; i++)
+        {
+            Prop ch = chairProps[i];
+            if (ch == null || !ch.Exists() || chairBusy[i] || ChairTaken(i)) continue;
+            float d = me.Position.DistanceTo2D(ch.Position);
+            if (d < bd) { bd = d; best = i; }
+        }
+        return best;
+    }
+
+    void UpdatePlayerSeat(Ped me)
+    {
+        if (menuOpen) return;
+        if (sitIdx >= 0)
+        {
+            bool ok = sitIdx < chairProps.Count && chairProps[sitIdx] != null && chairProps[sitIdx].Exists();
+            float mx = Function.Call<float>(Hash.GET_CONTROL_NORMAL, 0, 30);
+            float my = Function.Call<float>(Hash.GET_CONTROL_NORMAL, 0, 31);
+            if (!ok || me.IsInVehicle() || Math.Abs(mx) > 0.6f || Math.Abs(my) > 0.6f) StandUp(me);
+            else GTA.UI.Screen.ShowSubtitle("~y~" + sitKey + "~s~: dung day", 100);
+            return;
+        }
+        if (hasBiz && !me.IsInVehicle() && NearestFreeChair(me) >= 0)
+            GTA.UI.Screen.ShowSubtitle("~y~" + sitKey + "~s~: ngoi vao ghe", 100);
+    }
+
+    void SitDown(Ped me)
+    {
+        int i = NearestFreeChair(me);
+        if (i < 0) return;
+        Prop ch = chairProps[i];
+        sitIdx = i;
+        chairBusy[i] = true;
+        me.Task.ClearAllImmediately();
+        Function.Call(Hash.TASK_START_SCENARIO_AT_POSITION, me, "PROP_HUMAN_SEAT_CHAIR", ch.Position.X, ch.Position.Y, ch.Position.Z + seatZ, i < chairFace.Count ? chairFace[i] : ch.Heading, -1, true, true);
+    }
+
+    void StandUp(Ped me)
+    {
+        if (sitIdx >= 0 && sitIdx < chairBusy.Count) chairBusy[sitIdx] = false;
+        sitIdx = -1;
+        me.Task.ClearAll();
+    }
+
     void OnKeyDown(object sender, KeyEventArgs e)
     {
+        if (e.KeyCode == sitKey && !menuOpen)
+        {
+            Ped pl = Game.Player.Character;
+            if (sitIdx >= 0) StandUp(pl);
+            else if (hasBiz && !pl.IsInVehicle()) SitDown(pl);
+        }
         if (e.KeyCode == menuKey)
         {
             if (!menuOpen) OpenMenu();
