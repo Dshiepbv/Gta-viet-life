@@ -19,6 +19,32 @@ from urllib.parse import parse_qs
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
+class _Tee:
+    """Vừa in ra cửa sổ, vừa ghi vào bridge/bridge.log để dễ kiểm tra lỗi."""
+
+    def __init__(self, stream, path):
+        self.stream, self.f = stream, open(path, "a", encoding="utf-8", buffering=1)
+
+    def write(self, data):
+        try:
+            self.stream.write(data)
+        except Exception:
+            pass
+        self.f.write(data)
+
+    def flush(self):
+        try:
+            self.stream.flush()
+        except Exception:
+            pass
+        self.f.flush()
+
+
+import sys
+sys.stdout = _Tee(sys.stdout, os.path.join(HERE, "bridge.log"))
+sys.stderr = sys.stdout
+
+
 def load_config() -> dict:
     path = os.path.join(HERE, "config.json")
     if not os.path.exists(path):

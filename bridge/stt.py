@@ -24,6 +24,20 @@ def _add_cuda_dlls():
                 pass
 
 
+def _save_wav(audio: np.ndarray):
+    """Lưu lần thu gần nhất vào bridge/last.wav để kiểm tra chất lượng micro."""
+    try:
+        import wave
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "last.wav")
+        with wave.open(path, "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(RATE)
+            w.writeframes((np.clip(audio, -1, 1) * 32767).astype(np.int16).tobytes())
+    except Exception as e:
+        print(f"[mic] không lưu được last.wav: {e}")
+
+
 class Recorder:
     def __init__(self, device=None):
         self.device = device
@@ -66,7 +80,8 @@ class STT:
         except Exception as e:  # thiếu CUDA/cuDNN → chạy CPU
             print(f"[stt] Không chạy được GPU ({e}). Chuyển sang CPU, sẽ chậm hơn.")
             self.model = WhisperModel(cfg.get("whisper_cpu_model", "small"), device="cpu", compute_type="int8")
-        self.prompt = cfg.get("whisper_prompt", "Xin chào anh, cho em hỏi đường với. Dạ vâng, cảm ơn chị.")
+        # Không đặt prompt mặc định: khi tiếng thu kém, Whisper hay chép lại đúng prompt thành "câu nói"
+        self.prompt = cfg.get("whisper_prompt") or None
 
     def transcribe(self, audio: np.ndarray) -> str:
         dur = audio.size / RATE
@@ -78,8 +93,12 @@ class STT:
         if peak < 0.002:
             print("[mic] gần như im lặng: sai micro hoặc micro bị tắt. Chạy list_mics.bat để chọn micro đúng")
             return ""
+        _save_wav(audio)
         audio = audio / peak * 0.9
-        segments, _ = self.model.transcribe(audio, language="vi", beam_size=1, vad_filter=False,
+        segments, _ = self.model.transcribe(audio, language="vi", beam_size=5, temperature=0.0,
+                                            vad_filter=True,
+                                            vad_parameters=dict(threshold=0.3, min_silence_duration_ms=400),
+                                            no_speech_threshold=0.5, log_prob_threshold=-1.0,
                                             initial_prompt=self.prompt, condition_on_previous_text=False)
         text = " ".join(s.text.strip() for s in segments).strip()
         if not text:
