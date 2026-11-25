@@ -91,7 +91,7 @@ public class GtaVietLifePersonal : Script
     int wearing = -1;
 
     // ------------------------------------------------------------ garage xe riêng
-    class CarRec { public int Hash; public int Prim, Sec; public string Plate = ""; public string Label = ""; public bool Impounded; }
+    class CarRec { public int Hash; public int Prim, Sec; public string Plate = ""; public string Label = ""; public bool Impounded, InEconPound; }
     readonly List<CarRec> garage = new List<CarRec>();
     Vehicle calledCar;
     int calledIdx = -1;
@@ -327,8 +327,7 @@ public class GtaVietLifePersonal : Script
         if (room <= 0) { Notify("Tui da day (" + BagCap + " mon)." + (hasBackpack ? "" : " Mua ba lo de dung " + BagBig + " mon.")); return; }
         qty = Math.Min(qty, room);
         int cost = PriceOf(d) * qty + ShipFee;
-        if (Game.Player.Money < cost) { Notify("Khong du tien ($" + cost + ")."); return; }
-        Game.Player.Money = Game.Player.Money - cost;
+        if (!Pay(cost, "shop", d.Name)) { Notify("Khong du tien ($" + cost + ")."); return; }
         bag[d.Id] = Have(d.Id) + qty;
         Notify("Da mua " + qty + " " + d.Name + " (-$" + cost + ", gom ship $" + ShipFee + "). Tui: " + BagCount() + "/" + BagCap);
         Save();
@@ -507,11 +506,11 @@ public class GtaVietLifePersonal : Script
         Ped me = Game.Player.Character;
         if (me.IsInVehicle()) { Notify("Sep dang o tren xe roi."); return; }
         CarRec r = garage[idx];
-        if (r.Impounded) { Notify("Xe dang bi giu o bai. Lay ra o menu Giay to (-$200)."); return; }
+        if (r.Impounded) { Notify(r.InEconPound ? "Xe dang o bai giu xe Davis. Lay o menu Kinh te (phim L)." : "Xe dang bi giu o bai. Lay ra o menu Giay to (-$200)."); return; }
         if (jailUntil > 0) { Notify("Dang o tu."); return; }
         if (calledCar != null && calledCar.Exists() && calledIdx == idx && calledCar.IsAlive && calledCar.Position.DistanceTo(me.Position) < 150f)
         { Notify("Xe dang o gan day (cham xanh)."); return; }
-        if (Game.Player.Money < CallCarFee) { Notify("Khong du $" + CallCarFee + " phi giao xe."); return; }
+        if (Game.Player.Money < CallCarFee && !(Bus("GVL.Bank") is int && (int)Bus("GVL.Bank") + Game.Player.Money >= CallCarFee)) { Notify("Khong du $" + CallCarFee + " phi giao xe."); return; }
         Model m = new Model(r.Hash);
         if (!m.IsInCdImage || !m.IsVehicle) { Notify("Model xe khong con trong game."); return; }
         if (!m.Request(3000)) { Notify("Chua nap duoc xe, thu lai."); return; }
@@ -522,7 +521,7 @@ public class GtaVietLifePersonal : Script
         Vehicle v = World.CreateVehicle(m, pos, me.Heading);
         m.MarkAsNoLongerNeeded();
         if (v == null || !v.Exists()) { Notify("Khong tao duoc xe o day, ra cho rong hon."); return; }
-        Game.Player.Money = Game.Player.Money - CallCarFee;
+        if (!Pay(CallCarFee, "car", "giao xe rieng")) { v.Delete(); Notify("Khong du $" + CallCarFee + " phi giao xe."); return; }
         try
         {
             v.Mods.PrimaryColor = (VehicleColor)r.Prim; v.Mods.SecondaryColor = (VehicleColor)r.Sec;
@@ -605,6 +604,22 @@ public class GtaVietLifePersonal : Script
 
     static string Clean(string s) { return (s ?? "").Replace(";", ",").Replace("\t", " ").Replace("=", "-").Replace("\n", " "); }
 
+    // ghi no chung (Kinh te giu so no); tra false neu khong co Kinh te
+    static bool AddDebt(int amount, string cat, string note)
+    {
+        Action<int, string, string> f = Bus("GVL.AddDebt") as Action<int, string, string>;
+        if (f == null) return false;
+        try { f(amount, cat, note); return true; } catch { return false; }
+    }
+
+    // giao xe cho bai giu xe cua Kinh te (Davis); tra false neu khong co Kinh te
+    static bool SendToImpound(CarRec c)
+    {
+        Action<int, int, int, string> f = Bus("GVL.ImpoundCar") as Action<int, int, int, string>;
+        if (f == null) return false;
+        try { f(c.Hash, c.Prim, c.Sec, c.Plate); return true; } catch { return false; }
+    }
+
     static bool Pay(int amount, string cat, string note)
     {
         if (amount <= 0) return true;
@@ -625,6 +640,7 @@ public class GtaVietLifePersonal : Script
         {
             string type = ev[1], data = ev[2];
             if (type == "core.day") OnNewDay();
+            else if (type == "econ.release") { foreach (CarRec c in garage) if (c.InEconPound) { c.Impounded = false; c.InEconPound = false; } Save(); }
             else if (type == "life.gym") { float min; float.TryParse(Field(data, "minutes"), NumberStyles.Float, CultureInfo.InvariantCulture, out min); TrainMuscle(Math.Max(10f, min) / 30f); }
         }
     }
@@ -847,13 +863,16 @@ public class GtaVietLifePersonal : Script
         if (miss.Count == 0) { Notify("~b~CSGT kiem tra giay to~s~: day du. Chuc Sep thuong lo binh an."); Emit("legal.stop", "result=ok"); return; }
         bool paid = Pay(fine, "fine", "thieu " + string.Join(", ", miss.ToArray()));
         string res = "fine";
-        string msg = "~r~CSGT kiem tra:~s~ thieu " + string.Join(", ", miss.ToArray()) + ". Phat $" + fine + (paid ? "." : " ~r~(khong du tien, ghi vao ho so)~s~.");
-        if (!paid) record++;
+        bool debted = !paid && AddDebt(fine, "fine", "phat thieu giay to");
+        string msg = "~r~CSGT kiem tra:~s~ thieu " + string.Join(", ", miss.ToArray()) + ". Phat $" + fine + (paid ? "." : debted ? " ~r~(khong du tien, ghi vao so no)~s~." : " ~r~(khong du tien, ghi vao ho so)~s~.");
+        if (!paid && !debted) record++;
         if (need != null && !Has(need))
         {
             res = "impound";
-            msg += " ~r~Tam giu xe~s~ 1 ngay.";
-            foreach (CarRec c in garage) if (c.Hash == v.Model.Hash && c.Plate == SafePlate(v)) c.Impounded = true;
+            bool viaEcon = false;
+            foreach (CarRec c in garage)
+                if (c.Hash == v.Model.Hash && c.Plate == SafePlate(v)) { c.Impounded = true; if (SendToImpound(c)) { c.InEconPound = true; viaEcon = true; } }
+            msg += viaEcon ? " ~r~Xe bi giu o bai Davis~s~ (lay o menu Kinh te, phim L)." : " ~r~Tam giu xe~s~ 1 ngay.";
             me.Task.LeaveVehicle(v, false);
             Vehicle vv = v;
             pendingDelete = vv; pendingDeleteAt = Game.GameTime + 4000;
@@ -915,6 +934,11 @@ public class GtaVietLifePersonal : Script
             Notify("~o~Toa an xu~s~: Sep boi thuong cho " + suitVictim + " $" + amt + " (gom an phi).");
             Emit("legal.court", "amount=" + amt + ";paid=1");
         }
+        else if (AddDebt(amt, "court", "an phi + boi thuong dan su"))
+        {
+            Notify("~r~Toa an xu~s~: khong du $" + amt + " thi hanh an, ghi vao so no.");
+            Emit("legal.court", "amount=" + amt + ";paid=0");
+        }
         else
         {
             record++;
@@ -950,6 +974,7 @@ public class GtaVietLifePersonal : Script
         foreach (CarRec c in garage)
         {
             if (!c.Impounded) continue;
+            if (c.InEconPound) { Info("Xe " + c.Label + " dang o bai Davis: lay o menu Kinh te (phim L)."); continue; }
             CarRec cc = c;
             Item("Lay xe o bai giu: " + c.Label + "  (-$200)", delegate { if (Pay(200, "impound", c.Label)) { cc.Impounded = false; Notify("Da lay xe ra. Goi xe tu Garage."); Save(); } else Notify("Khong du $200."); ShowLegal(); });
         }
@@ -1567,8 +1592,8 @@ public class GtaVietLifePersonal : Script
         Item("Mua do (ship tan noi, +$" + ShipFee + "/don)...", delegate { ShowShop(); });
         if (!hasBackpack) Item("Mua ba lo  (-$" + BackpackPrice + ", tui len " + BagBig + " mon)", delegate
         {
-            if (Game.Player.Money < BackpackPrice) Notify("Khong du tien ($" + BackpackPrice + ").");
-            else { Game.Player.Money = Game.Player.Money - BackpackPrice; hasBackpack = true; Notify("Da co ba lo: tui chua " + BagBig + " mon."); Save(); }
+            if (!Pay(BackpackPrice, "shop", "ba lo")) Notify("Khong du tien ($" + BackpackPrice + ").");
+            else { hasBackpack = true; Notify("Da co ba lo: tui chua " + BagBig + " mon."); Save(); }
             ShowBag();
         });
         Item("Quay lai", delegate { ShowMain(); });
@@ -1797,7 +1822,7 @@ public class GtaVietLifePersonal : Script
             l.Add("backpack=" + (hasBackpack ? 1 : 0));
             for (int i = 0; i < outfit.Length; i++) if (!string.IsNullOrEmpty(outfit[i])) l.Add("outfit" + i + "=" + outfit[i]);
             l.Add("wearing=" + wearing);
-            foreach (CarRec c in garage) l.Add("car=" + c.Hash + "," + c.Prim + "," + c.Sec + "," + c.Plate.Replace(",", "") + "," + c.Label.Replace(",", "") + "," + (c.Impounded ? 1 : 0));
+            foreach (CarRec c in garage) l.Add("car=" + c.Hash + "," + c.Prim + "," + c.Sec + "," + c.Plate.Replace(",", "") + "," + c.Label.Replace(",", "") + "," + (c.Impounded ? (c.InEconPound ? 2 : 1) : 0));
             l.Add("day=" + dayNo);
             l.Add("age=" + age);
             l.Add("kg=" + kg.ToString(ci));
@@ -1843,7 +1868,7 @@ public class GtaVietLifePersonal : Script
                     else if (k == "backpack") hasBackpack = v == "1";
                     else if (k.StartsWith("outfit") && k.Length == 7) { int s = k[6] - '0'; if (s >= 0 && s < outfit.Length) outfit[s] = v; }
                     else if (k == "wearing") wearing = int.Parse(v);
-                    else if (k == "car") { string[] q = v.Split(','); CarRec c = new CarRec(); c.Hash = int.Parse(q[0]); c.Prim = int.Parse(q[1]); c.Sec = int.Parse(q[2]); c.Plate = q.Length > 3 ? q[3] : ""; c.Label = q.Length > 4 ? q[4] : "Xe"; c.Impounded = q.Length > 5 && q[5] == "1"; garage.Add(c); }
+                    else if (k == "car") { string[] q = v.Split(','); CarRec c = new CarRec(); c.Hash = int.Parse(q[0]); c.Prim = int.Parse(q[1]); c.Sec = int.Parse(q[2]); c.Plate = q.Length > 3 ? q[3] : ""; c.Label = q.Length > 4 ? q[4] : "Xe"; c.Impounded = q.Length > 5 && (q[5] == "1" || q[5] == "2"); c.InEconPound = q.Length > 5 && q[5] == "2"; garage.Add(c); }
                     else if (k == "day") dayNo = int.Parse(v);
                     else if (k == "age") age = int.Parse(v);
                     else if (k == "kg") kg = float.Parse(v, ci);
