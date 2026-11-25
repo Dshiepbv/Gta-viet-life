@@ -75,7 +75,7 @@ Phạt khi bị truy nã rồi thoát, nợ có lãi, uy tín tăng/giảm. Tr�
 
 ## Chay 24/24 (offline)
 
-Moi 2 phut mod ghi dau thoi gian vao file luu. Khi mo game lai, mod tinh thoi gian da tat (1 ngay game = 48 phut thuc, toi da 14 ngay): quan co nhan vien van ban hang (cham hon luc choi: 40% so khach), van tra luong, thue, tien thue mat bang, giao hang B2B va thu cong no. Ket qua hien thanh mot thong bao tong ket, chi tiet nam trong GtaVietLifeWorld.log (dong "[offline]"). Neu thieu tien tra thue mat bang 3 ngay se mat mat bang nhu luc dang choi.
+Moi 2 phut mod ghi dau thoi gian vao file luu. Khi mo game lai, mod tinh thoi gian da tat (1 ngay game = 48 phut thuc, toi da 14 ngay): quan co nhan vien van ban hang (cham hon luc choi: 60% so khach), van tra luong, thue, tien thue mat bang, giao hang B2B va thu cong no. Ket qua hien thanh mot thong bao tong ket, chi tiet nam trong GtaVietLifeWorld.log (dong "[offline]"). Neu thieu tien tra thue mat bang 3 ngay se mat mat bang nhu luc dang choi.
 
 ## Toa nha that
 
@@ -85,7 +85,7 @@ Muc "Tim mat bang" co them cac cua hang that cua game goc (24/7, LTD, Los Santos
 
 1. Tren PC chay `start_dashboard.bat` (khong can mo game, khong can bridge AI). Lan dau Windows hoi tuong lua thi chon Allow (mang rieng).
 2. Dien thoai cung Wi-Fi mo dia chi in ra (dang `http://192.168.x.x:5588`). Bam vao trang de bat che do man hinh luon sang/toan man hinh; dung "Them vao man hinh chinh" cua Chrome de co icon.
-3. Trang hien tien, no, uy tin, loi nhuan 14 ngay, tung quan. Khi game tat, so lieu duoc UOC TINH (7 ngay gan nhat x 40%); so that chot khi mo game.
+3. Trang hien tien, no, uy tin, loi nhuan 14 ngay, tung quan. Khi game tat, so lieu duoc UOC TINH (7 ngay gan nhat x 60%); so that chot khi mo game.
 4. Giao dich tren dien thoai: nhap hang 1/5/10 lo, thue/sa thai, nang cap, rut quy. Lenh xep hang doi trong `GtaVietLifeCmd.txt`; game ap dung ngay khi mo (truoc luc bu offline) hoac trong 10 giay neu dang choi. Thieu tien thi lenh that bai va hien thong bao tren trang.
 5. Muon dat ma PIN: them `"dash_pin": "1234"` vao `bridge/config.json`. Truy cap tu ngoai nha (4G) can Tailscale hoac tuong tu — chua lam.
 

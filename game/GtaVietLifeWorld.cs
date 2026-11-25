@@ -654,7 +654,7 @@ public class GtaVietLifeWorld : Script
     }
 
     // ====== chay 24/24: khi bat game lai, tinh phan quan da hoat dong luc tat may (ban cham hon luc choi) ======
-    const float OfflineFactor = 0.4f;        // luc tat may chi ban bang 40% so khach moi ngay luc dang choi
+    const float OfflineFactor = 0.6f;        // luc tat may ban bang 60% so khach moi ngay luc dang choi (Sep chon; neu nhanh qua thi giam)
     const double GameDaySeconds = 2880.0;    // 1 ngay trong game = 48 phut thuc
     const int MaxOfflineDays = 14;
     bool catching, caughtUp; long lastSeen; int nextSeenSave;
@@ -752,7 +752,7 @@ public class GtaVietLifeWorld : Script
         foreach (string r in catchLog) Log("[offline] " + r);
         int delta = Game.Player.Money - before;
         string hours = (el / 3600.0).ToString("0.0", CultureInfo.InvariantCulture);
-        Notify("~b~Quan chay luc Sep tat may~s~ (" + hours + " gio thuc = " + days + " ngay game, ban cham hon 60%): tien " + (delta >= 0 ? "~g~+$" : "~r~-$") + Math.Abs(delta) + "~s~" + (debt > debtBefore ? ", no tang $" + (debt - debtBefore) : "") + (shops.Count < shopsBefore ? ", ~r~mat " + (shopsBefore - shops.Count) + " mat bang vi thieu tien thue~s~" : "") + ".");
+        Notify("~b~Quan chay luc Sep tat may~s~ (" + hours + " gio thuc = " + days + " ngay game, ban bang 60% luc dang choi): tien " + (delta >= 0 ? "~g~+$" : "~r~-$") + Math.Abs(delta) + "~s~" + (debt > debtBefore ? ", no tang $" + (debt - debtBefore) : "") + (shops.Count < shopsBefore ? ", ~r~mat " + (shopsBefore - shops.Count) + " mat bang vi thieu tien thue~s~" : "") + ".");
         Save();
     }
 
