@@ -6,6 +6,9 @@
   "gemini_model": "gemini-3.8-flash",
   "gemini_thinking_budget": 0,
 
+  "groq_api_key": "",
+  "groq_model": "llama-3.3-70b-versatile",
+
   "ollama_enabled": true,
   "ollama_url": "http://127.0.0.1:11434",
   "ollama_model": "qwen2.5:3b",

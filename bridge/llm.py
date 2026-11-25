@@ -136,10 +136,16 @@ class Brain:
 
     def chat(self, npc: dict, ctx: dict, history: list, player_text: str) -> dict:
         system = SYSTEM + "\n\n" + build_context(npc, ctx)
-        order = ["gemini", "ollama"] if self.cfg.get("provider", "gemini") == "gemini" else ["ollama", "gemini"]
+        prov = self.cfg.get("provider", "gemini")
+        order = {"groq": ["groq", "gemini", "ollama"], "gemini": ["gemini", "groq", "ollama"]}.get(prov, ["ollama", "gemini"])
         last_err = None
         for name in order:
-            if name == "gemini" and self.cfg.get("gemini_api_key"):
+            if name == "groq" and self.cfg.get("groq_api_key"):
+                try:
+                    return self._groq_chat(system, history, player_text)
+                except Exception as e:
+                    last_err = e
+            elif name == "gemini" and self.cfg.get("gemini_api_key"):
                 try:
                     return self._hedged(lambda m: self._gemini(system, history, player_text, model=m))
                 except Exception as e:
@@ -182,6 +188,44 @@ class Brain:
         data = _post_json(url, body, timeout=9.0)
         text = "".join(p.get("text", "") for p in data["candidates"][0]["content"]["parts"])
         return _parse(text)
+
+    def _groq_chat(self, system, history, player_text) -> dict:
+        msgs = [{"role": "system", "content": system}]
+        msgs += [{"role": "user" if r == "player" else "assistant", "content": t} for r, t in history]
+        msgs.append({"role": "user", "content": player_text})
+        body = {"model": self.cfg.get("groq_model", "llama-3.3-70b-versatile"), "messages": msgs,
+                "temperature": 0.9, "max_tokens": 200, "response_format": {"type": "json_object"}}
+        req = urllib.request.Request("https://api.groq.com/openai/v1/chat/completions",
+                                     data=json.dumps(body).encode("utf-8"), method="POST",
+                                     headers={"Content-Type": "application/json", "User-Agent": "gta-viet-life",
+                                              "Authorization": "Bearer " + self.cfg["groq_api_key"]})
+        try:
+            with urllib.request.urlopen(req, timeout=10) as r:
+                data = json.loads(r.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            print(f"[llm]   groq lỗi {e.code}: {e.read().decode('utf-8', 'replace')[:200]}")
+            raise
+        return _parse(data["choices"][0]["message"]["content"])
+
+    def transcribe_groq(self, wav: bytes) -> str:
+        """Nghe bằng Whisper large-v3-turbo của Groq (miễn phí, ~0.5 giây)."""
+        b = "----gtavl" + str(int(time.time() * 1000))
+        def field(n, v):
+            return f'--{b}\r\nContent-Disposition: form-data; name="{n}"\r\n\r\n{v}\r\n'.encode()
+        body = (field("model", "whisper-large-v3-turbo") + field("language", "vi") + field("temperature", "0")
+                + field("response_format", "json")
+                + f'--{b}\r\nContent-Disposition: form-data; name="file"; filename="a.wav"\r\nContent-Type: audio/wav\r\n\r\n'.encode()
+                + wav + f"\r\n--{b}--\r\n".encode())
+        req = urllib.request.Request("https://api.groq.com/openai/v1/audio/transcriptions", data=body, method="POST",
+                                     headers={"Content-Type": "multipart/form-data; boundary=" + b,
+                                              "User-Agent": "gta-viet-life",
+                                              "Authorization": "Bearer " + self.cfg["groq_api_key"]})
+        try:
+            with urllib.request.urlopen(req, timeout=10) as r:
+                return json.loads(r.read().decode("utf-8")).get("text", "").strip()
+        except urllib.error.HTTPError as e:
+            print(f"[stt] groq lỗi {e.code}: {e.read().decode('utf-8', 'replace')[:200]}")
+            raise
 
     def _ollama(self, system: str, history: list, player_text: str) -> dict:
         msgs = [{"role": "system", "content": system}]

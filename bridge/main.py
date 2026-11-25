@@ -69,7 +69,9 @@ class Bridge:
         self.overlay = overlay
         self.recorder = Recorder(cfg.get("mic_device"))
         self.stt = None
-        self.stt_mode = cfg.get("stt_mode", "gemini") if cfg.get("gemini_api_key") else "local"
+        self.stt_mode = cfg.get("stt_mode", "gemini") if (cfg.get("gemini_api_key") or cfg.get("groq_api_key")) else "local"
+        if self.stt_mode == "groq" and not cfg.get("groq_api_key"):
+            self.stt_mode = "gemini" if cfg.get("gemini_api_key") else "local"
         if self.stt_mode == "local":
             self._get_stt()
         else:
@@ -107,7 +109,18 @@ class Bridge:
             npc = self.memory.get_or_create(key, ctx.get("gender", "male"), int(ctx.get("pedtype", "4") or 4))
             history = self.memory.history(key)
             result, text, by_audio = None, "", False
-            if self.stt_mode == "gemini":
+            if self.stt_mode == "groq":
+                try:
+                    text = self.brain.transcribe_groq(wav_bytes(audio))
+                    if not text:
+                        print("[mic] Groq không nghe ra lời nói")
+                        self.overlay.show("player", "(không nghe rõ, Sếp nói lại nhé)", 2500)
+                        return "none\n0\n"
+                    result = self.brain.chat(npc, ctx, history, text)
+                except Exception as e:
+                    print(f"[stt] Groq lỗi, chuyển sang Gemini: {e}")
+                    result = None
+            if self.stt_mode in ("gemini", "groq") and result is None and self.cfg.get("gemini_api_key"):
                 try:
                     result = self.brain.chat_audio(npc, ctx, history, wav_bytes(audio))
                     text = result.get("heard", "")
