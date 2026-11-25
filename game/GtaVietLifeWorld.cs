@@ -192,6 +192,7 @@ public class GtaVietLifeWorld : Script
 
         Load();
         InitShops();
+        MakeHomeBlips();
 
         Tick += OnTick;
         KeyDown += OnKeyDown;
@@ -208,6 +209,9 @@ public class GtaVietLifeWorld : Script
         Ped me = Game.Player.Character;
         if (me == null || !me.Exists()) return;
         int now = Game.GameTime;
+
+        TickEnterHome(me, now);
+        try { Function.Call(Hash.SET_MINIMAP_HIDE_FOW, true); } catch { }   // mo toan bo ban do, het suong mu
 
         if (safeUntil > 0 && now > safeUntil) { safeUntil = 0; Function.Call(Hash.SET_ENTITY_INVINCIBLE, me, false); }
 
@@ -228,8 +232,8 @@ public class GtaVietLifeWorld : Script
                 Shop rs = shops[ri];
                 if (rs.NextSale == 0) { rs.NextSale = now + rnd.Next(15000, 45000); continue; }
                 if (now < rs.NextSale) continue;
-                float rate = ModeTraffic[rs.Mode] * ZoneMult(rs.Pos) * (rs.Indoor ? 1.15f : 1f) * (1f + (rs.Level - 1) * 0.2f) * (1f + rs.Staff * 0.25f);
-                rs.NextSale = now + (int)(rnd.Next(42000, 78000) / Math.Max(0.2f, rate));
+                // nhip ban o xa = nhip khi Sep dung o quan (khong phu thuoc khoang cach)
+                rs.NextSale = now + Math.Max(7000, 26000 - rs.Staff * 3000 - rs.Level * 2500 + rnd.Next(0, 6000)) + 4000;   // cung nhip nhu khi Sep dung o quan
                 if (rs.Staff <= 0)
                 {
                     if (!rs.OutNotified) { rs.OutNotified = true; Notify("~y~Quan #" + (ri + 1) + " chua co nhan vien~s~ nen khong ban duoc. Den quan thue nhan vien."); }
@@ -1220,7 +1224,7 @@ public class GtaVietLifeWorld : Script
             p.IsPersistent = true;
             Function.Call(Hash.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS, p, true);
             Function.Call(Hash.SET_PED_KEEP_TASK, p, true);
-            Function.Call(Hash.TASK_START_SCENARIO_IN_PLACE, p, "WORLD_HUMAN_STAND_IMPATIENT", 0, true);
+            Function.Call(Hash.TASK_START_SCENARIO_IN_PLACE, p, "WORLD_HUMAN_CLIPBOARD", 0, true);
             p.IsPositionFrozen = true;
             staffPeds.Add(p);
             staffSlots.Add(pos);
@@ -1688,6 +1692,326 @@ public class GtaVietLifeWorld : Script
         return def;
     }
 
+    readonly List<Blip> homeBlips = new List<Blip>();
+    void MakeHomeBlips()
+    {
+        try
+        {
+            foreach (Blip b in homeBlips) { if (b != null && b.Exists()) b.Delete(); }
+            homeBlips.Clear();
+            for (int i = 0; i < Homes.Length; i++)
+            {
+                Blip b = World.CreateBlip(Homes[i].Pos);
+                b.Sprite = BlipSprite.Safehouse;
+                b.Color = (homeIdx == i) ? BlipColor.Green : BlipColor.Yellow;
+                b.IsShortRange = false;
+                b.Name = (homeIdx == i ? "Nha cua Sep: " : "Nha cho thue: ") + Homes[i].Name + " ($" + Homes[i].Rent + "/ngay)";
+                homeBlips.Add(b);
+            }
+        }
+        catch (Exception ex) { Log("blip nha loi: " + ex.Message); }
+    }
+
+    // ---- vao trong nha: dich chuyen vao noi that, ra lai bang cung muc do
+    // moi nha co danh sach noi that thu lan luot: cai nao nap duoc (co interior that) thi dung
+    static readonly float[][] AptLow = { new float[] { 261.4586f, -998.8196f, -99.0086f } };
+    static readonly float[][] AptMid = { new float[] { 347.2686f, -999.2955f, -99.1962f } };
+    static readonly float[][] AptHigh = { new float[] { -786.8663f, 315.7642f, 217.6385f }, new float[] { -18.0786f, -583.6725f, 79.4657f } };
+    static readonly float[][] Trev = { new float[] { 1973.0f, 3815.0f, 33.43f } };
+    static readonly float[][] Mich = { new float[] { -802.3f, 175.0f, 72.8f } };
+    static readonly float[][] Fran = { new float[] { 7.1197f, 536.6153f, 176.028f } };
+    static float[][][] HomeCands { get { return new float[][][] { Concat(Trev, AptLow), Concat(AptLow), Concat(Fran, AptLow), Concat(Mich, AptLow) }; } }
+    static float[][] Concat(params float[][][] arrs) { List<float[]> l = new List<float[]>(); foreach (float[][] a in arrs) l.AddRange(a); return l.ToArray(); }
+    static readonly string[] AptIpls = { "apa_v_mp_h_01_a", "apa_v_mp_h_01_b", "apa_v_mp_h_01_c", "apa_v_mp_h_02_a", "apa_v_mp_h_02_b", "apa_v_mp_h_02_c", "apa_v_mp_h_03_a", "apa_v_mp_h_04_a", "apa_v_mp_h_05_a", "apa_v_mp_h_06_a" };
+    float[][] curCands; int candIdx;
+    bool insideHome; int enterMinAt; int doorCool;
+    Vector3 homeOutPos;
+    Vector3 enterTarget; int enterUntil;
+    bool enterIsExit;
+
+    // diem cua chinh cua tung nha (toa do GTA V), dung de do cho ben trong nha that sau cua
+    static readonly float[][] HomeDoorPos = {
+        new float[] { 1972.7f, 3817.0f, 33.4f },
+        new float[] { -14.8689f, -1441.1822f, 31.1932f },
+        new float[] { 7.5139f, 539.5268f, 176.2028f },
+        new float[] { -816.4f, 178.3f, 72.8274f } };
+
+    // thu nhieu diem quanh cua; diem nao thuoc mot interior khac interior hien tai cua Sep thi do la ben trong nha that
+    bool FindRealInterior(Ped me, int idx, out Vector3 result)
+    {
+        result = Vector3.Zero;
+        float[] dp = HomeDoorPos[idx];
+        int curInt = 0;
+        try { curInt = Function.Call<int>(Hash.GET_INTERIOR_FROM_ENTITY, me); } catch { }
+        float[] radii = { 3.5f, 2.2f, 5.0f };
+        float[] dzs = { 0.5f, 1.0f, 0.0f };
+        for (int ri = 0; ri < radii.Length; ri++)
+            for (int a = 0; a < 16; a++)
+            {
+                double ang = a * Math.PI / 8.0;
+                float x = dp[0] + (float)Math.Cos(ang) * radii[ri], y = dp[1] + (float)Math.Sin(ang) * radii[ri];
+                foreach (float dz in dzs)
+                {
+                    int it = 0;
+                    try { it = Function.Call<int>(Hash.GET_INTERIOR_AT_COORDS, x, y, dp[2] + dz); } catch { }
+                    if (it != 0 && it != curInt)
+                    {
+                        result = new Vector3(x, y, dp[2] + 0.6f);
+                        Log("noi that that tim thay: interior " + it + " tai " + x.ToString("0.0") + "," + y.ToString("0.0") + "," + (dp[2] + dz).ToString("0.0") + " (hien tai " + curInt + ")");
+                        return true;
+                    }
+                }
+            }
+        Log("khong do duoc noi that that sau cua (hien tai interior " + curInt + ")");
+        return false;
+    }
+
+    void EnterHome()
+    {
+        if (!hasHome || homeIdx < 0) { Notify("Sep chua thue nha nao."); return; }
+        Ped me = Game.Player.Character;
+        if (me.IsInVehicle()) { Notify("Xuong xe da."); return; }
+        if (me.Position.DistanceTo(Homes[homeIdx].Pos) > 25f) { Notify("Phai dung gan nha (25 m) moi vao duoc."); return; }
+        foreach (string ip in AptIpls) { try { Function.Call(Hash.REQUEST_IPL, ip); } catch { } }
+        curCands = HomeCands[homeIdx];
+        candIdx = 0;
+        float[] f = curCands[0];
+        if (!insideHome)
+        {
+            int ci = 0;
+            try { ci = Function.Call<int>(Hash.GET_INTERIOR_FROM_ENTITY, me); } catch { }
+            if (ci == 0) homeOutPos = me.Position;
+            else
+            {
+                // Sep dang o trong mot noi that san (vd da o san trong nha): thoat ra duong gan nha
+                Vector3 st = Vector3.Zero;
+                try { st = World.GetNextPositionOnStreet(Homes[homeIdx].Pos); } catch { }
+                homeOutPos = st == Vector3.Zero ? Homes[homeIdx].Pos : st;
+                Log("dang o trong noi that " + ci + ", diem ra = " + homeOutPos.X.ToString("0.0") + "," + homeOutPos.Y.ToString("0.0") + "," + homeOutPos.Z.ToString("0.0"));
+            }
+        }
+        enterTarget = new Vector3(f[0], f[1], f[2]);
+        enterIsExit = false;
+        enterUntil = Game.GameTime + 5000; enterMinAt = Game.GameTime + 900; doorCool = Game.GameTime + 2500;
+        Function.Call(Hash.SET_ENTITY_COORDS_NO_OFFSET, me, enterTarget.X, enterTarget.Y, enterTarget.Z, false, false, false);
+        Function.Call(Hash.FREEZE_ENTITY_POSITION, me, true);
+        try { GTA.UI.Screen.FadeOut(200); } catch { }
+        insideHome = true;
+        Log("vao nha " + Homes[homeIdx].Name + " -> " + enterTarget.X + "," + enterTarget.Y + "," + enterTarget.Z);
+    }
+
+    void ExitHome()
+    {
+        Ped me = Game.Player.Character;
+        if (homeOutPos == Vector3.Zero)
+        {
+            Vector3 st = Vector3.Zero;
+            try { st = World.GetNextPositionOnStreet(Homes[Math.Max(0, homeIdx)].Pos); } catch { }
+            homeOutPos = st == Vector3.Zero ? Homes[Math.Max(0, homeIdx)].Pos : st;
+        }
+        enterTarget = homeOutPos;
+        Log("ra ngoai -> " + enterTarget.X + "," + enterTarget.Y + "," + enterTarget.Z);
+        enterIsExit = true;
+        enterUntil = Game.GameTime + 4000; enterMinAt = Game.GameTime + 600; doorCool = Game.GameTime + 2500;
+        Function.Call(Hash.SET_ENTITY_COORDS_NO_OFFSET, me, enterTarget.X, enterTarget.Y, enterTarget.Z, false, false, false);
+        Function.Call(Hash.FREEZE_ENTITY_POSITION, me, true);
+        try { GTA.UI.Screen.FadeOut(200); } catch { }
+        insideHome = false;
+    }
+
+    // doi nap collision/noi that roi tha nguoi choi ra; neu vao nha ma khong co noi that thi tra ve cho cu
+    void TickEnterHome(Ped me, int now)
+    {
+        // dong bo trang thai: neu co tinh 'dang o trong' nhung that ra da o xa noi that thi huy co (tranh E dich chuyen lung tung)
+        if (insideHome && enterUntil <= 0 && me.Position.DistanceTo(enterTarget) > 60f) { insideHome = false; nearFurn = ""; Log("dong bo: khong con o trong nha"); }
+        ScanFurniture(me, now);
+        if (enterUntil <= 0 && hasHome && homeIdx >= 0 && !menuOpen && !me.IsInVehicle() && nearFurn.Length == 0)
+        {
+            if (!insideHome && me.Position.DistanceTo(Homes[homeIdx].Pos) < 12f)
+                GTA.UI.Screen.ShowSubtitle("~y~" + sitKey + "~s~: vao nha " + homeName, 100);
+            else if (insideHome)
+                GTA.UI.Screen.ShowSubtitle("~y~" + sitKey + "~s~: ra ngoai", 100);
+        }
+        if (nearFurn.Length > 0 && enterUntil <= 0 && !menuOpen)
+            GTA.UI.Screen.ShowSubtitle("~y~" + sitKey + "~s~: " + (nearFurn == "bed" ? "ngu (tua 8 gio)" : nearFurn == "fridge" ? "mo tu lanh (an uong mien phi)" : "nghi tren sofa"), 100);
+        if (enterUntil <= 0) return;
+        Function.Call(Hash.REQUEST_COLLISION_AT_COORD, enterTarget.X, enterTarget.Y, enterTarget.Z);
+        Function.Call(Hash.SET_FOCUS_POS_AND_VEL, enterTarget.X, enterTarget.Y, enterTarget.Z, 0f, 0f, 0f);
+        bool ready = false;
+        try { ready = Function.Call<bool>(Hash.HAS_COLLISION_LOADED_AROUND_ENTITY, me); } catch { }
+        if (now < enterMinAt) return;
+        if (!ready && now < enterUntil) return;
+        Function.Call(Hash.CLEAR_FOCUS);
+        Function.Call(Hash.FREEZE_ENTITY_POSITION, me, false);
+        enterUntil = 0;
+        try { GTA.UI.Screen.FadeIn(500); } catch { }
+        if (!enterIsExit)
+        {
+            int it = 0;
+            try { it = Function.Call<int>(Hash.GET_INTERIOR_FROM_ENTITY, me); } catch { }
+            if ((it == 0 || !ready) && curCands != null && candIdx + 1 < curCands.Length)
+            {
+                candIdx++;
+                float[] nf = curCands[candIdx];
+                enterTarget = new Vector3(nf[0], nf[1], nf[2]);
+                enterUntil = now + 4500; enterMinAt = now + 900;
+                Function.Call(Hash.SET_ENTITY_COORDS_NO_OFFSET, me, enterTarget.X, enterTarget.Y, enterTarget.Z, false, false, false);
+                Function.Call(Hash.FREEZE_ENTITY_POSITION, me, true);
+                try { GTA.UI.Screen.FadeOut(100); } catch { }
+                Log("thu noi that khac #" + candIdx + " -> " + enterTarget.X + "," + enterTarget.Y + "," + enterTarget.Z);
+                return;
+            }
+            if (it == 0 || !ready)
+            {
+                Notify("~r~Noi that chua nap duoc, dua Sep ve cho cu.~s~");
+                Log("noi that khong nap duoc: ready=" + ready + " interior=" + it);
+                Function.Call(Hash.SET_ENTITY_COORDS_NO_OFFSET, me, homeOutPos.X, homeOutPos.Y, homeOutPos.Z, false, false, false);
+                insideHome = false;
+                return;
+            }
+            Notify("Da vao ~g~" + homeName + "~s~. Bam " + MK + " > 'Ra ngoai' de ra.");
+        }
+    }
+
+    // ---- cua tu mo: moi canh cua (vat the mong, cao 1,8-3 m, rong 0,6-1,7 m) trong 2,2 m quanh Sep se tat va cham va xoay mo ra,
+    // Sep di xa 4,5 m thi dong lai. Nhan dien bang kich thuoc model nen ap dung cho ca nha cua nguoi khac.
+    readonly Dictionary<int, float> doorOrigYaw = new Dictionary<int, float>();
+    readonly Dictionary<int, bool> doorModelIs = new Dictionary<int, bool>();
+    readonly List<int> openDoors = new List<int>();
+    readonly Dictionary<int, float> doorTargetYaw = new Dictionary<int, float>();
+    static readonly string[] DoorModelNames = { "apa_heist_apart2_door","apa_mp_apa_yacht_door","apa_mp_apa_yacht_door2","apa_prop_heist_cutscene_doora","apa_prop_heist_cutscene_doorb","apa_prop_ss1_mpint_door_l","apa_prop_ss1_mpint_door_r","apa_v_ilev_fh_bedrmdoor","apa_v_ilev_fh_heistdoor1","apa_v_ilev_fh_heistdoor2","apa_v_ilev_ss_door2","apa_v_ilev_ss_door7","apa_v_ilev_ss_door8","prop_bh1_44_door_01l","prop_bh1_44_door_01r","prop_bh1_48_backdoor_l","prop_bh1_48_backdoor_r","prop_bhhotel_door_l","prop_bhhotel_door_r","prop_biolab_g_door","prop_bs_map_door_01","prop_casino_door_01l","prop_casino_door_01r","prop_ch1_07_door_01l","prop_ch1_07_door_01r","prop_ch1_07_door_02l","prop_ch1_07_door_02r","prop_ch2_05d_g_door","prop_ch2_07b_20_g_door","prop_ch2_09b_door","prop_ch3_01_trlrdoor_l","prop_ch3_01_trlrdoor_r","prop_ch3_04_door_01l","prop_ch3_04_door_01r","prop_ch3_04_door_02","prop_ch_025c_g_door_01","prop_cntrdoor_ld_l","prop_cntrdoor_ld_r","prop_com_ls_door_01","prop_container_door_mb_l","prop_container_door_mb_r","prop_control_rm_door_01","prop_cs4_05_tdoor","prop_cs4_11_door","prop_cs6_03_door_l","prop_cs6_03_door_r","prop_cub_door_lifeblurb","prop_damdoor_01","prop_door_01","prop_door_balcony_frame","prop_door_balcony_left","prop_door_balcony_right","prop_door_bell_01","prop_dt1_20_mp_door_l","prop_dt1_20_mp_door_r","prop_epsilon_door_l","prop_epsilon_door_r","prop_faceoffice_door_l","prop_faceoffice_door_r","prop_gascyl_ramp_door_01","prop_grumandoor_l","prop_grumandoor_r","prop_hanger_door_1","prop_hospital_door_l","prop_hospital_door_r","prop_hospitaldoors_start","prop_hw1_03_gardoor_01","prop_hw1_04_door_l1","prop_hw1_04_door_r1","prop_hw1_23_door","prop_id2_11_gdoor","prop_id_21_gardoor_01","prop_id_21_gardoor_02","prop_indus_meet_door_l","prop_indus_meet_door_r","prop_kt1_06_door_l","prop_kt1_06_door_r","prop_kt1_10_mpdoor_l","prop_kt1_10_mpdoor_r","prop_magenta_door","prop_map_door_01","prop_michael_door","prop_mine_doorng_l","prop_mine_doorng_r","prop_mineshaft_door","prop_motel_door_09","prop_out_door_speaker","prop_outdoor_fan_01","prop_paynspray_door_l","prop_paynspray_door_r","prop_pris_door_01_l","prop_pris_door_01_r","prop_pris_door_02","prop_pris_door_03","prop_ql_revolving_door","prop_ret_door","prop_ret_door_02","prop_ret_door_03","prop_ret_door_04","prop_ron_door_01","prop_sc1_12_door","prop_sc1_21_g_door_01","prop_secdoor_01","prop_shop_front_door_l","prop_shop_front_door_r","prop_showroom_door_l","prop_showroom_door_r","prop_sm1_11_doorl","prop_sm1_11_doorr","prop_sm_10_mp_door","prop_sm_27_door","prop_ss1_05_mp_door","prop_ss1_08_mp_door_l","prop_ss1_08_mp_door_r","prop_ss1_10_door_l","prop_ss1_10_door_r","prop_strip_door_01","prop_v_door_44","prop_wardrobe_door_01","v_ilev_247door","v_ilev_247door_r","v_ilev_abbmaindoor","v_ilev_abbmaindoor2","v_ilev_arm_secdoor","v_ilev_bk_door","v_ilev_bk_door2","v_ilev_bl_door_l","v_ilev_bl_door_r","v_ilev_bl_doorel_l","v_ilev_bl_doorel_r","v_ilev_bl_doorpool","v_ilev_bl_doorsl_l","v_ilev_bl_doorsl_r","v_ilev_bs_door","v_ilev_cd_door","v_ilev_cd_door2","v_ilev_cd_door3","v_ilev_cd_entrydoor","v_ilev_cd_secdoor","v_ilev_cd_secdoor2","v_ilev_cf_officedoor","v_ilev_ch_glassdoor","v_ilev_clothmiddoor","v_ilev_cm_door1","v_ilev_cor_darkdoor","v_ilev_cor_doorglassa","v_ilev_cor_doorglassb","v_ilev_cor_firedoor","v_ilev_cor_firedoorwide","v_ilev_cor_offdoora","v_ilev_cs_door","v_ilev_cs_door01","v_ilev_cs_door01_r","v_ilev_csr_door_l","v_ilev_csr_door_r","v_ilev_ct_door01","v_ilev_ct_door02","v_ilev_ct_door03","v_ilev_ct_doorl","v_ilev_ct_doorr","v_ilev_depboxdoor01","v_ilev_dev_door","v_ilev_deviantfrontdoor","v_ilev_door_orange","v_ilev_door_orangesolid","v_ilev_epsstoredoor","v_ilev_fa_backdoor","v_ilev_fa_dinedoor","v_ilev_fa_frontdoor","v_ilev_fa_roomdoor","v_ilev_fa_warddoorl","v_ilev_fa_warddoorr","v_ilev_fb_door01","v_ilev_fb_door02","v_ilev_fb_doorshortl","v_ilev_fb_doorshortr","v_ilev_fb_sl_door01","v_ilev_fh_door01","v_ilev_fh_door02","v_ilev_fh_door03","v_ilev_fh_door4","v_ilev_fh_door5","v_ilev_fh_frntdoor","v_ilev_fh_frontdoor","v_ilev_gasdoor","v_ilev_gasdoor_r","v_ilev_gc_door01","v_ilev_gc_door02","v_ilev_gc_door03","v_ilev_gc_door04","v_ilev_gendoor01","v_ilev_gendoor02","v_ilev_gtdoor","v_ilev_gtdoor02","v_ilev_hd_door_l","v_ilev_hd_door_r","v_ilev_housedoor1","v_ilev_j2_door","v_ilev_janitor_frontdoor","v_ilev_lester_doorfront","v_ilev_lester_doorveranda","v_ilev_lostdoor","v_ilev_losttoiletdoor","v_ilev_methdoorscuff","v_ilev_methtraildoor","v_ilev_ml_door1","v_ilev_mldoor02","v_ilev_mm_door","v_ilev_mm_doordaughter","v_ilev_mm_doorm_l","v_ilev_mm_doorm_r","v_ilev_mm_doorson","v_ilev_mm_doorw","v_ilev_moteldoorcso","v_ilev_mp_high_frontdoor","v_ilev_mp_low_frontdoor","v_ilev_mp_mid_frontdoor","v_ilev_ph_door002","v_ilev_ph_door01","v_ilev_ph_doorframe","v_ilev_ph_gendoor","v_ilev_ph_gendoor002","v_ilev_ph_gendoor003","v_ilev_ph_gendoor004","v_ilev_ph_gendoor005","v_ilev_ph_gendoor006","v_ilev_phroofdoor","v_ilev_po_door","v_ilev_ra_door1_l","v_ilev_ra_door1_r","v_ilev_ra_door2","v_ilev_ra_door3","v_ilev_ra_door4l","v_ilev_ra_door4r","v_ilev_rc_door1","v_ilev_rc_door1_st","v_ilev_rc_door2","v_ilev_rc_door3_l","v_ilev_rc_door3_r","v_ilev_rc_doorel_l","v_ilev_rc_doorel_r","v_ilev_roc_door1_l","v_ilev_roc_door1_r","v_ilev_roc_door2","v_ilev_roc_door3","v_ilev_roc_door4","v_ilev_roc_door5","v_ilev_serv_door01","v_ilev_shrf2door","v_ilev_shrfdoor","v_ilev_sol_off_door01","v_ilev_spraydoor","v_ilev_ss_door01","v_ilev_ss_door02","v_ilev_ss_door03","v_ilev_ss_door04","v_ilev_ss_door5_l","v_ilev_ss_door5_r","v_ilev_ss_doorext","v_ilev_stad_fdoor","v_ilev_staffdoor","v_ilev_store_door","v_ilev_ta_door","v_ilev_ta_door2","v_ilev_tort_door","v_ilev_trev_door","v_ilev_trev_doorbath","v_ilev_trev_doorfront","v_ilev_trev_patiodoor","v_ilev_vag_door","v_ilev_vagostoiletdoor" };
+    int[] doorHashes;
+    int nextDoorUnlock; int nextDoorLog; int nextDoorDiag;
+
+    bool IsDoorModel(Prop pr)
+    {
+        int mh = pr.Model.Hash;
+        bool r;
+        if (doorModelIs.TryGetValue(mh, out r)) return r;
+        r = false;
+        try
+        {
+            Vector3 mn, mx;
+            pr.Model.GetDimensions(out mn, out mx);
+            float w = mx.X - mn.X, d = mx.Y - mn.Y, h = mx.Z - mn.Z;
+            float thin = Math.Min(w, d), wide = Math.Max(w, d);
+            r = thin < 0.25f && wide > 0.6f && wide < 1.7f && h > 1.8f && h < 3.0f;
+        }
+        catch { }
+        doorModelIs[mh] = r;
+        return r;
+    }
+
+    void UnlockHomeDoors(Ped me, int now)
+    {
+        if (now < nextDoorUnlock) return;
+        nextDoorUnlock = now + 200;
+        // dong cua khi Sep di xa
+        for (int i = openDoors.Count - 1; i >= 0; i--)
+        {
+            int h = openDoors[i];
+            bool ok = Function.Call<bool>(Hash.DOES_ENTITY_EXIST, h);
+            Vector3 hp = ok ? Function.Call<Vector3>(Hash.GET_ENTITY_COORDS, h, true) : Vector3.Zero;
+            if (!ok) { openDoors.RemoveAt(i); continue; }
+            float ty;
+            if (me.Position.DistanceTo(hp) <= 4.5f && doorTargetYaw.TryGetValue(h, out ty)) Function.Call(Hash.SET_ENTITY_ROTATION, h, 0f, 0f, ty, 2, true);
+            if (me.Position.DistanceTo(hp) > 4.5f)
+            {
+                float oh;
+                if (doorOrigYaw.TryGetValue(h, out oh)) Function.Call(Hash.SET_ENTITY_ROTATION, h, 0f, 0f, oh, 2, true);
+                Function.Call(Hash.SET_ENTITY_COLLISION, h, true, false);
+                openDoors.RemoveAt(i);
+            }
+        }
+        if (me.IsInVehicle()) return;
+        if (doorHashes == null)
+        {
+            List<int> hl = new List<int>();
+            foreach (string nm in DoorModelNames) hl.Add((int)new Model(nm).Hash);
+            doorHashes = hl.ToArray();
+            Log("danh sach model cua: " + doorHashes.Length);
+        }
+        Vector3 mp = me.Position;
+        List<int> found = new List<int>();
+        foreach (int mh in doorHashes)
+        {
+            int fh = 0;
+            try { fh = Function.Call<int>(Hash.GET_CLOSEST_OBJECT_OF_TYPE, mp.X, mp.Y, mp.Z, 2.2f, mh, false, false, false); } catch { }
+            if (fh != 0 && !found.Contains(fh)) found.Add(fh);
+        }
+        try
+        {
+            foreach (Prop pp in World.GetNearbyProps(mp, 2.2f))
+                if (pp != null && pp.Exists() && !found.Contains(pp.Handle) && IsDoorModel(pp)) found.Add(pp.Handle);
+        }
+        catch (Exception ex) { if (now > nextDoorDiag) { nextDoorDiag = now + 5000; Log("quet vat the loi: " + ex.Message); } }
+        if (now > nextDoorDiag && found.Count == 0) { nextDoorDiag = now + 6000; try { Log("quanh Sep khong thay cua nao; props gan=" + World.GetNearbyProps(mp, 2.2f).Length); } catch { } }
+        foreach (int h in found)
+        {
+            if (openDoors.Contains(h)) continue;
+            Vector3 hpos = Function.Call<Vector3>(Hash.GET_ENTITY_COORDS, h, true);
+            float oh = Function.Call<float>(Hash.GET_ENTITY_HEADING, h);
+            doorOrigYaw[h] = oh;
+            double rad = oh * Math.PI / 180.0;
+            Vector3 hp = hpos;
+            Vector3 rel = me.Position - hp;
+            float side = rel.X * (float)Math.Cos(rad) + rel.Y * (float)Math.Sin(rad);
+            float yaw = oh + (side > 0f ? -95f : 95f);
+            Function.Call(Hash.FREEZE_ENTITY_POSITION, h, true);
+            Function.Call(Hash.SET_ENTITY_COLLISION, h, false, false);
+            Function.Call(Hash.SET_ENTITY_ROTATION, h, 0f, 0f, yaw, 2, true);
+            doorTargetYaw[h] = yaw;
+            openDoors.Add(h);
+            if (now > nextDoorLog) { nextDoorLog = now + 2000; Log("mo cua handle " + h + " tai " + hp.X.ToString("0.0") + "," + hp.Y.ToString("0.0") + "," + hp.Z.ToString("0.0")); }
+        }
+    }
+
+    // ---- do vat trong nha: tim noi that co san (giuong, tu lanh, sofa, tv) gan Sep, bam E de dung
+    static readonly string[] BedModels = { "v_res_mbbed", "v_res_mbbed_mess", "v_res_mdbed", "v_res_msonbed", "v_res_msonbed_s", "v_res_d_bed", "v_res_lestersbed", "v_res_tre_bed1", "v_res_tre_bed1_messy", "v_res_tre_bed2", "apa_mp_h_bed_double_08", "apa_mp_h_bed_double_09", "apa_mp_h_bed_wide_05", "apa_mp_h_bed_with_table_02" };
+    static readonly string[] FridgeModels = { "v_res_fridgemoda", "v_res_fridgemodsml", "v_ilev_mm_fridge_l", "v_ilev_mm_fridge_r", "prop_fridge_01", "prop_fridge_03", "prop_trailr_fridge", "prop_cs_fridge" };
+    static readonly string[] SofaModels = { "v_res_m_h_sofa", "v_res_m_h_sofa_sml", "v_res_mp_sofa", "v_res_d_sofa", "v_res_fh_sofa", "v_res_j_sofa", "v_res_r_sofa", "v_ilev_m_sofa", "prop_t_sofa", "prop_t_sofa_02", "apa_mp_h_stn_sofacorn_01", "apa_mp_h_stn_sofacorn_05", "apa_mp_h_stn_sofa2seat_02", "prop_couch_lg_02", "prop_couch_sm_02" };
+    string nearFurn = ""; int nextFurnScan; int nextRest;
+
+    bool NearModel(Vector3 p, string[] names, float r)
+    {
+        foreach (string n in names)
+        {
+            try
+            {
+                int h = Function.Call<int>(Hash.GET_CLOSEST_OBJECT_OF_TYPE, p.X, p.Y, p.Z, r, (int)new Model(n).Hash, false, false, false);
+                if (h != 0) return true;
+            }
+            catch { }
+        }
+        return false;
+    }
+
+    void ScanFurniture(Ped me, int now)
+    {
+        if (!insideHome || enterUntil > 0 || me.IsInVehicle()) { nearFurn = ""; return; }
+        if (now < nextFurnScan) return;
+        nextFurnScan = now + 600;
+        Vector3 p = me.Position;
+        nearFurn = NearModel(p, BedModels, 2.3f) ? "bed" : NearModel(p, FridgeModels, 2.0f) ? "fridge" : NearModel(p, SofaModels, 1.8f) ? "sofa" : "";
+    }
+
+    void UseFurniture()
+    {
+        if (nearFurn == "bed") { CloseMenu(); Sleep(); }
+        else if (nearFurn == "fridge")
+        {
+            hunger = Clamp(hunger + 30f); thirst = Clamp(thirst + 30f);
+            Notify("Lay do trong tu lanh: an uong mien phi (+30 no, +30 nuoc).");
+        }
+        else if (nearFurn == "sofa")
+        {
+            if (Game.GameTime < nextRest) { Notify("Vua nghi xong, doi mot luc."); return; }
+            nextRest = Game.GameTime + 60000;
+            energy = Clamp(energy + 8f);
+            Notify("Nghi tren sofa mot lat (+8 nang luong).");
+        }
+    }
+
     // ---- tim nha thue
     void RentHome(int idx)
     {
@@ -1700,6 +2024,7 @@ public class GtaVietLifeWorld : Script
         rentPerDay = h.Rent;
         homeName = h.Name;
         homeEnergy = h.Energy;
+        MakeHomeBlips();
         Notify("~g~Da thue " + h.Name + "~s~. Coc 3 ngay $" + deposit + ", thue $" + h.Rent + "/ngay. Den gan nha bam " + MK + " de ngu.");
         PostEvent("Có gã vừa thuê " + h.Name + ".");
         Save();
@@ -1711,6 +2036,7 @@ public class GtaVietLifeWorld : Script
         homeIdx = -1;
         homeName = "";
         rentPerDay = RentPerDay;
+        MakeHomeBlips();
         Notify("Da tra nha.");
     }
 
@@ -1750,7 +2076,7 @@ public class GtaVietLifeWorld : Script
     {
         Ped me = Game.Player.Character;
         float maxDist = homeIdx >= 0 ? 70f : 30f;
-        if (!hasHome || me.Position.DistanceTo(home) > maxDist) { Notify("Phai o gan nha (" + (int)maxDist + " m) moi ngu duoc."); return; }
+        if (!hasHome || (!insideHome && me.Position.DistanceTo(home) > maxDist)) { Notify("Phai o gan nha (" + (int)maxDist + " m) moi ngu duoc."); return; }
         if (me.IsInVehicle()) { Notify("Xuong xe da."); return; }
         fadeAction = 1;
         GTA.UI.Screen.FadeOut(800);
@@ -2141,6 +2467,7 @@ public class GtaVietLifeWorld : Script
         Item("An com  (-$" + FoodPrice + ")", delegate { Eat(); });
         Item("Uong nuoc  (-$" + DrinkPrice + ")", delegate { Drink(); });
         if (hasHome) Item("Ngu o nha  (tua 8 gio)", delegate { CloseMenu(); Sleep(); });
+        if (hasHome && homeIdx >= 0) Item(insideHome ? "Ra ngoai" : "Vao trong nha (dung gan nha)", delegate { CloseMenu(); if (insideHome) ExitHome(); else EnterHome(); });
         Item("Tim nha thue...", delegate { ShowHomes(); });
         Item("Ngu ngoai duong  (mien phi, 30% bi cuop)", delegate { CloseMenu(); SleepRough(); });
         Item("Cong viec...", delegate { ShowJob(); });
@@ -2361,6 +2688,13 @@ public class GtaVietLifeWorld : Script
             Notify("Cho dung cua nhan vien: huong " + (staffAngle + 1) + "/4 (F9 de xoay tiep)");
             Save();
         }
+        if (e.KeyCode == sitKey && !menuOpen && nearFurn.Length > 0 && Game.GameTime > doorCool) { doorCool = Game.GameTime + 700; UseFurniture(); return; }
+        if (e.KeyCode == sitKey && !menuOpen && enterUntil <= 0 && Game.GameTime > doorCool && hasHome && homeIdx >= 0 && nearFurn.Length == 0 && !Game.Player.Character.IsInVehicle())
+        {
+            Vector3 pp = Game.Player.Character.Position;
+            if (!insideHome && pp.DistanceTo(Homes[homeIdx].Pos) < 12f) { EnterHome(); return; }
+            if (insideHome) { ExitHome(); return; }
+        }
         if (e.KeyCode == stockKey && !menuOpen) { showStock = !showStock; Notify(showStock ? "Bang kho: ~g~bat~s~" : "Bang kho: ~y~tat~s~"); }
         if (e.KeyCode == sitKey && !menuOpen)
         {
@@ -2429,26 +2763,93 @@ public class GtaVietLifeWorld : Script
 
     // bieu tuong ve bang cac o vuong nho (12x12), khong can file anh. 0 = trong suot, con lai la mau RGB.
     static readonly Dictionary<string, int[]> IconData = new Dictionary<string, int[]> {
-        { "food", new int[] { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xEEA140, 0xECA040, 0xEEA84E, 0xECA244, 0xECA040, 0xEEA240, 0, 0, 0, 0, 0, 0xECA140, 0xEDA649, 0xEEA84E, 0xEDA446, 0xECA141, 0xEFAD56, 0xECA040, 0xEDA040, 0, 0, 0, 0xEEA141, 0xECA040, 0xECA040, 0xEEA64A, 0xEDA64A, 0xEDA346, 0xEEA84E, 0xECA040, 0xECA040, 0xEEA240, 0, 0, 0xAFB442, 0xAAB543, 0xAAB543, 0xAAB543, 0xAAB543, 0xAAB543, 0xAAB543, 0xAAB543, 0xAAB543, 0xAEB442, 0, 0, 0x70C045, 0x6FB342, 0x6FB342, 0x6FB342, 0x6FB342, 0x6FB342, 0x6FB342, 0x6FB342, 0x6FB342, 0x70C044, 0, 0, 0x703D29, 0x6F3C29, 0x6F3C29, 0x6F3C29, 0x6F3C29, 0x6F3C29, 0x6F3C29, 0x6F3C29, 0x6F3C29, 0x703D28, 0, 0, 0xD0883B, 0xC48039, 0xC48039, 0xC48039, 0xC48039, 0xC48039, 0xC48039, 0xC48039, 0xC48039, 0xCF893A, 0, 0, 0xEDA141, 0xECA040, 0xECA040, 0xECA040, 0xECA040, 0xECA040, 0xECA040, 0xECA040, 0xECA040, 0xECA040, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 } },
-        { "drink", new int[] { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x47ABF5, 0x46ABF7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x46AAF5, 0x46AAF5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x46ABF6, 0x46AAF5, 0x46AAF5, 0x46ABF5, 0, 0, 0, 0, 0, 0, 0, 0x47ADF6, 0x46AAF5, 0x46AAF5, 0x46AAF5, 0x46AAF5, 0x47ADF9, 0, 0, 0, 0, 0, 0, 0x46ACF6, 0x4DAEF6, 0x46AAF5, 0x46AAF5, 0x46AAF5, 0x46ABF6, 0, 0, 0, 0, 0, 0, 0x45AAF5, 0xB1E0FE, 0x68BBF8, 0x46AAF5, 0x46AAF5, 0x46AAF5, 0x47ACF8, 0, 0, 0, 0, 0, 0x46A9F4, 0x9DD5FC, 0x5BB5F7, 0x46AAF5, 0x46AAF5, 0x46AAF5, 0, 0, 0, 0, 0, 0, 0x46ABF5, 0x45AAF5, 0x46AAF5, 0x46AAF5, 0x46AAF5, 0x46ABF7, 0, 0, 0, 0, 0, 0, 0, 0x48ACF7, 0x46ABF6, 0x47ACF6, 0x46ACF7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 } },
-        { "energy", new int[] { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xF6D53A, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xF8D73B, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xF9D63B, 0xF9D73B, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xF8D53C, 0xFAD63C, 0xF7D53B, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xF9D63C, 0xFAD63C, 0xFAD63C, 0xF9D53C, 0xF8D63A, 0, 0, 0, 0, 0, 0, 0xF8D83B, 0xFAD73B, 0xF9D63B, 0xFAD63C, 0xFAD73C, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xF9D53A, 0xF9D63B, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xF8D53B, 0xF9D73B, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xF9D83B, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 } },
-        { "stock", new int[] { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x966B39, 0x966A38, 0x966A38, 0x966A38, 0x966A38, 0x966A38, 0x966A38, 0x966A38, 0x966A38, 0x976A38, 0, 0, 0x986D3A, 0xA47540, 0x9D703D, 0xA47540, 0xA1733F, 0xA0723E, 0xA47540, 0x9D713D, 0xA47540, 0x986C3A, 0, 0, 0x986E3B, 0xB08048, 0x9C713E, 0xB08048, 0xA87A44, 0xA47742, 0xB08048, 0x9D713E, 0xB08048, 0x996E3B, 0, 0, 0x8C6435, 0x9C703E, 0x8F6537, 0x9C703E, 0x966C3B, 0x946A39, 0x9C703E, 0x8F6537, 0x9C703E, 0x8B6435, 0, 0, 0x986E3B, 0xB08048, 0x9C713E, 0xB08048, 0xA87A44, 0xA47742, 0xB08048, 0x9D713E, 0xB08048, 0x996E3B, 0, 0, 0x986E3B, 0xB08048, 0x9C713E, 0xB08048, 0xA87A44, 0xA47742, 0xB08048, 0x9D713E, 0xB08048, 0x996E3B, 0, 0, 0x986E3B, 0xB08048, 0x9C713E, 0xB08048, 0xA87A44, 0xA47742, 0xB08048, 0x9D713E, 0xB08048, 0x996E3B, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 } },
-        { "money", new int[] { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xCCA41B, 0xE0BA29, 0xDAB52B, 0xD9B42B, 0xE0BA2A, 0xCDA41C, 0, 0, 0, 0, 0, 0xD4AC22, 0xF6D139, 0xEFC531, 0xCCA326, 0xC9A125, 0xEFC531, 0xF6D139, 0xD5AE22, 0, 0, 0, 0xCBA31B, 0xF6D139, 0xEEC430, 0xD7B22E, 0x9E7717, 0x9E7617, 0xD6B12E, 0xEEC430, 0xF7D139, 0xCDA41B, 0, 0, 0xDFBA29, 0xEFC631, 0xFBD73C, 0xA7801B, 0xCAA529, 0xC9A329, 0xA57E1A, 0xFBD73C, 0xEFC531, 0xE0BB2B, 0, 0, 0xEAC531, 0xEFC631, 0xFAD63C, 0xECC836, 0xD2AC2C, 0xC29C26, 0xBA9423, 0xFAD63C, 0xEFC631, 0xEAC632, 0, 0, 0xEAC531, 0xEFC631, 0xFAD63C, 0xBE9824, 0xC39D26, 0xD0AA2B, 0xEDC837, 0xFAD63C, 0xEFC631, 0xEAC632, 0, 0, 0xE0BA2A, 0xEFC531, 0xFBD73C, 0xA57E1A, 0xCCA629, 0xCAA429, 0xA77F1B, 0xFAD73C, 0xEFC531, 0xE2BB2B, 0, 0, 0xCCA41C, 0xF6D139, 0xEEC430, 0xD6B02D, 0x9D7517, 0x9D7516, 0xD4AF2D, 0xEEC530, 0xF6D139, 0xCCA41D, 0, 0, 0, 0xD5AE22, 0xF6D139, 0xEFC531, 0xCCA326, 0xCAA125, 0xEFC531, 0xF6D139, 0xD7B023, 0, 0, 0, 0, 0, 0xCEA51C, 0xE2BB2B, 0xDAB52B, 0xD9B42B, 0xE2BC2B, 0xCDA51D, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 } },
+        { "food", new int[] { 6, 3, 3, 1, 0xF0B050, 9, 3, 1, 1, 0xF0B030, 10, 3, 4, 1, 0xF0B050, 4, 4, 2, 1, 0xF0B050, 6, 4, 1, 1, 0xF0B030, 7, 4, 1, 4, 0xF0B050, 8, 4, 1, 2, 0xF09030, 9, 4, 1, 1, 0xF0B070, 10, 4, 1, 2, 0xF0B050, 11, 4, 1, 2, 0xF09030, 12, 4, 1, 1, 0xF0B030, 13, 4, 3, 1, 0xF0B050, 3, 5, 1, 1, 0xF0B030, 4, 5, 1, 1, 0xF0B050, 5, 5, 1, 2, 0xF09030, 6, 5, 1, 1, 0xF0B070, 9, 5, 1, 1, 0xF0B050, 12, 5, 2, 2, 0xF0B050, 14, 5, 1, 2, 0xF09030, 15, 5, 1, 1, 0xF0B050, 16, 5, 1, 1, 0xF0B030, 2, 6, 2, 2, 0xF0B050, 4, 6, 1, 1, 0xF09030, 6, 6, 1, 1, 0xF0B050, 8, 6, 1, 1, 0xF0B050, 9, 6, 2, 1, 0xF09030, 11, 6, 1, 1, 0xF0B050, 15, 6, 1, 1, 0xF09050, 16, 6, 1, 2, 0xF0B050, 17, 6, 1, 1, 0xF0B030, 4, 7, 1, 2, 0xF09050, 5, 7, 1, 1, 0xF0B050, 6, 7, 1, 1, 0xF09030, 8, 7, 1, 1, 0xF0D070, 9, 7, 1, 1, 0xF0B050, 10, 7, 1, 1, 0xF09030, 11, 7, 1, 1, 0xF0B070, 12, 7, 1, 1, 0xF0B050, 13, 7, 1, 1, 0xF09030, 14, 7, 2, 1, 0xF0B050, 17, 7, 1, 2, 0xF0B050, 2, 8, 1, 1, 0xF0B050, 3, 8, 1, 1, 0xF09030, 5, 8, 1, 1, 0xF09050, 6, 8, 1, 1, 0xF0B050, 7, 8, 1, 1, 0xF09050, 8, 8, 1, 1, 0xF09030, 9, 8, 2, 1, 0xF09050, 11, 8, 1, 1, 0xF09030, 12, 8, 5, 1, 0xF09050, 1, 9, 1, 1, 0xB0B050, 2, 9, 1, 1, 0x90D050, 3, 9, 1, 1, 0x90B050, 4, 9, 12, 1, 0x90D050, 16, 9, 1, 1, 0x90B050, 17, 9, 1, 1, 0x90D050, 18, 9, 1, 1, 0xB0B050, 2, 10, 15, 1, 0x70D050, 17, 10, 1, 1, 0x70F050, 2, 11, 1, 1, 0x707030, 3, 11, 14, 1, 0x705030, 17, 11, 1, 1, 0x707030, 2, 12, 16, 1, 0x703030, 2, 13, 1, 1, 0x703030, 3, 13, 14, 1, 0x705030, 17, 13, 1, 1, 0x703030, 2, 14, 2, 1, 0xF0B050, 4, 14, 1, 1, 0xF09030, 5, 14, 10, 1, 0xF09050, 15, 14, 1, 1, 0xF09030, 16, 14, 2, 1, 0xF0B050, 1, 15, 1, 1, 0xF09050, 2, 15, 1, 2, 0xF0B050, 3, 15, 1, 1, 0xF09050, 4, 15, 12, 2, 0xF0B050, 16, 15, 1, 1, 0xF09050, 17, 15, 2, 1, 0xF0B050, 3, 16, 1, 1, 0xF0B050, 16, 16, 2, 1, 0xF0B050 } },
+        { "drink", new int[] { 9, 2, 2, 16, 0x50B0F0, 8, 4, 1, 7, 0x50B0F0, 11, 4, 1, 14, 0x50B0F0, 7, 6, 1, 4, 0x50B0F0, 12, 6, 1, 12, 0x50B0F0, 6, 8, 1, 4, 0x50B0F0, 13, 8, 1, 9, 0x50B0F0, 5, 10, 1, 6, 0x50B0F0, 7, 10, 1, 1, 0x30B0F0, 14, 10, 1, 6, 0x50B0F0, 7, 11, 1, 1, 0x90D0F0, 8, 11, 1, 1, 0x70B0F0, 15, 11, 1, 4, 0x50B0F0, 4, 12, 1, 3, 0x50B0F0, 6, 12, 1, 2, 0x70B0F0, 7, 12, 1, 2, 0xD0F0F0, 8, 12, 1, 2, 0xB0F0F0, 6, 14, 1, 3, 0x50B0F0, 7, 14, 1, 1, 0xB0D0F0, 8, 14, 1, 1, 0x90D0F0, 7, 15, 2, 3, 0x50B0F0 } },
+        { "energy", new int[] { 11, 2, 1, 2, 0xF0D030, 10, 3, 1, 1, 0xF0D030, 9, 4, 1, 1, 0xF0D030, 10, 4, 1, 1, 0xF0F050, 9, 5, 1, 2, 0xF0F030, 10, 5, 1, 8, 0xF0D030, 8, 6, 1, 1, 0xF0D030, 7, 7, 1, 1, 0xF0D030, 8, 7, 1, 1, 0xF0F050, 9, 7, 1, 6, 0xF0D030, 7, 8, 1, 1, 0xF0F050, 8, 8, 1, 2, 0xF0D030, 11, 8, 2, 2, 0xF0D030, 13, 8, 1, 1, 0xF0F030, 14, 8, 1, 1, 0xF0D030, 6, 9, 2, 1, 0xF0D030, 13, 9, 1, 2, 0xF0D030, 5, 10, 1, 1, 0xF0D030, 6, 10, 1, 1, 0xF0F050, 7, 10, 1, 1, 0xF0F030, 8, 10, 1, 1, 0xF0F050, 11, 10, 1, 1, 0xF0D030, 12, 10, 1, 1, 0xF0F050, 11, 11, 1, 1, 0xF0F030, 12, 11, 1, 1, 0xF0D030, 11, 12, 1, 1, 0xF0D030, 9, 13, 2, 1, 0xF0F030, 8, 14, 1, 4, 0xF0D030, 9, 14, 1, 1, 0xF0F050, 10, 14, 1, 1, 0xF0D030, 9, 15, 1, 1, 0xF0D030 } },
+        { "stock", new int[] { 2, 5, 1, 5, 0x907030, 3, 5, 1, 1, 0xB07030, 4, 5, 12, 2, 0x907030, 16, 5, 1, 1, 0xB07030, 17, 5, 1, 11, 0x907030, 3, 6, 1, 1, 0x907030, 16, 6, 1, 1, 0x907030, 3, 7, 2, 1, 0xB07050, 5, 7, 1, 10, 0x907030, 6, 7, 1, 1, 0xB07030, 7, 7, 2, 1, 0xB07050, 9, 7, 2, 1, 0xB07030, 11, 7, 2, 1, 0xB07050, 13, 7, 1, 1, 0xB07030, 14, 7, 1, 10, 0x907030, 15, 7, 2, 1, 0xB07050, 3, 8, 2, 2, 0xB09050, 6, 8, 1, 2, 0xB07050, 7, 8, 2, 2, 0xB09050, 9, 8, 1, 2, 0xB07050, 10, 8, 1, 9, 0x907030, 11, 8, 2, 2, 0xB09050, 13, 8, 1, 2, 0xB07050, 15, 8, 2, 2, 0xB09050, 2, 10, 1, 2, 0x905030, 3, 10, 1, 1, 0xB07030, 4, 10, 1, 1, 0x907030, 6, 10, 4, 1, 0x907030, 11, 10, 3, 1, 0x907030, 15, 10, 1, 1, 0x907030, 16, 10, 1, 1, 0xB07030, 3, 11, 2, 1, 0xB07050, 6, 11, 1, 1, 0x907030, 7, 11, 2, 1, 0xB07050, 9, 11, 1, 1, 0x907030, 11, 11, 2, 1, 0xB07050, 13, 11, 1, 1, 0x907030, 15, 11, 2, 1, 0xB07050, 2, 12, 1, 4, 0x907030, 3, 12, 2, 4, 0xB09050, 6, 12, 1, 4, 0xB07050, 7, 12, 2, 4, 0xB09050, 9, 12, 1, 1, 0xB07050, 11, 12, 2, 4, 0xB09050, 13, 12, 1, 4, 0xB07050, 15, 12, 2, 4, 0xB09050, 9, 13, 1, 2, 0x907030, 9, 15, 1, 1, 0xB07050, 2, 16, 1, 1, 0x905030, 3, 16, 1, 1, 0xB07050, 4, 16, 1, 1, 0xB07030, 6, 16, 1, 1, 0x907030, 7, 16, 1, 1, 0xB07030, 8, 16, 1, 1, 0xB07050, 9, 16, 1, 1, 0x907030, 11, 16, 1, 1, 0xB07050, 12, 16, 1, 1, 0xB07030, 13, 16, 1, 1, 0x907030, 15, 16, 1, 1, 0xB07030, 16, 16, 1, 1, 0xB07050, 17, 16, 1, 1, 0x905030 } },
+        { "money", new int[] { 7, 1, 2, 1, 0xB09010, 9, 1, 2, 1, 0xD09010, 11, 1, 2, 1, 0xB09010, 5, 2, 1, 1, 0xB09010, 6, 2, 1, 1, 0xD0B010, 7, 2, 6, 2, 0xF0D030, 13, 2, 1, 1, 0xD0B010, 14, 2, 1, 1, 0xB09010, 4, 3, 1, 1, 0xD09010, 5, 3, 2, 1, 0xF0D030, 13, 3, 2, 1, 0xF0D030, 15, 3, 1, 1, 0xD09010, 3, 4, 1, 1, 0xB09010, 4, 4, 1, 1, 0xF0D030, 5, 4, 1, 1, 0xF0D050, 6, 4, 1, 2, 0xF0D030, 7, 4, 1, 1, 0xF0B030, 8, 4, 4, 1, 0xF0D030, 12, 4, 1, 1, 0xF0B030, 13, 4, 1, 7, 0xF0D030, 14, 4, 1, 1, 0xF0D050, 15, 4, 1, 1, 0xF0D030, 16, 4, 1, 1, 0xD09010, 2, 5, 1, 1, 0xB09010, 3, 5, 1, 10, 0xF0D030, 4, 5, 1, 1, 0xF0D050, 5, 5, 1, 1, 0xF0B030, 7, 5, 1, 2, 0xF0D030, 8, 5, 1, 1, 0xF0F050, 9, 5, 2, 1, 0xD0B030, 11, 5, 1, 1, 0xF0F050, 12, 5, 1, 1, 0xF0D050, 14, 5, 1, 1, 0xF0B030, 15, 5, 1, 1, 0xF0D050, 16, 5, 1, 10, 0xF0D030, 17, 5, 1, 1, 0xB09010, 2, 6, 1, 1, 0xD0B010, 4, 6, 2, 1, 0xF0D030, 6, 6, 1, 1, 0xF0D050, 8, 6, 1, 1, 0xD0B030, 9, 6, 2, 1, 0xB07010, 11, 6, 1, 1, 0xD09030, 12, 6, 1, 1, 0xD0B030, 14, 6, 2, 1, 0xF0D030, 17, 6, 1, 1, 0xD0B010, 1, 7, 1, 2, 0xB09010, 2, 7, 1, 6, 0xF0D030, 4, 7, 1, 1, 0xF0B030, 5, 7, 2, 1, 0xF0D030, 7, 7, 6, 1, 0x907010, 14, 7, 1, 4, 0xF0D030, 15, 7, 1, 1, 0xF0B030, 17, 7, 1, 6, 0xF0D030, 18, 7, 1, 2, 0xB09010, 4, 8, 1, 4, 0xF0D030, 5, 8, 1, 1, 0xF0F050, 6, 8, 1, 2, 0xD0B030, 7, 8, 1, 1, 0x905010, 8, 8, 2, 1, 0xD0B030, 10, 8, 1, 1, 0xD09030, 11, 8, 1, 1, 0xF0F050, 12, 8, 1, 1, 0xF0B030, 15, 8, 1, 4, 0xF0D030, 1, 9, 1, 1, 0xD09010, 5, 9, 1, 1, 0xF0D050, 7, 9, 1, 1, 0x907010, 8, 9, 2, 1, 0xB09010, 10, 9, 1, 1, 0xB09030, 11, 9, 2, 1, 0xF0D030, 18, 9, 1, 2, 0xD09010, 1, 10, 1, 3, 0xB09010, 5, 10, 2, 3, 0xF0D030, 7, 10, 1, 1, 0xB09030, 8, 10, 4, 1, 0x907010, 12, 10, 1, 1, 0xB09010, 7, 11, 2, 1, 0xF0D030, 9, 11, 1, 1, 0xB09030, 10, 11, 2, 1, 0xB09010, 12, 11, 1, 2, 0x905010, 13, 11, 1, 1, 0xD0B030, 14, 11, 1, 2, 0xF0F050, 18, 11, 1, 2, 0xB09010, 4, 12, 1, 2, 0xF0B030, 7, 12, 1, 1, 0xF0D030, 8, 12, 1, 1, 0xF0F050, 9, 12, 1, 1, 0xD09030, 10, 12, 2, 1, 0xD0B030, 13, 12, 1, 1, 0xB09030, 15, 12, 1, 2, 0xF0B030, 2, 13, 1, 1, 0xD0B010, 5, 13, 1, 1, 0xF0D030, 6, 13, 1, 1, 0xD0B030, 7, 13, 1, 1, 0x907010, 8, 13, 1, 1, 0xB09010, 9, 13, 1, 2, 0xB07010, 10, 13, 3, 1, 0x907010, 13, 13, 2, 1, 0xF0D030, 17, 13, 1, 1, 0xD0B010, 2, 14, 1, 1, 0xB09010, 4, 14, 1, 1, 0xF0D050, 5, 14, 2, 1, 0xF0B030, 7, 14, 1, 1, 0xD0B030, 8, 14, 1, 1, 0xB09030, 10, 14, 1, 1, 0xB07010, 11, 14, 1, 1, 0xB09030, 12, 14, 2, 1, 0xF0D030, 14, 14, 1, 1, 0xF0B030, 15, 14, 1, 1, 0xF0D050, 17, 14, 1, 1, 0xB09010, 3, 15, 1, 1, 0xD09010, 4, 15, 1, 1, 0xF0D030, 5, 15, 1, 1, 0xF0D050, 6, 15, 3, 2, 0xF0D030, 9, 15, 2, 1, 0xB09030, 11, 15, 2, 3, 0xF0D030, 13, 15, 1, 1, 0xF0B030, 14, 15, 1, 1, 0xF0D050, 15, 15, 1, 1, 0xF0D030, 16, 15, 1, 1, 0xD09010, 4, 16, 1, 1, 0xD09010, 5, 16, 1, 1, 0xF0D030, 9, 16, 2, 1, 0xD0B030, 13, 16, 1, 1, 0xF0D050, 14, 16, 1, 1, 0xF0D030, 15, 16, 1, 1, 0xD09010, 5, 17, 1, 1, 0xB09010, 6, 17, 1, 1, 0xD0B010, 7, 17, 4, 1, 0xF0D030, 13, 17, 1, 1, 0xD0B010, 14, 17, 1, 1, 0xB09010, 7, 18, 1, 1, 0xB09010, 8, 18, 4, 1, 0xD09010, 12, 18, 1, 1, 0xB09010 } },
     };
+
+    // bieu tuong: uu tien anh PNG sieu net (GtaVietLifeIcons canh script) qua CustomSprite (nap bang reflection de khong loi bien dich
+    // neu ban SHVDN khong co); thieu thi ve khoi mau 20x20 (moi nhom 5 so = x, y, rong, cao, mau RGB)
+    readonly Dictionary<string, object> spriteIcons = new Dictionary<string, object>();
+    System.Reflection.ConstructorInfo spriteCtor; System.Reflection.PropertyInfo spPos, spSize; System.Reflection.MethodInfo spDraw;
+    bool spriteProbed, spriteOk;
+
+    void ProbeSprite()
+    {
+        spriteProbed = true;
+        try
+        {
+            Type t = null;
+            foreach (System.Reflection.Assembly asm in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                t = asm.GetType("GTA.UI.CustomSprite", false);
+                if (t != null) break;
+            }
+            if (t == null) { Log("khong co CustomSprite, dung icon khoi mau"); return; }
+            foreach (System.Reflection.ConstructorInfo ci in t.GetConstructors())
+            {
+                System.Reflection.ParameterInfo[] ps = ci.GetParameters();
+                if (ps.Length >= 3 && ps[0].ParameterType == typeof(string) && ps[1].ParameterType == typeof(SizeF) && ps[2].ParameterType == typeof(PointF))
+                { if (spriteCtor == null || ps.Length < spriteCtor.GetParameters().Length) spriteCtor = ci; }
+            }
+            spPos = t.GetProperty("Position"); spSize = t.GetProperty("Size"); spDraw = t.GetMethod("Draw", Type.EmptyTypes);
+            spriteOk = spriteCtor != null && spPos != null && spSize != null && spDraw != null;
+            Log("CustomSprite: " + (spriteOk ? "dung duoc" : "thieu thanh phan"));
+        }
+        catch (Exception ex) { Log("probe sprite loi: " + ex.Message); }
+    }
+
+    object GetSprite(string name, float x, float y, float size)
+    {
+        object sp;
+        if (spriteIcons.TryGetValue(name, out sp)) return sp;
+        sp = null;
+        try
+        {
+            string f = System.IO.Path.Combine(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(Filename), "GtaVietLifeIcons"), name + ".png");
+            if (System.IO.File.Exists(f))
+            {
+                System.Reflection.ParameterInfo[] ps = spriteCtor.GetParameters();
+                object[] args = new object[ps.Length];
+                args[0] = f; args[1] = new SizeF(size, size); args[2] = new PointF(x, y);
+                for (int i = 3; i < ps.Length; i++)
+                    args[i] = ps[i].ParameterType == typeof(Color) ? (object)Color.White : ps[i].ParameterType.IsValueType ? Activator.CreateInstance(ps[i].ParameterType) : null;
+                sp = spriteCtor.Invoke(args);
+            }
+        }
+        catch (Exception ex) { Log("nap icon " + name + " loi: " + ex.Message); sp = null; }
+        spriteIcons[name] = sp;
+        return sp;
+    }
 
     void DrawIcon(string name, float x, float y, float size)
     {
+        if (!spriteProbed) ProbeSprite();
+        if (spriteOk)
+        {
+            try
+            {
+                object sp = GetSprite(name, x, y, size);
+                if (sp != null)
+                {
+                    spSize.SetValue(sp, new SizeF(size, size), null);
+                    spPos.SetValue(sp, new PointF(x, y), null);
+                    spDraw.Invoke(sp, null);
+                    return;
+                }
+            }
+            catch (Exception ex) { Log("ve icon loi: " + ex.Message); spriteOk = false; }
+        }
         int[] d;
         if (!IconData.TryGetValue(name, out d)) return;
-        const int N = 12;
-        float c = size / N;
-        for (int j = 0; j < N; j++)
-            for (int i = 0; i < N; i++)
-            {
-                int v = d[j * N + i];
-                if (v == 0) continue;
-                new GTA.UI.ContainerElement(new PointF(x + i * c, y + j * c), new SizeF(c + 0.6f, c + 0.6f), Color.FromArgb(255, (v >> 16) & 255, (v >> 8) & 255, v & 255)).Draw();
-            }
+        float c = size / 20f;
+        for (int k = 0; k + 4 < d.Length; k += 5)
+        {
+            int v = d[k + 4];
+            new GTA.UI.ContainerElement(new PointF(x + d[k] * c, y + d[k + 1] * c), new SizeF(d[k + 2] * c + 0.4f, d[k + 3] * c + 0.4f), Color.FromArgb(255, (v >> 16) & 255, (v >> 8) & 255, v & 255)).Draw();
+        }
     }
 
     void DrawStat(string icon, string fallback, float value, float x, float y, Color fill)
