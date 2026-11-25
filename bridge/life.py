@@ -83,10 +83,14 @@ class Life:
             return
         with self.lock:
             self.rumors.append((time.time(), text))
-            self.rumors = self.rumors[-8:]
+            self.rumors = self.rumors[-12:]
         print(f"[tin đồn] {text}")
 
-    def context(self, npc: dict) -> str:
+    def recent(self, n: int = 8) -> list:
+        with self.lock:
+            return [t for _, t in self.rumors[-n:]]
+
+    def context(self, npc: dict, res_activity: str = "") -> str:
         """Các dòng bổ sung đưa vào prompt NPC."""
         with self.lock:
             st = dict(self.state)
@@ -96,7 +100,11 @@ class Life:
             hour = int(st.get("hour", "12"))
         except ValueError:
             hour = 12
-        lines.append(f"Việc bạn đang làm lúc này: {activity(npc['job'], hour)}.")
+        if res_activity:
+            lines.append("Bạn là cư dân sống ở khu này, hàng xóm quen mặt của người chơi, "
+                         f"có lịch sinh hoạt cố định. Lúc này bạn {res_activity}.")
+        else:
+            lines.append(f"Việc bạn đang làm lúc này: {activity(npc['job'], hour)}.")
         rel = relation(npc['affinity'])
         status = npc.get("status") or ""
         if status == "hen_ho":
@@ -108,6 +116,8 @@ class Life:
         lines.append(f"Với người chơi, bạn coi họ là: {rel}.")
         if npc.get("summary"):
             lines.append(f"Những gì bạn nhớ về người chơi từ trước: {npc['summary']}")
+        if st.get("weekday"):
+            lines.append(f"Hôm nay là {st['weekday']}.")
         p = []
         if st.get("player_name"):
             who = f"tên {st['player_name']}"
@@ -136,12 +146,19 @@ class Life:
         needs = []
         for key, name, words in (("hunger", "đói", [(15, "đói lả"), (35, "hơi đói")]),
                                  ("thirst", "khát", [(15, "khát khô cổ"), (35, "hơi khát")]),
-                                 ("energy", "mệt", [(15, "kiệt sức, mắt trũng"), (35, "hơi mệt")])):
+                                 ("energy", "mệt", [(15, "kiệt sức, mắt trũng"), (35, "hơi mệt")]),
+                                 ("hygiene", "bẩn", [(15, "người bốc mùi hôi, quần áo bẩn"), (35, "hơi lôi thôi, có mùi mồ hôi")])):
             w = _level(st.get(key), words + [(999, None)])
             if w:
                 needs.append(w)
         if needs:
             p.append("trông " + ", ".join(needs))
+        stress = _level(st.get("stress"), [(60, None), (80, "có vẻ căng thẳng, hơi cộc"), (999, "căng thẳng tột độ, dễ cáu gắt")])
+        if stress:
+            p.append(stress)
+        note = st.get("health_note")
+        if note and note != "-":
+            p.append(note)
         if p:
             lines.append("Điều bạn biết/nhìn thấy ở người chơi: " + "; ".join(p) + ".")
         if rumors:

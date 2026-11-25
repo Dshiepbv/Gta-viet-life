@@ -161,16 +161,6 @@ public class GtaVietLifeWorld : Script
     List<Action> menuActions = new List<Action>();
     Action menuBack;
 
-    // cư dân (NPC có lịch)
-    class Resident
-    {
-        public Ped P;
-        public Vector3 Home;
-        public Vector3 Work;
-        public int Phase = -1;
-        public int LastCmd;
-    }
-    readonly List<Resident> residents = new List<Resident>();
 
     public GtaVietLifeWorld()
     {
@@ -278,6 +268,8 @@ public class GtaVietLifeWorld : Script
             try { pa(); } catch (Exception ex) { Log("viec cho loi: " + ex); Notify("Loi: " + Short(ex)); }
         }
 
+        UpdateCityRhythm();
+        SyncLifeBus();
         if (sleepAt > 0 && now > sleepAt) { sleepAt = 0; FinishSleep(); }
         if (sleepAt > 0) return;
         UpdateClock();
@@ -312,7 +304,7 @@ public class GtaVietLifeWorld : Script
         foreach (Owned o in owned) if (o.Blip != null && o.Blip.Exists()) o.Blip.Delete();
         foreach (Blip b in estateListBlips) if (b != null && b.Exists()) b.Delete();
         if (destBlip != null && destBlip.Exists()) destBlip.Delete();
-        foreach (Resident r in residents) if (r.P != null && r.P.Exists()) r.P.IsPersistent = false;
+        foreach (Resident r in residents) DespawnRes(r);   // lan nap sau tu hien lai tu file luu
     }
 
     // ------------------------------------------------------------ đồng hồ, nhu cầu, ngày mới
@@ -329,6 +321,7 @@ public class GtaVietLifeWorld : Script
         hunger = Clamp(hunger - 0.06f * delta * drainMul);   // drainMul: ky nang The luc tu file Ca nhan
         thirst = Clamp(thirst - 0.09f * delta * drainMul);
         energy = Clamp(energy - 0.05f * delta * drainMul);
+        hygiene = Clamp(hygiene - 0.035f * delta);   // ~50%/ngay game
         if (dayCounter > lastDayTick) { lastDayTick = dayCounter; DailyTick(); }
     }
 
@@ -384,6 +377,11 @@ public class GtaVietLifeWorld : Script
             nextWarn = now + 60000;
             string what = hunger < 15f ? "doi" : thirst < 15f ? "khat" : "kiet suc, can ngu";
             Notify("~r~Sep dang " + what + "!~s~ Bam " + MK + " de an/uong/ngu.");
+        }
+        if (hygiene < 15f && now > nextHygWarn)
+        {
+            nextHygWarn = now + 180000;
+            Notify("~y~Nguoi Sep bat dau co mui~s~, nguoi ta de y roi. " + MK + " > Dich vu > Tam rua.");
         }
     }
 
@@ -2258,77 +2256,7 @@ public class GtaVietLifeWorld : Script
         }
     }
 
-    // ------------------------------------------------------------ cư dân có lịch sinh hoạt
-    void MakeResident()
-    {
-        Ped me = Game.Player.Character;
-        Ped best = null;
-        float bd = 6f;
-        foreach (Ped p in World.GetNearbyPeds(me, 6f))
-        {
-            if (p == null || !p.Exists() || p == me || !p.IsHuman || !p.IsAlive || p.IsPlayer) continue;
-            float d = p.Position.DistanceTo(me.Position);
-            if (d < bd) { bd = d; best = p; }
-        }
-        if (best == null) { Notify("Khong co ai o gan."); return; }
-        foreach (Resident r0 in residents) if (r0.P == best) { Notify("Nguoi nay da la cu dan roi."); return; }
-        Resident r = new Resident();
-        r.P = best;
-        r.Work = best.Position;
-        Vector3 h = Vector3.Zero;
-        for (int i = 0; i < 6 && h == Vector3.Zero; i++)
-        {
-            double ang = rnd.NextDouble() * Math.PI * 2;
-            float dist = 150f + (float)rnd.NextDouble() * 200f;
-            h = World.GetNextPositionOnStreet(best.Position + new Vector3((float)Math.Cos(ang) * dist, (float)Math.Sin(ang) * dist, 0f));
-        }
-        r.Home = h == Vector3.Zero ? best.Position : h;
-        best.IsPersistent = true;
-        Blip b = best.AddBlip();
-        b.Color = BlipColor.Blue;
-        b.Scale = 0.6f;
-        residents.Add(r);
-        Notify("~g~Cu dan moi~s~: ban ngay o day, toi ve nha.");
-    }
-
-    // 0 = ban ngay (7-19h) o cho lam, 1 = buoi toi (19-23h) gan nha, 2 = dem (23-7h) o nha
-    int PhaseNow()
-    {
-        int h = World.CurrentTimeOfDay.Hours;
-        if (h >= 7 && h < 19) return 0;
-        if (h >= 19 && h < 23) return 1;
-        return 2;
-    }
-
-    void UpdateResidents(int now)
-    {
-        if (now < nextResidentCheck || residents.Count == 0) return;
-        nextResidentCheck = now + 10000;
-        int phase = PhaseNow();
-        for (int i = residents.Count - 1; i >= 0; i--)
-        {
-            Resident r = residents[i];
-            Ped p = r.P;
-            if (p == null || !p.Exists() || !p.IsAlive) { residents.RemoveAt(i); continue; }
-            if (p.IsPositionFrozen) continue; // dang noi chuyen voi Sep
-            Vector3 c = phase == 0 ? r.Work : r.Home;
-            float radius = phase == 0 ? 20f : phase == 1 ? 10f : 3f;
-            float d = p.Position.DistanceTo2D(c);
-            if (d > radius + 10f)
-            {
-                if (now - r.LastCmd > 20000)
-                {
-                    r.LastCmd = now;
-                    Function.Call(Hash.TASK_FOLLOW_NAV_MESH_TO_COORD, p, c.X, c.Y, c.Z, 1.0f, -1, 2.0f, false, 0f);
-                }
-            }
-            else if (r.Phase != phase)
-            {
-                r.Phase = phase;
-                Function.Call(Hash.TASK_WANDER_IN_AREA, p, c.X, c.Y, c.Z, radius, 2f, 6f);
-            }
-        }
-    }
+    // (cu dan co lich: xem phan "DOI SONG" o cuoi file)
 
     // ------------------------------------------------------------ nhà, ăn, uống, ngủ
     bool Spend(int amount)
@@ -2508,7 +2436,7 @@ public class GtaVietLifeWorld : Script
                 GTA.UI.Screen.ShowSubtitle("~y~" + sitKey + "~s~: ra ngoai", 100);
         }
         if (nearFurn.Length > 0 && enterUntil <= 0 && !menuOpen)
-            GTA.UI.Screen.ShowSubtitle("~y~" + sitKey + "~s~: " + (nearFurn == "bed" ? "ngu (tua 8 gio)" : nearFurn == "fridge" ? "mo tu lanh (an uong mien phi)" : "nghi tren sofa"), 100);
+            GTA.UI.Screen.ShowSubtitle("~y~" + sitKey + "~s~: " + (nearFurn == "bed" ? "ngu (tua 8 gio)" : nearFurn == "fridge" ? (LifeFridgeOn() ? "mo tu lanh, nau an" : "mo tu lanh (an uong mien phi)") : "nghi tren sofa"), 100);
         if (enterUntil <= 0) return;
         Function.Call(Hash.REQUEST_COLLISION_AT_COORD, enterTarget.X, enterTarget.Y, enterTarget.Z);
         Function.Call(Hash.SET_FOCUS_POS_AND_VEL, enterTarget.X, enterTarget.Y, enterTarget.Z, 0f, 0f, 0f);
@@ -2673,6 +2601,10 @@ public class GtaVietLifeWorld : Script
     void UseFurniture()
     {
         if (nearFurn == "bed") { CloseMenu(); Sleep(); }
+        else if (nearFurn == "fridge" && LifeFridgeOn())
+        {
+            AppDomain.CurrentDomain.SetData("GVL.FridgeReq", true);   // file Doi song 2 lo: an mon trong tu lanh (co han dung)
+        }
         else if (nearFurn == "fridge")
         {
             hunger = Clamp(hunger + 30f); thirst = Clamp(thirst + 30f);
@@ -2788,6 +2720,8 @@ public class GtaVietLifeWorld : Script
     void FinishSleep()
     {
         Ped me = Game.Player.Character;
+        if (fadeAction == 1 || fadeAction == 2 || fadeAction == 4) sleptCount++;
+        if (FinishLifeAction(me)) { fadeAction = 0; Save(); return; }
         if (fadeAction == 3)
         {
             AdvanceTime(4 * 60);
@@ -2795,6 +2729,7 @@ public class GtaVietLifeWorld : Script
             hunger = Clamp(hunger - 15f);
             thirst = Clamp(thirst - 18f);
             energy = Clamp(energy - 20f);
+            hygiene = Clamp(hygiene - 25f);
             rep += 1;
             GTA.UI.Screen.FadeIn(800);
             Notify("~g~Het ca tho phu 4 gio:~s~ +$" + WorkPay + ". Hoi met, doi va khat.");
@@ -2805,6 +2740,7 @@ public class GtaVietLifeWorld : Script
             energy = Math.Max(energy, 70f);
             hunger = Clamp(hunger - 18f);
             thirst = Clamp(thirst - 18f);
+            hygiene = Clamp(hygiene - 20f);
             me.Health = Math.Max(me.Health, me.MaxHealth * 3 / 4);
             string extra = "";
             if (rnd.Next(100) < 30 && Game.Player.Money > 0)
@@ -3092,6 +3028,485 @@ public class GtaVietLifeWorld : Script
         Item("Quay lai", delegate { ShowMain(); });
     }
 
+    // ==================================================================== DOI SONG
+    // Cu dan co lich (luu lai qua cac lan choi), nhip pho theo gio, ve sinh ca nhan, dich vu doi thuong.
+
+    // ---- cu dan: nguoi Sep chon lam hang xom; co nha, cho lam, cho an trua. Sep di xa thi ho "khuat", toi gan thi hien lai dung cho theo gio.
+    const int MaxResidents = 8;
+    const string ResFile = "GtaVietLifeResidents.txt";   // GtaVietLife.cs (noi chuyen) doc file nay de NPC nho ten va lich cua cu dan
+    class Resident
+    {
+        public int Id;
+        public Ped P;
+        public int ModelHash;
+        public bool Female;
+        public int NameIdx;
+        public Vector3 Home, Work, Lunch;
+        public int Phase = -1;
+        public int LastCmd;
+        public Blip B;
+    }
+    readonly List<Resident> residents = new List<Resident>();
+    int nextResId = 1;
+    string lastResFile = "";
+    int lastResPh = -1;
+    static readonly string[][] ResNamesM = { new[] { "Anh Tuan", "Anh Tuấn" }, new[] { "Chu Bay", "Chú Bảy" }, new[] { "Anh Khoa", "Anh Khoa" }, new[] { "Bac Sau", "Bác Sáu" }, new[] { "Anh Long", "Anh Long" }, new[] { "Anh Phat", "Anh Phát" }, new[] { "Cau Minh", "Cậu Minh" }, new[] { "Anh Hung", "Anh Hùng" } };
+    static readonly string[][] ResNamesF = { new[] { "Chi Lan", "Chị Lan" }, new[] { "Co Hoa", "Cô Hoa" }, new[] { "Chi Mai", "Chị Mai" }, new[] { "Em Thu", "Em Thu" }, new[] { "Co Ut", "Cô Út" }, new[] { "Chi Hang", "Chị Hằng" }, new[] { "Ba Tu", "Bà Tư" }, new[] { "Em Vy", "Em Vy" } };
+    string ResName(Resident r) { string[][] a = r.Female ? ResNamesF : ResNamesM; return a[((r.NameIdx % a.Length) + a.Length) % a.Length][0]; }
+    string ResNameVi(Resident r) { string[][] a = r.Female ? ResNamesF : ResNamesM; return a[((r.NameIdx % a.Length) + a.Length) % a.Length][1]; }
+
+    // lich: 0 ngu (23-6h), 1 sang som quanh nha (6-7h), 2 lam sang (7-11h), 3 an trua (11-13h), 4 lam chieu (13-17h), 5 tan lam di dao (17-19h), 6 toi o nha (19-23h)
+    static int ResPhase(int h) { if (h >= 23 || h < 6) return 0; if (h < 7) return 1; if (h < 11) return 2; if (h < 13) return 3; if (h < 17) return 4; if (h < 19) return 5; return 6; }
+    static readonly string[] ResPhaseName = { "dang ngu trong nha", "sang som quanh nha", "dang lam viec", "nghi an trua", "lam ca chieu", "tan lam, di dao", "buoi toi o nha" };
+    static readonly string[] ResPhaseVi = { "khuya rồi, đang ngủ ở nhà (bị người chơi gọi dậy)", "sáng sớm, đang loanh quanh gần nhà", "đang trong giờ làm buổi sáng", "đang nghỉ trưa, đi ăn cơm gần chỗ làm", "đang trong giờ làm buổi chiều", "vừa tan làm, đang đi dạo thư giãn", "buổi tối, đang ở quanh nhà" };
+    static Vector3 ResSpot(Resident r, int ph) { return ph == 2 || ph == 4 ? r.Work : ph == 3 ? r.Lunch : r.Home; }
+    static float ResRadius(int ph) { return ph == 0 ? 3f : ph == 1 ? 8f : ph == 3 ? 10f : ph == 5 ? 25f : ph == 6 ? 8f : 15f; }
+
+    Vector3 StreetAround(Vector3 c, float minD, float maxD)
+    {
+        for (int i = 0; i < 6; i++)
+        {
+            double ang = rnd.NextDouble() * Math.PI * 2;
+            float dist = minD + (float)rnd.NextDouble() * (maxD - minD);
+            Vector3 v = World.GetNextPositionOnStreet(c + new Vector3((float)Math.Cos(ang) * dist, (float)Math.Sin(ang) * dist, 0f));
+            if (v != Vector3.Zero) return v;
+        }
+        return c;
+    }
+
+    // diem dung tren via he gan 'c' (tranh dat nguoi giua long duong)
+    Vector3 SidewalkNear(Vector3 c)
+    {
+        try
+        {
+            OutputArgument o = new OutputArgument();
+            if (Function.Call<bool>((Hash)0xB61C8E878A4199CA, c.X, c.Y, c.Z, true, o, 16)) { Vector3 v = o.GetResult<Vector3>(); if (v != Vector3.Zero) return v; }   // GET_SAFE_COORD_FOR_PED
+        }
+        catch { }
+        return c;
+    }
+
+    void AttachResBlip(Resident r)
+    {
+        try
+        {
+            if (r.B != null && r.B.Exists()) r.B.Delete();
+            r.B = r.P.AddBlip();
+            r.B.Color = BlipColor.Blue;
+            r.B.Scale = 0.6f;
+            r.B.IsShortRange = true;
+            r.B.Name = "Cu dan: " + ResName(r);
+        }
+        catch (Exception ex) { Log("blip cu dan loi: " + ex.Message); }
+    }
+
+    void DespawnRes(Resident r)
+    {
+        try { if (r.B != null && r.B.Exists()) r.B.Delete(); } catch { }
+        r.B = null;
+        try { if (r.P != null && r.P.Exists()) r.P.Delete(); } catch { }
+        r.P = null;
+        r.Phase = -1;
+    }
+
+    void MakeResident()
+    {
+        if (residents.Count >= MaxResidents) { Notify("Toi da " + MaxResidents + " cu dan. Bo bot mot nguoi trong danh sach truoc."); return; }
+        Ped me = Game.Player.Character;
+        Ped best = null;
+        float bd = 6f;
+        foreach (Ped p in World.GetNearbyPeds(me, 6f))
+        {
+            if (p == null || !p.Exists() || p == me || !p.IsHuman || !p.IsAlive || p.IsPlayer || p.IsInVehicle()) continue;
+            bool taken = false;
+            foreach (Resident r0 in residents) if (r0.P == p) taken = true;
+            if (taken || staffPeds.Contains(p)) continue;
+            float d = p.Position.DistanceTo(me.Position);
+            if (d < bd) { bd = d; best = p; }
+        }
+        if (best == null) { Notify("Khong co ai o gan (6 m, di bo)."); return; }
+        Resident r = new Resident();
+        r.Id = nextResId++;
+        r.P = best;
+        r.ModelHash = best.Model.Hash;
+        r.Female = best.Gender == Gender.Female;
+        r.NameIdx = rnd.Next(8);
+        r.Work = best.Position;
+        r.Home = StreetAround(best.Position, 150f, 350f);
+        r.Lunch = StreetAround(r.Work, 40f, 90f);
+        best.IsPersistent = true;
+        AttachResBlip(r);
+        residents.Add(r);
+        WriteResFile();
+        Notify("~g~Cu dan moi: " + ResName(r) + "~s~. Ban ngay lam o day, trua di an gan day, toi ve nha, khuya ngu.");
+        Save();
+    }
+
+    void UpdateResidents(int now)
+    {
+        if (now < nextResidentCheck || residents.Count == 0) return;
+        nextResidentCheck = now + 3000;
+        Ped me = Game.Player.Character;
+        int ph = ResPhase(World.CurrentTimeOfDay.Hours);
+        bool changed = false;
+        for (int i = residents.Count - 1; i >= 0; i--)
+        {
+            Resident r = residents[i];
+            Vector3 spot = ResSpot(r, ph);
+            float rad = ResRadius(ph);
+            if (r.P != null && r.P.Exists())
+            {
+                Ped p = r.P;
+                if (!p.IsAlive)
+                {
+                    Notify("~r~Cu dan " + ResName(r) + " da mat.~s~");
+                    PostEvent("Hàng xóm " + ResNameVi(r) + " vừa qua đời, cả khu xôn xao.");
+                    DespawnRes(r); residents.RemoveAt(i); changed = true;
+                    continue;
+                }
+                if (p.IsPositionFrozen) continue;   // dang noi chuyen voi Sep
+                float dMe = p.Position.DistanceTo(me.Position);
+                // Sep o xa, hoac khuya ma nguoi nay da ve toi nha va Sep khong o canh: cho "vao nha"/khuat, khoi ton bo nho
+                if (dMe > 180f || (ph == 0 && dMe > 35f && p.Position.DistanceTo2D(r.Home) < 25f)) { DespawnRes(r); changed = true; continue; }
+                bool inGroup = false;
+                try { inGroup = me.PedGroup.Contains(p); } catch { }
+                if (inGroup) continue;   // dang di theo Sep
+                float d = p.Position.DistanceTo2D(spot);
+                if (d > rad + 10f)
+                {
+                    if (now - r.LastCmd > 20000)
+                    {
+                        r.LastCmd = now; r.Phase = -1;
+                        float spd = d > 250f ? 2.0f : 1.0f;   // xa qua thi di nhanh (chay bo nhe)
+                        Function.Call(Hash.TASK_FOLLOW_NAV_MESH_TO_COORD, p, spot.X, spot.Y, spot.Z, spd, -1, 2.0f, false, 0f);
+                    }
+                }
+                else if (r.Phase != ph)
+                {
+                    r.Phase = ph;
+                    Function.Call(Hash.TASK_WANDER_IN_AREA, p, spot.X, spot.Y, spot.Z, rad, 2f, 6f);
+                }
+            }
+            else
+            {
+                if (r.P != null) { r.P = null; changed = true; }
+                if (ph == 0) continue;   // dang ngu trong nha, khong hien ra
+                float dSpot = me.Position.DistanceTo(spot);
+                if (dSpot > 140f) continue;
+                Vector3 sp = SidewalkNear(spot);
+                bool seen = false;
+                try { seen = Function.Call<bool>((Hash)0xE33D59DA70B58FDF, sp.X, sp.Y, sp.Z, 1.2f); } catch { }   // IS_SPHERE_VISIBLE
+                if (seen && me.Position.DistanceTo(sp) < 60f) continue;   // khong cho nguoi "moc" ra truoc mat Sep
+                Model m = new Model(r.ModelHash);
+                if (!m.IsInCdImage) { Log("cu dan " + r.Id + ": model khong con, bo"); residents.RemoveAt(i); changed = true; continue; }
+                if (!Loaded(m)) continue;
+                Ped np = World.CreatePed(m, sp);
+                if (np == null || !np.Exists()) continue;
+                np.IsPersistent = true;
+                r.P = np; r.LastCmd = 0; r.Phase = ph;
+                AttachResBlip(r);
+                Function.Call(Hash.TASK_WANDER_IN_AREA, np, spot.X, spot.Y, spot.Z, rad, 2f, 6f);
+                changed = true;
+            }
+        }
+        if (changed || ph != lastResPh) { lastResPh = ph; WriteResFile(); }
+    }
+
+    // handle|khoa|ten co dau|dang lam gi  (de phan noi chuyen gan dung tri nho cho cu dan)
+    void WriteResFile()
+    {
+        try
+        {
+            int ph = ResPhase(World.CurrentTimeOfDay.Hours);
+            StringBuilder b = new StringBuilder();
+            foreach (Resident r in residents)
+                if (r.P != null && r.P.Exists()) b.Append(r.P.Handle + "|res_" + r.Id + "|" + ResNameVi(r) + "|" + ResPhaseVi[ph] + "\n");
+            string s = b.ToString();
+            if (s == lastResFile) return;
+            lastResFile = s;
+            File.WriteAllText(ResFile, s, new UTF8Encoding(false));
+        }
+        catch (Exception ex) { Log("ghi file cu dan loi: " + ex.Message); }
+    }
+
+    void ShowResidents()
+    {
+        Begin("CU DAN & HANG XOM  (" + residents.Count + "/" + MaxResidents + ")", delegate { ShowMain(); });
+        int ph = ResPhase(World.CurrentTimeOfDay.Hours);
+        Vector3 me = Game.Player.Character.Position;
+        Item("Dat nguoi gan nhat lam cu dan  (co ten, co lich, nho Sep)", delegate { MakeResident(); ShowResidents(); });
+        foreach (Resident r0 in residents)
+        {
+            Resident r = r0;
+            Vector3 at = r.P != null && r.P.Exists() ? r.P.Position : ResSpot(r, ph);
+            Item(ResName(r) + "  (" + ResPhaseName[ph] + ", cach " + (int)me.DistanceTo2D(at) + "m)", delegate { ShowResident(r); });
+        }
+        Item("Nhip pho theo gio: " + (rhythmOn ? "BAT" : "TAT") + "  (dem vang nguoi, gio cao diem dong)", delegate { rhythmOn = !rhythmOn; Save(); ShowResidents(); });
+        Item("Quay lai", delegate { ShowMain(); });
+    }
+
+    void ShowResident(Resident r)
+    {
+        int ph = ResPhase(World.CurrentTimeOfDay.Hours);
+        Begin("CU DAN: " + ResName(r).ToUpper(), delegate { ShowResidents(); });
+        Info("Bay gio: " + ResPhaseName[ph] + (r.P != null && r.P.Exists() ? "" : " (dang khuat, toi gan se gap)"));
+        Info("Lich: 7-11h lam, 11-13h an trua, 13-17h lam, 17-19h di dao, toi o nha, 23-6h ngu");
+        Item("Dan duong toi cho nguoi nay dang o", delegate
+        {
+            Vector3 at = r.P != null && r.P.Exists() ? r.P.Position : ResSpot(r, ph);
+            Function.Call(Hash.SET_NEW_WAYPOINT, at.X, at.Y);
+            Notify("Da dat diem den: ~b~" + ResName(r) + "~s~.");
+            CloseMenu();
+        });
+        Item("Dan duong toi nha nguoi nay", delegate { Function.Call(Hash.SET_NEW_WAYPOINT, r.Home.X, r.Home.Y); Notify("Da dat diem den: nha " + ResName(r) + "."); CloseMenu(); });
+        Item("Thoi khong lam cu dan nua", delegate
+        {
+            residents.Remove(r);
+            try { if (r.B != null && r.B.Exists()) r.B.Delete(); } catch { }
+            if (r.P != null && r.P.Exists()) r.P.MarkAsNoLongerNeeded();
+            r.P = null;
+            WriteResFile(); Save();
+            Notify(ResName(r) + " khong con la cu dan.");
+            ShowResidents();
+        });
+        Item("Quay lai", delegate { ShowResidents(); });
+    }
+
+    // ---- nhip pho: so nguoi/xe tren duong theo gio (khuya vang, gio cao diem dong). Phai goi moi khung hinh.
+    bool rhythmOn = true;
+    void UpdateCityRhythm()
+    {
+        if (!rhythmOn) return;
+        int h = World.CurrentTimeOfDay.Hours;
+        float ped, veh;
+        if (h < 4) { ped = 0.2f; veh = 0.3f; }
+        else if (h < 6) { ped = 0.35f; veh = 0.45f; }
+        else if (h < 7) { ped = 0.7f; veh = 0.8f; }
+        else if (h < 9) { ped = 1f; veh = 1f; }        // cao diem sang
+        else if (h < 11) { ped = 0.8f; veh = 0.8f; }
+        else if (h < 13) { ped = 0.95f; veh = 0.85f; } // trua, ra duong an com
+        else if (h < 17) { ped = 0.8f; veh = 0.8f; }
+        else if (h < 19) { ped = 1f; veh = 1f; }       // cao diem chieu
+        else if (h < 22) { ped = 0.75f; veh = 0.65f; }
+        else { ped = 0.45f; veh = 0.45f; }
+        try
+        {
+            Function.Call((Hash)0x95E3D6257B166CF2, ped);        // SET_PED_DENSITY_MULTIPLIER_THIS_FRAME
+            Function.Call((Hash)0x7A556143A1C03898, ped, ped);   // SET_SCENARIO_PED_DENSITY_MULTIPLIER_THIS_FRAME
+            Function.Call((Hash)0x245A6883D966D537, veh);        // SET_VEHICLE_DENSITY_MULTIPLIER_THIS_FRAME
+            Function.Call((Hash)0xB3B3359379FE77D3, veh);        // SET_RANDOM_VEHICLE_DENSITY_MULTIPLIER_THIS_FRAME
+        }
+        catch { }
+    }
+
+    // ---- cau noi voi file Doi song 2 (GtaVietLifeDoiSong.cs) qua AppDomain data, xem docs/CORE.md
+    int sleptCount;
+    readonly float[] lifeNeedsPub = new float[3];
+    void SyncLifeBus()
+    {
+        try
+        {
+            AppDomain d = AppDomain.CurrentDomain;
+            float[] add = d.GetData("GVL.NeedsAdd") as float[];   // file Ca nhan cung doc khoa nay; ai doc truoc thi cong roi xoa
+            if (add != null && add.Length >= 3)
+            {
+                d.SetData("GVL.NeedsAdd", null);
+                hunger = Clamp(hunger + add[0]); thirst = Clamp(thirst + add[1]); energy = Clamp(energy + add[2]);
+            }
+            object ha = d.GetData("GVL.HygAdd");
+            if (ha is float) { d.SetData("GVL.HygAdd", null); hygiene = Clamp(hygiene + (float)ha); }
+            object ra = d.GetData("GVL.RepAdd");
+            if (ra is int) { d.SetData("GVL.RepAdd", null); rep += (int)ra; }
+            lifeNeedsPub[0] = hunger; lifeNeedsPub[1] = thirst; lifeNeedsPub[2] = energy;
+            d.SetData("GVL.Needs", lifeNeedsPub);
+            d.SetData("GVL.Hygiene", hygiene);
+            d.SetData("GVL.Home", new int[] { hasHome ? 1 : 0, insideHome ? 1 : 0 });
+            d.SetData("GVL.Slept", sleptCount);
+        }
+        catch { }
+    }
+
+    // tra tien qua cong chung GVL.Pay (Core/Kinh te ghi so); khong co thi tru tien mat nhu cu
+    bool PayVia(int amount, string cat, string note)
+    {
+        Func<int, string, string, bool> f = null;
+        try { f = AppDomain.CurrentDomain.GetData("GVL.Pay") as Func<int, string, string, bool>; } catch { }
+        if (f == null) return Spend(amount);
+        bool ok = false;
+        try { ok = f(amount, cat, note); } catch { }
+        if (!ok) Notify("Khong du tien ($" + amount + ").");
+        return ok;
+    }
+
+    static bool LifeFridgeOn() { try { object o = AppDomain.CurrentDomain.GetData("GVL.LifeOn"); return o is bool && (bool)o; } catch { return false; } }
+
+    // ---- ve sinh ca nhan: giam dan theo gio game (chi khi dang choi), tam o nha/nha nghi. NPC thay Sep ban thi noi.
+    float hygiene = 90f;
+    int nextHygWarn;
+
+    void Shower()
+    {
+        Ped me = Game.Player.Character;
+        if (me.IsInVehicle()) { Notify("Xuong xe da."); return; }
+        bool atHome = hasHome && (insideHome || me.Position.DistanceTo(home) < 30f);
+        bool atMotel = NearMotel(me) >= 0;
+        if (!atHome && !atMotel) { Notify("Chi tam duoc o nha minh hoac nha nghi."); return; }
+        if (!atHome && !PayVia(ShowerMotelPrice, "leisure", "tam nha nghi")) return;
+        fadeAction = 5;
+        GTA.UI.Screen.FadeOut(600);
+        sleepAt = Game.GameTime + 900;
+    }
+
+    // ---- dich vu doi thuong: rua xe, cuu ho sua xe, nha nghi
+    const int CarWashPrice = 15, CarWashMobile = 40, MotelPrice = 60, ShowerMotelPrice = 10;
+    // toa do uoc luong, chua kiem chung trong game: tiem rua xe o Strawberry; nha nghi Pink Cage (Alta)
+    static readonly Vector3[] CarWashSpots = { new Vector3(25.0f, -1392.0f, 29.3f) };
+    static readonly Vector3[] MotelSpots = { new Vector3(324.5f, -212.0f, 54.1f) };
+
+    int NearMotel(Ped me) { for (int i = 0; i < MotelSpots.Length; i++) if (me.Position.DistanceTo(MotelSpots[i]) < 40f) return i; return -1; }
+
+    Vehicle ServiceVehicle(Ped me)
+    {
+        if (me.IsInVehicle()) return me.CurrentVehicle;
+        if (ownVeh != null && ownVeh.Exists() && ownVeh.Position.DistanceTo(me.Position) < 10f) return ownVeh;
+        try
+        {
+            Vehicle lv = Function.Call<Vehicle>((Hash)0xB6997A7EB3F5C8C0);   // GET_PLAYERS_LAST_VEHICLE
+            if (lv != null && lv.Exists() && lv.Position.DistanceTo(me.Position) < 10f) return lv;
+        }
+        catch { }
+        return null;
+    }
+
+    Vehicle svcVeh;
+    void WashCar()
+    {
+        Ped me = Game.Player.Character;
+        Vehicle v = ServiceVehicle(me);
+        if (v == null) { Notify("Ngoi tren xe (hoac dung canh xe 10 m) roi chon rua xe."); return; }
+        bool atShop = false;
+        foreach (Vector3 c in CarWashSpots) if (v.Position.DistanceTo(c) < 25f) atShop = true;
+        int price = atShop ? CarWashPrice : CarWashMobile;
+        if (!PayVia(price, "car", "rua xe")) return;
+        svcVeh = v;
+        fadeAction = 6;
+        GTA.UI.Screen.FadeOut(600);
+        sleepAt = Game.GameTime + 900;
+        Notify((atShop ? "Rua xe tai tiem" : "Goi tho rua xe tan noi") + " (-$" + price + ").");
+    }
+
+    int RepairCost(Vehicle v)
+    {
+        float eng = 1000f, body = 1000f;
+        try { eng = Function.Call<float>((Hash)0xC45D23BAF168AAB8, v); body = Function.Call<float>((Hash)0xF271147EB7B40F12, v); } catch { }   // GET_VEHICLE_ENGINE_HEALTH / BODY_HEALTH
+        float dmg = Math.Max(0f, 1000f - eng) + Math.Max(0f, 1000f - body) * 0.5f;
+        return 60 + (int)(dmg / 4f);
+    }
+
+    void RepairCar()
+    {
+        Ped me = Game.Player.Character;
+        Vehicle v = ServiceVehicle(me);
+        if (v == null) { Notify("Ngoi tren xe (hoac dung canh xe 10 m) roi goi cuu ho."); return; }
+        int cost = RepairCost(v);
+        if (!PayVia(cost, "car", "sua xe tai cho")) return;
+        svcVeh = v;
+        fadeAction = 7;
+        GTA.UI.Screen.FadeOut(600);
+        sleepAt = Game.GameTime + 900;
+        Notify("Tho cuu ho toi sua xe tai cho (-$" + cost + ").");
+    }
+
+    void StayMotel()
+    {
+        Ped me = Game.Player.Character;
+        if (NearMotel(me) < 0)
+        {
+            Function.Call(Hash.SET_NEW_WAYPOINT, MotelSpots[0].X, MotelSpots[0].Y);
+            Notify("Da dat diem den: ~y~nha nghi~s~. Toi noi roi mo lai muc nay.");
+            CloseMenu();
+            return;
+        }
+        if (me.IsInVehicle()) { Notify("Xuong xe da."); return; }
+        if (Game.Player.WantedLevel > 0) { Notify("Dang bi truy na, nha nghi khong cho thue."); return; }
+        if (!PayVia(MotelPrice, "leisure", "nha nghi")) return;
+        CloseMenu();
+        fadeAction = 4;
+        GTA.UI.Screen.FadeOut(800);
+        sleepAt = Game.GameTime + 1100;
+    }
+
+    // cac viec tua gio cua phan doi song (fadeAction 4..7); tra ve true neu da xu ly
+    bool FinishLifeAction(Ped me)
+    {
+        if (fadeAction == 4)
+        {
+            AdvanceTime(8 * 60);
+            energy = Math.Max(energy, 90f);
+            hunger = Clamp(hunger - 15f); thirst = Clamp(thirst - 15f);
+            hygiene = 100f;
+            me.Health = me.MaxHealth;
+            GTA.UI.Screen.FadeIn(800);
+            Notify("Ngu nha nghi 8 tieng, tam rua sach se (-$" + MotelPrice + ").");
+            return true;
+        }
+        if (fadeAction == 5)
+        {
+            AdvanceTime(20);
+            hygiene = 100f;
+            energy = Clamp(energy + 3f);
+            try { Function.Call((Hash)0x8FE22675A5A45817, me); Function.Call((Hash)0x9C720776DAA43E7E, me); } catch { }   // CLEAR_PED_BLOOD_DAMAGE, CLEAR_PED_WETNESS
+            GTA.UI.Screen.FadeIn(600);
+            Notify("Tam xong, thom tho sach se.");
+            return true;
+        }
+        if (fadeAction == 6 || fadeAction == 7)
+        {
+            AdvanceTime(fadeAction == 6 ? 15 : 40);
+            try
+            {
+                if (svcVeh != null && svcVeh.Exists())
+                {
+                    Function.Call((Hash)0x79D3B596FE44EE8B, svcVeh, 0f);   // SET_VEHICLE_DIRT_LEVEL
+                    if (fadeAction == 7)
+                    {
+                        Function.Call((Hash)0x115722B1B9C14C1C, svcVeh);   // SET_VEHICLE_FIXED
+                        Function.Call((Hash)0x953DA1E1B12C0491, svcVeh);   // SET_VEHICLE_DEFORMATION_FIXED
+                    }
+                }
+            }
+            catch (Exception ex) { Log("dich vu xe loi: " + ex.Message); }
+            svcVeh = null;
+            GTA.UI.Screen.FadeIn(600);
+            Notify(fadeAction == 6 ? "Xe sach bong roi." : "Xe da sua xong, chay ngon.");
+            return true;
+        }
+        return false;
+    }
+
+    void ShowServices()
+    {
+        Ped me = Game.Player.Character;
+        Begin("DICH VU DOI THUONG", delegate { ShowMain(); });
+        bool atHome = hasHome && (insideHome || me.Position.DistanceTo(home) < 30f);
+        Item("Tam rua  (" + (atHome ? "o nha, mien phi" : "nha nghi $" + ShowerMotelPrice) + ")  - ve sinh " + (int)hygiene + "%", delegate { CloseMenu(); Shower(); });
+        Vehicle v = ServiceVehicle(me);
+        if (v != null)
+        {
+            bool atShop = false;
+            foreach (Vector3 c in CarWashSpots) if (v.Position.DistanceTo(c) < 25f) atShop = true;
+            Item("Rua xe  (" + (atShop ? "tai tiem $" + CarWashPrice : "tho toi tan noi $" + CarWashMobile) + ")", delegate { CloseMenu(); WashCar(); });
+            Item("Goi cuu ho sua xe tai cho  ($" + RepairCost(v) + ")", delegate { CloseMenu(); RepairCar(); });
+        }
+        else
+        {
+            Info("Rua xe / sua xe: ngoi tren xe hoac dung canh xe");
+            Item("Dan duong toi tiem rua xe (re hon: $" + CarWashPrice + ")", delegate { Function.Call(Hash.SET_NEW_WAYPOINT, CarWashSpots[0].X, CarWashSpots[0].Y); Notify("Da dat diem den: tiem rua xe."); CloseMenu(); });
+        }
+        Item("Ngu nha nghi  ($" + MotelPrice + "/dem, tam + ngu 8 tieng, an toan)", delegate { StayMotel(); });
+        Item("Quay lai", delegate { ShowMain(); });
+    }
+
     // ------------------------------------------------------------ menu
     void OpenMenu()
     {
@@ -3148,7 +3563,8 @@ public class GtaVietLifeWorld : Script
         Item("Cong viec...", delegate { ShowJob(); });
         Item("Kinh doanh...", delegate { ShowBiz(); });
         Item("Di chuyen: goi taxi, tai xe rieng...", delegate { ShowTransport(); });
-        Item("Dat nguoi gan nhat lam cu dan (co lich)", delegate { MakeResident(); });
+        Item("Dich vu: tam rua, rua xe, sua xe, nha nghi...", delegate { ShowServices(); });
+        Item("Cu dan & hang xom...", delegate { ShowResidents(); });
         Item("Thong tin", delegate { ShowInfo(); });
         if (debt > 0) Item("Tra no  ($" + debt + ")", delegate { PayDebt(); ShowMain(); });
     }
@@ -3590,9 +4006,10 @@ public class GtaVietLifeWorld : Script
         DrawStat("food", "An", hunger, x, y, Color.FromArgb(220, 235, 150, 40));
         DrawStat("drink", "Uong", thirst, x, y + 22f, Color.FromArgb(220, 60, 160, 235));
         DrawStat("energy", "Nang luong", energy, x, y + 44f, Color.FromArgb(220, 235, 210, 60));
-        float below = y + 66f;
+        DrawStat("hygiene", "Ve sinh", hygiene, x, y + 66f, Color.FromArgb(220, 120, 220, 200));
+        float below = y + 88f;
         if (showStock && shops.Count > 0) { DrawStockPanel(x, below); below += 30f + shops.Count * 20f; }
-        y = below - 66f;   // phan chu phia duoi tinh theo vi tri moi
+        y = below - 66f;   // phan chu phia duoi tinh theo vi tri moi (below da tinh ca thanh ve sinh)
         string extra = "";
         if (jobGiaoHang) extra += "Giao hang";
         if (delivering)
@@ -3664,6 +4081,7 @@ public class GtaVietLifeWorld : Script
         c["hunger"] = ((int)hunger).ToString();
         c["thirst"] = ((int)thirst).ToString();
         c["energy"] = ((int)energy).ToString();
+        c["hygiene"] = ((int)hygiene).ToString();
         c["rep"] = rep.ToString();
         c["debt"] = debt.ToString();
         c["job"] = jobGiaoHang ? "shipper giao hàng" : "";
@@ -3706,6 +4124,11 @@ public class GtaVietLifeWorld : Script
             l.Add("hunger=" + hunger.ToString(ci));
             l.Add("thirst=" + thirst.ToString(ci));
             l.Add("energy=" + energy.ToString(ci));
+            l.Add("hygiene=" + hygiene.ToString(ci));
+            l.Add("rhythm=" + (rhythmOn ? 1 : 0));
+            l.Add("resnext=" + nextResId);
+            foreach (Resident r in residents)
+                l.Add("res=" + r.Id + "," + r.ModelHash + "," + (r.Female ? 1 : 0) + "," + r.NameIdx + "," + r.Home.X.ToString(ci) + "," + r.Home.Y.ToString(ci) + "," + r.Home.Z.ToString(ci) + "," + r.Work.X.ToString(ci) + "," + r.Work.Y.ToString(ci) + "," + r.Work.Z.ToString(ci) + "," + r.Lunch.X.ToString(ci) + "," + r.Lunch.Y.ToString(ci) + "," + r.Lunch.Z.ToString(ci));
             l.Add("rep=" + rep);
             l.Add("debt=" + debt);
             l.Add("seen=" + NowEpoch());
@@ -3801,6 +4224,22 @@ public class GtaVietLifeWorld : Script
                     case "hunger": hunger = float.Parse(v, ci); break;
                     case "thirst": thirst = float.Parse(v, ci); break;
                     case "energy": energy = float.Parse(v, ci); break;
+                    case "hygiene": hygiene = float.Parse(v, ci); break;
+                    case "rhythm": rhythmOn = v != "0"; break;
+                    case "resnext": nextResId = int.Parse(v); break;
+                    case "res":
+                        {
+                            string[] q = v.Split(',');
+                            if (q.Length < 13) break;
+                            Resident r = new Resident();
+                            r.Id = int.Parse(q[0]); r.ModelHash = int.Parse(q[1]); r.Female = q[2] == "1"; r.NameIdx = int.Parse(q[3]);
+                            r.Home = new Vector3(float.Parse(q[4], ci), float.Parse(q[5], ci), float.Parse(q[6], ci));
+                            r.Work = new Vector3(float.Parse(q[7], ci), float.Parse(q[8], ci), float.Parse(q[9], ci));
+                            r.Lunch = new Vector3(float.Parse(q[10], ci), float.Parse(q[11], ci), float.Parse(q[12], ci));
+                            residents.Add(r);
+                            if (r.Id >= nextResId) nextResId = r.Id + 1;
+                            break;
+                        }
                     case "rep": rep = int.Parse(v); break;
                     case "debt": debt = int.Parse(v); break;
                     case "seen": lastSeen = long.Parse(v); break;

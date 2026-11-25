@@ -133,6 +133,33 @@ class Bridge:
         print("[banter] " + " / ".join(f"{(a if w == 'A' else b)['name']}: {t}" for w, t, _, _ in plan))
         return str(len(plan)) + "\n" + "\n".join(f"{w}|{ms}" for w, _, _, ms in plan)
 
+    RADIO = {"key": "radio_host", "name": "Đài phát thanh", "gender": "nữ", "job": "phát thanh viên",
+             "trait": "rõ ràng, điềm đạm", "pitch": "+0Hz", "rate": "+0%", "affinity": 0}
+
+    def news(self, ctx: dict) -> str:
+        """Ban tin radio: LLM tong hop tin don/su kien gan day roi doc bang giong noi. Tra ve so ms uoc tinh."""
+        events = self.life.recent(8)
+        lines = self.brain.news(ctx, events) if self.busy.acquire(timeout=20) else []
+        if lines:
+            self.busy.release()
+        if not lines:   # khong co LLM: doc tho tin don
+            lines = [f"Bản tin lúc {ctx.get('hour', '?')} giờ."] + (events[-3:] or ["Thành phố hôm nay bình yên."])
+        total = sum(700 + 80 * len(t) for t in lines)
+
+        def run():
+            for t in lines:
+                ms = 700 + 80 * len(t)
+                self.overlay.show("npc", f"📻 {t}", ms + 1500)
+                try:
+                    self.voice.speak(t, dict(self.RADIO, _tone="binh_thuong"))
+                except Exception as e:
+                    print(f"[news] tts lỗi: {e}")
+                time.sleep(ms / 1000.0 + 0.4)
+
+        threading.Thread(target=run, daemon=True).start()
+        print("[news] " + " / ".join(lines))
+        return str(total)
+
     def start(self):
         self.banter_epoch += 1   # Sep bat dau noi thi dung cuoc tro chuyen cua NPC
         self.voice.stop()
@@ -152,10 +179,11 @@ class Bridge:
                 self.overlay.show("player", "(không nghe rõ, Sếp nói lại nhé)", 2500)
                 return "none\n0\n"
             key = ctx.get("key") or "tmp_0"
-            npc = self.memory.get_or_create(key, ctx.get("gender", "male"), int(ctx.get("pedtype", "4") or 4))
+            npc = self.memory.get_or_create(key, ctx.get("gender", "male"), int(ctx.get("pedtype", "4") or 4),
+                                            ctx.get("name", ""))
             history = self.memory.history(key)
             self.life.update_state({"hour": ctx.get("hour", "")})
-            ctx["extra"] = self.life.context(npc)
+            ctx["extra"] = self.life.context(npc, ctx.get("res_activity", ""))
             result, text, by_audio = None, "", False
             if self.stt_mode == "groq":
                 try:
@@ -273,6 +301,8 @@ def make_handler(bridge: Bridge):
                     self._send(bridge.social.relation(ctx))
                 elif self.path == "/banter":
                     self._send(bridge.banter(ctx))
+                elif self.path == "/news":
+                    self._send(bridge.news(ctx))
                 else:
                     self._send("not found", 404)
             except Exception as e:
