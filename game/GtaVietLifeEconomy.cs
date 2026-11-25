@@ -10,6 +10,7 @@
 //   GVL.Earn Action<int,string,string>     file này đăng ký: tiền vào tài khoản, ghi sổ cái.
 //   Sự kiện phát ra: ledger.expense / ledger.income, econ.loan, econ.repay, econ.late, econ.foreclose, econ.impound, econ.release, econ.fuel, econ.repair.
 //   GVL.Bank     (int)            số dư tài khoản, cập nhật mỗi tick. GVL.Debt (int) tổng nợ ngân hàng + dư nợ vay.
+//   GVL.EarnCash Action<int,string,string>   nhận TIỀN MẶT (quán GT, giao hàng, làm công, rút quỹ) có ghi sổ cái.
 //   GVL.AddDebt  Action<int,string,string>   ghi nợ vào MỘT sổ nợ duy nhất (lãi 2%/ngày, tự trừ khi tài khoản có tiền).
 //   GVL.ImpoundCar Action<int,int,int,string> (hash, màu 1, màu 2, biển) đưa xe vào MỘT bãi giữ xe duy nhất (Davis).
 //   GVL.Fee.Impound / GVL.Fee.ImpoundDay (int) phí bãi xe chuẩn.
@@ -99,7 +100,7 @@ public class GtaVietLifeEconomy : Script
         fuelPrice = ReadF("Fuel", "PricePerLiter", fuelPrice);
         fuelMul = ReadF("Fuel", "ConsumeMul", fuelMul);
         Load();
-        payFn = BusPay; earnFn = BusEarn; addDebtFn = BusAddDebt; impoundFn = BusImpound;
+        payFn = BusPay; earnFn = BusEarn; addDebtFn = BusAddDebt; earnCashFn = BusEarnCash; impoundFn = BusImpound;
         try
         {
             if (modBank) foreach (Vector3 b in Banks) AddBlip(b, BlipColor.Green, "Ngan hang (gui/rut, vay)");
@@ -142,10 +143,11 @@ public class GtaVietLifeEconomy : Script
         object cur = Bus("GVL.Pay");
         if (cur != null && Bus("GVL.PayOwner") as string == "economy" && cur == payFn) return;
         BusSet("GVL.Pay", payFn); BusSet("GVL.Earn", earnFn); BusSet("GVL.PayOwner", "economy");
-        BusSet("GVL.AddDebt", addDebtFn); BusSet("GVL.ImpoundCar", impoundFn);
+        BusSet("GVL.AddDebt", addDebtFn); BusSet("GVL.EarnCash", earnCashFn); BusSet("GVL.ImpoundCar", impoundFn);
         BusSet("GVL.Fee.Impound", ImpoundFee); BusSet("GVL.Fee.ImpoundDay", ImpoundPerDay);
     }
-    Action<int, string, string> addDebtFn; Action<int, int, int, string> impoundFn;
+    Action<int, string, string> addDebtFn, earnCashFn;
+    void BusEarnCash(int amount, string cat, string note) { if (amount > 0) Cash(amount, cat, note); } Action<int, int, int, string> impoundFn;
 
     // MOT loai no duy nhat cho ca game: file khac (no cu cua Doi song, phat chua tra...) day vao day
     void BusAddDebt(int amount, string cat, string note)

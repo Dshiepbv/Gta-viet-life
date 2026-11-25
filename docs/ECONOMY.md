@@ -5,6 +5,7 @@ Mọi thread lấy giá, phí và quy tắc tiền từ trang này, không tự 
 ## 1. Cổng tiền (bắt buộc)
 - Trả tiền: `GVL.Pay(soTien, nhom, ghiChu)`. Nhận tiền: `GVL.Earn(...)`. Kinh tế đăng ký hai cổng này: trừ/cộng tài khoản trước, rồi tới tiền mặt, ghi sổ cái, phát `ledger.*`.
 - Không file nào cộng/trừ thẳng `Game.Player.Money` cho khoản kinh tế, trừ khi bus không có cổng (khi đó dùng tiền mặt như cũ).
+- Nhận tiền mặt có ghi sổ: `GVL.EarnCash(...)`. Quy tắc thu của World: kênh GT, giao hàng, làm công, rút quỹ quán thu **tiền mặt** (`GVL.EarnCash`); kênh MT, B2B, bất động sản thu **vào tài khoản** (`GVL.Earn`); mọi khoản chi qua `GVL.Pay`.
 - Riêng tiền mặt tại quầy (rút ATM, nộp tiền) do Kinh tế tự xử lý.
 
 ## 2. Một sổ nợ duy nhất
