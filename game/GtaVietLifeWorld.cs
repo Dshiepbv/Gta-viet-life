@@ -60,6 +60,8 @@ public class GtaVietLifeWorld : Script
     Blip bizBlip;
     int bizStock, bizStaff, bizCash;
     readonly List<Ped> staffPeds = new List<Ped>();
+    readonly List<Vector3> staffSlots = new List<Vector3>();
+    int nextStaffCheck;
     int bizLevel = 1;
     float bizHeading;
     readonly List<Prop> bizProps = new List<Prop>();
@@ -122,6 +124,7 @@ public class GtaVietLifeWorld : Script
         UpdateWanted(me);
         UpdateDelivery(me, now);
         UpdateResidents(now);
+        UpdateStaff(now);
 
         if (now > nextStatePost) { nextStatePost = now + 15000; PostState(); }
         if (now > nextSave) { nextSave = now + 30000; Save(); }
@@ -351,8 +354,8 @@ public class GtaVietLifeWorld : Script
         Vector3 right = new Vector3((float)Math.Cos(h), (float)Math.Sin(h), 0f);
         Vector3 fwd = new Vector3(-(float)Math.Sin(h), (float)Math.Cos(h), 0f);
         AddProp("prop_hotdogstand_01", bizPos, bizHeading);
-        AddProp("prop_box_wood02a", bizPos - right * 2f - fwd * 1.2f, bizHeading);
-        AddProp("prop_box_wood02a", bizPos - right * 2f - fwd * 2.2f, bizHeading + 20f);
+        AddProp("prop_cs_cardbox_01", bizPos - right * 2f - fwd * 1.2f, bizHeading);
+        AddProp("prop_cs_cardbox_01", bizPos - right * 2f - fwd * 2.2f, bizHeading + 20f);
         for (int l = 1; l <= bizLevel; l++)
         {
             Vector3 c = bizPos + fwd * (3f + l * 2.5f) + right * ((l % 2 == 0) ? -2.5f : 2.5f);
@@ -374,13 +377,23 @@ public class GtaVietLifeWorld : Script
         {
             Model mdl = new Model(rnd.Next(2) == 0 ? "a_m_y_business_01" : "a_f_y_business_01");
             if (!mdl.Request(1000)) return;
-            Vector3 pos = bizPos + new Vector3((float)(rnd.NextDouble() * 4 - 2), (float)(rnd.NextDouble() * 4 - 2), 0f);
+            float h = bizHeading * (float)Math.PI / 180f;
+            Vector3 right = new Vector3((float)Math.Cos(h), (float)Math.Sin(h), 0f);
+            Vector3 fwd = new Vector3(-(float)Math.Sin(h), (float)Math.Cos(h), 0f);
+            int k = staffPeds.Count;
+            // nhan vien dung sau quay (k=0) hoac ben canh quay, quay mat ve phia khach
+            Vector3 pos = bizPos - fwd * 1.1f + right * (k == 0 ? 0f : (k % 2 == 1 ? 1f : -1f) * 0.9f * ((k + 1) / 2));
             Ped p = World.CreatePed(mdl, pos);
             mdl.MarkAsNoLongerNeeded();
             if (p == null || !p.Exists()) return;
+            p.Heading = bizHeading;
             p.IsPersistent = true;
-            Function.Call(Hash.TASK_WANDER_IN_AREA, p, bizPos.X, bizPos.Y, bizPos.Z, 6f, 2f, 5f);
+            Function.Call(Hash.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS, p, true);
+            Function.Call(Hash.SET_PED_KEEP_TASK, p, true);
+            Function.Call(Hash.TASK_START_SCENARIO_IN_PLACE, p, "WORLD_HUMAN_STAND_IMPATIENT", 0, true);
+            p.IsPositionFrozen = true;
             staffPeds.Add(p);
+            staffSlots.Add(pos);
         }
         catch (Exception ex) { Log("SpawnStaff loi: " + ex.Message); }
     }
@@ -390,7 +403,24 @@ public class GtaVietLifeWorld : Script
         if (staffPeds.Count == 0) return;
         Ped p = staffPeds[staffPeds.Count - 1];
         staffPeds.RemoveAt(staffPeds.Count - 1);
+        staffSlots.RemoveAt(staffSlots.Count - 1);
         if (p != null && p.Exists()) { p.IsPersistent = false; p.Task.WanderAround(); }
+    }
+
+    // Giu nhan vien o dung cho (sau khi noi chuyen xong script kia co the cho ho di lang thang)
+    void UpdateStaff(int now)
+    {
+        if (now < nextStaffCheck) return;
+        nextStaffCheck = now + 4000;
+        for (int i = 0; i < staffPeds.Count; i++)
+        {
+            Ped p = staffPeds[i];
+            if (p == null || !p.Exists() || !p.IsAlive || p.IsPositionFrozen) continue;
+            if (p.Position.DistanceTo(staffSlots[i]) > 1.5f) p.Position = staffSlots[i];
+            p.Heading = bizHeading;
+            Function.Call(Hash.TASK_START_SCENARIO_IN_PLACE, p, "WORLD_HUMAN_STAND_IMPATIENT", 0, true);
+            p.IsPositionFrozen = true;
+        }
     }
 
     // ------------------------------------------------------------ cư dân có lịch sinh hoạt
