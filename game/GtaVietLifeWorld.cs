@@ -576,7 +576,7 @@ public class GtaVietLifeWorld : Script
             if (bizProps.Count > 0) { chairProps.Add(bizProps[bizProps.Count - 1]); chairBusy.Add(false); chairFace.Add(FaceHeading(c + right * ChairDist, c)); chairTable.Add(c); tableCups.Add(null); }
             if (AddProp(chairM, c - right * ChairDist, bizHeading + 90f) == null && bizLevel >= 3) AddProp("prop_chair_01a", c - right * ChairDist, bizHeading + 90f);
             if (bizProps.Count > 0) { chairProps.Add(bizProps[bizProps.Count - 1]); chairBusy.Add(false); chairFace.Add(FaceHeading(c - right * ChairDist, c)); chairTable.Add(c); tableCups.Add(null); }
-            AddProp(parasols[Math.Min(bizLevel, 4) - 1], c, bizHeading);   // o che doi mau theo cap
+            if (bizLevel < 4) AddProp(parasols[Math.Min(bizLevel, 4) - 1], c, bizHeading);   // o che doi mau theo cap; cap 4 co nha mai che rieng
         }
         foreach (Prop chp in chairProps) if (chp != null && chp.Exists()) Function.Call(Hash.SET_ENTITY_COLLISION, chp, false, false);
         for (int ci = 0; ci < chairProps.Count; ci++)
@@ -618,6 +618,14 @@ public class GtaVietLifeWorld : Script
                 AddProp("prop_bush_neat_01", hr, bizHeading);
             }
             foreach (Vector3 tc in tcs) AddProp("prop_wine_glass", new Vector3(tc.X + 0.25f, tc.Y + 0.15f, gz + 0.76f), bizHeading, false);
+        }
+        // cap 4: nha mai che (gazebo) phu khu ban ghe
+        if (bizLevel >= 4)
+        {
+            Vector3 gc = bizPos + fwd * 4.6f;
+            Prop gz1 = AddProp("prop_gazebo_01", gc, bizHeading);
+            if (gz1 == null) gz1 = AddProp("prop_gazebo_02", gc, bizHeading);
+            if (gz1 != null) Function.Call(Hash.SET_ENTITY_COLLISION, gz1, false, false);
         }
         // cap 4: dai phun nuoc, hang rao phia sau, ly champagne + chai ruou tren ban
         if (bizLevel >= 4)
@@ -732,7 +740,7 @@ public class GtaVietLifeWorld : Script
             c.Qty = 1 + rnd.Next(2);
             // neu co ghe trong thi 50% ngoi lai
             for (int i = 0; i < chairProps.Count; i++)
-                if (!chairBusy[i] && !ChairTaken(i) && rnd.Next(2) == 0) { c.Chair = i; chairBusy[i] = true; c.Qty += 1; break; }
+                if (!chairBusy[i] && !ChairTaken(i) && !SpotOccupied(i) && rnd.Next(2) == 0) { c.Chair = i; chairBusy[i] = true; c.Qty += 1; break; }
             p.IsPersistent = true;
             Function.Call(Hash.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS, p, true);
             Vector3 dest2 = QueueSpot();
@@ -741,6 +749,21 @@ public class GtaVietLifeWorld : Script
             Log("sinh khach, cach quan " + (int)sp.DistanceTo(bizPos) + " m, ghe " + c.Chair);
         }
         catch (Exception ex) { Log("SpawnCustomer loi: " + ex.Message); }
+    }
+
+    // hai ghe trung vi tri (hoac nguoi dang ngoi gan do) thi coi nhu da co nguoi
+    bool SpotOccupied(int idx)
+    {
+        if (idx < 0 || idx >= chairProps.Count || chairProps[idx] == null || !chairProps[idx].Exists()) return true;
+        Vector3 cp = chairProps[idx].Position;
+        for (int j = 0; j < chairProps.Count; j++)
+        {
+            if (j == idx || chairProps[j] == null || !chairProps[j].Exists()) continue;
+            if (chairProps[j].Position.DistanceTo2D(cp) < 0.6f && (chairBusy[j] || ChairTaken(j))) return true;
+        }
+        foreach (Cust k in customers)
+            if (k.Chair >= 0 && k.P != null && k.P.Exists() && k.P.Position.DistanceTo2D(cp) < 0.7f && k.Chair != idx) return true;
+        return false;
     }
 
     bool ChairTaken(int idx)
@@ -1430,7 +1453,7 @@ public class GtaVietLifeWorld : Script
         for (int i = 0; i < chairProps.Count; i++)
         {
             Prop ch = chairProps[i];
-            if (ch == null || !ch.Exists() || chairBusy[i] || ChairTaken(i)) continue;
+            if (ch == null || !ch.Exists() || chairBusy[i] || ChairTaken(i) || SpotOccupied(i)) continue;
             float d = me.Position.DistanceTo2D(ch.Position);
             if (d < bd) { bd = d; best = i; }
         }
@@ -1498,7 +1521,7 @@ public class GtaVietLifeWorld : Script
         if (ch == null || !ch.Exists()) return;
         float expect = ch.Position.Z + seatZ;
         float dz = p.Position.Z - expect;
-        if (dz > 1.0f || dz < -1.5f || p.Position.DistanceTo2D(ch.Position) > 1.5f)
+        if (dz > 3.0f || dz < -3.0f)
         {
             if (seatFixLogs++ < 12) Log("ngoi bi lech: ghe z=" + ch.Position.Z.ToString("0.00") + " nguoi z=" + p.Position.Z.ToString("0.00") + " dz=" + dz.ToString("0.00") + " cach ghe " + p.Position.DistanceTo2D(ch.Position).ToString("0.0") + " m");
             Function.Call(Hash.SET_ENTITY_COORDS_NO_OFFSET, p, ch.Position.X, ch.Position.Y, expect, false, false, false);
