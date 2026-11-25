@@ -1985,6 +1985,9 @@ public class GtaVietLifeWorld : Script
             if (r.Driver == null || !r.Driver.Exists()) { Notify("Khong tao duoc tai xe."); EndRide(false); return; }
             r.Driver.IsPersistent = true;
             Function.Call(Hash.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS, r.Driver, true);
+            Function.Call(Hash.SET_PED_CAN_BE_DRAGGED_OUT, r.Driver, false);          // khong cho Sep keo tai xe ra
+            Function.Call(Hash.SET_PED_FLEE_ATTRIBUTES, r.Driver, 0, false);
+            Function.Call(Hash.SET_PED_COMBAT_ATTRIBUTES, r.Driver, 17, true);        // khong bo chay khi bi va cham/danh
             r.Driver.SetIntoVehicle(r.Veh, VehicleSeat.Driver);
             DriveTo(me.Position, 22f);
             r.State = 1; r.T = now;
@@ -2010,6 +2013,18 @@ public class GtaVietLifeWorld : Script
             else if (now - r.T > 240000) { Notify("Xe ket duong qua lau, da huy."); EndRide(false); }
             return;
         }
+        if (r.State == 1 || r.State == 2)
+        {
+            // Sep bam F lai gan xe: tu dua len ghe sau, tranh keo tai xe ra khoi ghe lai
+            bool entering = false;
+            try { entering = me.IsGettingIntoAVehicle; } catch { }
+            if (entering && !me.IsInVehicle(r.Veh) && me.Position.DistanceTo(r.Veh.Position) < 12f && r.Kind != 1)
+            {
+                me.Task.ClearAll();
+                me.SetIntoVehicle(r.Veh, VehicleSeat.RightRear);
+            }
+        }
+        if (r.State == 1 && r.Kind != 1 && me.IsInVehicle(r.Veh)) { r.State = 2; r.T = now; }
         if (r.State == 2)
         {
             if (me.IsInVehicle(r.Veh))
