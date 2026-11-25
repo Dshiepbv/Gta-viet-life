@@ -120,7 +120,13 @@ def lan_ip():
 
 if __name__ == "__main__":
     print(f"Doc du lieu tu: {DASH}")
-    print(f"Mo tren dien thoai (cung Wi-Fi): http://{lan_ip()}:{PORT}")
+    print(f"Mo tren dien thoai (cung Wi-Fi o nha): http://{lan_ip()}:{PORT}")
+    try:
+        ts = [a[4][0] for a in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET) if a[4][0].startswith("100.")]
+        for ip in ts:
+            print(f"Mo tu BAT KY DAU (qua Tailscale): http://{ip}:{PORT}")
+    except Exception:
+        pass
     try:
         ThreadingHTTPServer(("0.0.0.0", PORT), H).serve_forever()
     except KeyboardInterrupt:

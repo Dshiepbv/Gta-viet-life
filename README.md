@@ -91,3 +91,6 @@ Muc "Tim mat bang" co them cac cua hang that cua game goc (24/7, LTD, Los Santos
 
 ### APK cho dien thoai Android
 GitHub tu build `GtaDashboard-N.apk` (muc Releases, tag `dash-N`). Cai xong mo len, nhap `http://IP-may-tinh:5588` mot lan. Doi dia chi: giu nut Back. Man hinh luon sang. APK ky debug nen cai thang, can cho phep "cai tu nguon khong ro".
+
+### Xem khi o ngoai (4G, di lam)
+Cai Tailscale (mien phi) tren PC va dien thoai, dang nhap cung mot tai khoan. `start_dashboard.bat` se in them dong "qua Tailscale" voi dia chi dang `http://100.x.x.x:5588` — nhap dia chi do vao APK. Nen dat `dash_pin`. PC phai bat va chay `start_dashboard.bat`; luon cho phep cong 5588 trong tuong lua Windows.
