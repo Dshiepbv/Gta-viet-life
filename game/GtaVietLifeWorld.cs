@@ -214,6 +214,7 @@ public class GtaVietLifeWorld : Script
         if (me == null || !me.Exists()) return;
         int now = Game.GameTime;
 
+        SyncPersonalBus();
         TickEnterHome(me, now);
         if (now > nextEconBus) { nextEconBus = now + 2000; EconBus(); }
         if (!caughtUp) { ApplyPhoneCmds(); CatchUpOffline(); }
@@ -325,10 +326,38 @@ public class GtaVietLifeWorld : Script
         if (delta == 0 || delta > 180) return; // đứng yên hoặc nhảy giờ (ngủ, console)
         if (m < delta) dayCounter++; // vừa qua nửa đêm
         minuteAccum += delta;
-        hunger = Clamp(hunger - 0.06f * delta);
-        thirst = Clamp(thirst - 0.09f * delta);
-        energy = Clamp(energy - 0.05f * delta);
+        hunger = Clamp(hunger - 0.06f * delta * drainMul);   // drainMul: ky nang The luc tu file Ca nhan
+        thirst = Clamp(thirst - 0.09f * delta * drainMul);
+        energy = Clamp(energy - 0.05f * delta * drainMul);
         if (dayCounter > lastDayTick) { lastDayTick = dayCounter; DailyTick(); }
+    }
+
+    // ---- cau noi voi file Ca nhan (GtaVietLifePersonal.cs): cung AppDomain cua SHVDN nen dung AppDomain data
+    float drainMul = 1f;
+    readonly float[] needsPub = new float[3];
+    void SyncPersonalBus()
+    {
+        try
+        {
+            AppDomain d = AppDomain.CurrentDomain;
+            float[] add = d.GetData("GVL.NeedsAdd") as float[];
+            if (add != null && add.Length >= 3)
+            {
+                d.SetData("GVL.NeedsAdd", null);
+                hunger = Clamp(hunger + add[0]); thirst = Clamp(thirst + add[1]); energy = Clamp(energy + add[2]);
+            }
+            object dm = d.GetData("GVL.DrainMul");
+            drainMul = dm is float ? Math.Max(0.5f, Math.Min(1f, (float)dm)) : 1f;
+            needsPub[0] = hunger; needsPub[1] = thirst; needsPub[2] = energy;
+            d.SetData("GVL.Needs", needsPub);
+            d.SetData("GVL.WorldMenu", menuOpen);
+        }
+        catch { }
+    }
+
+    static bool PersonalMenuOpen()
+    {
+        try { object o = AppDomain.CurrentDomain.GetData("GVL.PersonalMenu"); return o is bool && (bool)o; } catch { return false; }
     }
 
     void AdvanceTime(int minutes)
@@ -3331,6 +3360,7 @@ public class GtaVietLifeWorld : Script
 
     void OnKeyDown(object sender, KeyEventArgs e)
     {
+        if (e.KeyCode != menuKey && PersonalMenuOpen()) return;   // dang mo menu Ca nhan: phim so/Enter thuoc ve menu do
         if (e.KeyCode == Keys.F8 && hasBiz)
         {
             // thoat ket / bi hat len cao: dua Sep ve mat dat canh quan

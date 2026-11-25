@@ -36,18 +36,24 @@ def activity(job: str, hour: int) -> str:
     return "đang đi chơi hoặc kiếm gì ăn tối, rảnh rỗi hơn ban ngày"
 
 
+LEVELS = [(-40, "kẻ thù"), (-15, "người bạn không ưa"), (10, "người lạ"), (30, "người quen"),
+          (60, "bạn bè"), (101, "bạn thân")]
+
+
 def relation(affinity: int) -> str:
-    if affinity >= 8:
-        return "bạn thân"
-    if affinity >= 4:
-        return "bạn bè"
-    if affinity >= 1:
-        return "người quen"
-    if affinity <= -6:
+    """Cấp quan hệ theo thiện cảm -100..100 (xem docs/CORE.md)."""
+    try:
+        a = int(affinity)
+    except (TypeError, ValueError):
+        a = 0
+    if a <= -40:
         return "kẻ thù"
-    if affinity <= -2:
+    if a <= -15:
         return "người bạn không ưa"
-    return "người lạ"
+    for limit, name in LEVELS[2:]:
+        if a < limit:
+            return name
+    return "bạn thân"
 
 
 def _level(v, words):
@@ -91,8 +97,31 @@ class Life:
         except ValueError:
             hour = 12
         lines.append(f"Việc bạn đang làm lúc này: {activity(npc['job'], hour)}.")
-        lines.append(f"Với người chơi, bạn coi họ là: {relation(npc['affinity'])}.")
+        rel = relation(npc['affinity'])
+        status = npc.get("status") or ""
+        if status == "hen_ho":
+            rel = "người yêu (đang hẹn hò)"
+        elif status == "vo_chong":
+            rel = "vợ/chồng của bạn"
+        elif status == "chia_tay":
+            rel += ", từng là người yêu nhưng đã chia tay"
+        lines.append(f"Với người chơi, bạn coi họ là: {rel}.")
+        if npc.get("summary"):
+            lines.append(f"Những gì bạn nhớ về người chơi từ trước: {npc['summary']}")
         p = []
+        if st.get("player_name"):
+            who = f"tên {st['player_name']}"
+            if st.get("hometown"):
+                who += f", quê {st['hometown']}"
+            lines.append(f"Người chơi {who}. Gọi đúng tên khi đã quen.")
+        if st.get("outfit"):
+            p.append(f"đang mặc {st['outfit']}")
+        if st.get("look"):
+            p.append(f"ngoại hình: {st['look']}")
+        if st.get("record") and st.get("record") not in ("0", ""):
+            p.append(f"có {st['record']} tiền án, người ta đồn là từng ngồi tù")
+        if st.get("skills"):
+            p.append(f"nổi tiếng {st['skills']}")
         if st.get("job"):
             p.append(f"đang làm {st['job']}")
         if st.get("business"):

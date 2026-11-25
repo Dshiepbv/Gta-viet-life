@@ -66,6 +66,18 @@ Chép `game/GtaVietLifeWorld.cs` vào `scripts` cùng file nói chuyện. Phím 
 Phạt khi bị truy nã rồi thoát, nợ có lãi, uy tín tăng/giảm. Trạng thái được gửi cho cầu nối (`/state`, `/event`)
 để NPC biết hoàn cảnh và có tin đồn trong khu.
 
+## Cá nhân (GtaVietLifePersonal.cs)
+Chép `game/GtaVietLifePersonal.cs` (và `GtaVietLifePersonal.ini` nếu muốn đổi phím) vào `scripts`. Phím `I` mở menu Cá nhân, `O` ăn/uống nhanh từ túi.
+
+- **Hồ sơ**: đặt tên, chọn quê. Tên, quê, bộ đồ đang mặc và kỹ năng giỏi được gửi cho cầu nối để NPC gọi đúng tên và nhận xét đúng.
+- **Kỹ năng 0-100** tự tăng khi chơi: Thể lực (chạy, bơi, đạp xe → đói/khát/mệt chậm hơn tới 30%), Lái xe, Bắn súng, Sức mạnh (ghi vào chỉ số gốc của Michael/Franklin/Trevor, chỉ nâng không hạ), Giao tiếp (giữ N nói với người gần → mua đồ rẻ hơn tới 15%).
+- **Túi đồ**: bánh mì, cơm hộp, phở, nước suối, trà đá, cà phê sữa đá, nước tăng lực, băng cứu thương. Mua ship tận nơi (+$3/đơn). Túi 10 món, ba lô $250 lên 25 món.
+- **Trang phục**: lưu 4 bộ (Đi làm, Đi chơi, Thể thao, Lịch sự) từ đồ đang mặc, đổi nhanh.
+- **Garage xe riêng**: ghi tối đa 6 xe (giữ màu, biển số), gọi xe tới chỗ Sếp ($50), chấm xanh trên bản đồ.
+- **Sổ thu chi**: thu/chi trong ngày và 7 ngày gần nhất của nhân vật đang chơi.
+- Đói/khát/năng lượng chỉ giảm khi đang chơi, không tính lúc game tắt.
+- Hai file nói với nhau qua AppDomain data `GVL.*` (cùng một AppDomain SHVDN). Thiếu file Đời sống thì đồ ăn trong túi không cộng được no/khát.
+
 ## Mo hinh kinh doanh (GT / MT / B2C / B2B)
 
 - **Loai hinh** (chon khi mo quan): Quan nuoc via he, Tap hoa, Quan an (kenh GT, von nho); Cua hang tien loi, Sieu thi mini, Nha hang/ca phe chuoi (kenh MT, von lon, dong khach, nop VAT, can mat bang thue tu "Thue ki-ot").
