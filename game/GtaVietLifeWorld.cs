@@ -209,7 +209,7 @@ public class GtaVietLifeWorld : Script
             nextShopCheck = now + 2000;
             int bi = -1; float bd = 1e9f;
             for (int si = 0; si < shops.Count; si++) { float dd = me.Position.DistanceTo2D(shops[si].Pos); if (dd < bd) { bd = dd; bi = si; } }
-            if (bi >= 0 && bi != activeShop && bd < 120f && (activeShop < 0 || me.Position.DistanceTo2D(bizPos) > 120f)) ActivateShop(bi);
+            if (bi >= 0 && bi != activeShop && bd < 90f && (activeShop < 0 || me.Position.DistanceTo2D(bizPos) > 90f)) ActivateShop(bi);
         }
         if (hasBiz && now > nextStaffSpawn)
         {
@@ -458,7 +458,7 @@ public class GtaVietLifeWorld : Script
     static readonly int[] ModeCap = { 2, 3, 4, 4 };
     static readonly int[] ModeSetup = { 400, 800, 2000, 25000 };
     static readonly int[] ModeRent = { 20, 90, 60, 0 };
-    const float ShopGap = 200f;
+    const float ShopGap = 150f;   // hai quan cach nhau it nhat the nay; quan tu dung len khi lai gan trong 90 m
 
     static string FeeWord(int mode) { return mode == 0 ? "phi via he" : "tien thue"; }
 
@@ -567,6 +567,9 @@ public class GtaVietLifeWorld : Script
         SyncIn(best);
     }
 
+    string menuNote = "";
+    void Refuse(string msg) { menuNote = msg; Notify("~r~" + msg + "~s~"); Log("tu choi mo quan: " + msg); }
+
     bool IsIndoor(Ped p)
     {
         try { return Function.Call<int>(Hash.GET_INTERIOR_FROM_ENTITY, p) != 0; } catch { return false; }
@@ -587,12 +590,14 @@ public class GtaVietLifeWorld : Script
     void OpenShop(int mode)
     {
         Ped me = Game.Player.Character;
-        if (me.IsInVehicle()) { Notify("Xuong xe roi hay mo quan."); return; }
+        menuNote = "";
+        if (me.IsInVehicle()) { Refuse("Xuong xe roi hay mo quan."); return; }
         foreach (Shop o in shops)
-            if (me.Position.DistanceTo2D(o.Pos) < ShopGap) { Notify("Cach quan khac it nhat " + (int)ShopGap + " m."); return; }
+            if (me.Position.DistanceTo2D(o.Pos) < ShopGap) { Refuse("Khong mo duoc: dang cach quan #" + (shops.IndexOf(o) + 1) + " chi " + (int)me.Position.DistanceTo2D(o.Pos) + " m. Phai cach it nhat " + (int)ShopGap + " m - hay di xa hon hoac dung 'Tim mat bang'."); return; }
         float zm = ZoneMult(me.Position);
         bool indoor = IsIndoor(me);
         int setup = (int)(ModeSetup[mode] * (mode == 3 ? zm * (indoor ? 1.5f : 1f) : 1f));
+        if (Game.Player.Money < setup) { Refuse("Khong du tien: can $" + setup + ", Sep co $" + Game.Player.Money + "."); return; }
         if (!Spend(setup)) return;
         SyncOut();
         if (hasBiz) { ClearStaff(); ClearBizProps(); }
@@ -676,6 +681,7 @@ public class GtaVietLifeWorld : Script
         Vector3 pp = Game.Player.Character.Position;
         float zm = ZoneMult(pp);
         Begin("MO QUAN MOI", delegate { ShowBiz(); });
+        if (menuNote.Length > 0) { Info("!! " + menuNote); menuNote = ""; }
         Info("Dang dung o: " + ZoneName(pp) + "  (dong khach x" + zm.ToString("0.0", CultureInfo.InvariantCulture) + ")");
         Item("Tim mat bang cho thue o khu khac...", delegate { ShowListings(); });
         for (int m = 0; m < 4; m++)
@@ -687,7 +693,7 @@ public class GtaVietLifeWorld : Script
                 : m == 1 ? "thue $" + rent + "/ngay, huy luc nao cung duoc, toi da cap 3"
                 : m == 2 ? "dat coc, thue $" + rent + "/ngay, huy giua chung mat coc, toi da cap 4"
                 : "tra mot lan, khong tien thue, ban lai 70%, toi da cap 4";
-            Item(ModeName[m] + "  -$" + setup + "  (" + cond + ")", delegate { OpenShop(mode); ShowBiz(); });
+            Item(ModeName[m] + "  -$" + setup + "  (" + cond + ")", delegate { OpenShop(mode); if (menuNote.Length > 0) ShowOpenMenu(); else ShowBiz(); });
         }
         Item("Quay lai", delegate { ShowBiz(); });
     }
@@ -1852,7 +1858,7 @@ public class GtaVietLifeWorld : Script
                 ShowBiz();
             });
             Item(cur.Mode == 3 ? "Ban lai quan (nhan 70% gia mua)..." : "Tra mat bang / dong quan...", delegate { ConfirmCloseShop(); });
-            Item("Mo them quan moi o cho khac...  (cach quan nay >= " + (int)ShopGap + " m)", delegate { ShowOpenMenu(); });
+            Item("Mo them quan moi o cho khac...  (cach quan nay it nhat " + (int)ShopGap + " m)", delegate { ShowOpenMenu(); });
         }
         Item("Quay lai", delegate { ShowMain(); });
     }
