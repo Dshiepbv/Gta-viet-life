@@ -458,6 +458,14 @@ public class GtaVietLifeWorld : Script
         bizBlip.Name = "Quan cua Sep";
     }
 
+    // nhan vien quay mat ra phia ban khach (phia truoc quay), khong quay vao quay
+    float StaffFacing(Vector3 from)
+    {
+        float h = bizHeading * (float)Math.PI / 180f;
+        Vector3 fwd = new Vector3(-(float)Math.Sin(h), (float)Math.Cos(h), 0f);
+        return FaceHeading(from, bizPos + fwd * 4f);
+    }
+
     static float FaceHeading(Vector3 from, Vector3 to)
     {
         Vector3 d = to - from;
@@ -542,14 +550,35 @@ public class GtaVietLifeWorld : Script
             AddProp("prop_pot_plant_05a", bizPos - right * 4.4f + fwd * 3.0f, bizHeading);
             AddProp("prop_patio_heater_01", bizPos + fwd * 6.5f, bizHeading);
         }
+        // do sang hon theo cap: may pha ca phe, tu lanh, cay canh lon, hang rao hoa... (danh sach doi duoc trong .ini)
+        for (int lv = 2; lv <= bizLevel; lv++)
+        {
+            string[] names = Settings.GetValue("Business", "Deco" + lv, DefaultDeco[lv - 2]).Split(',');
+            for (int i = 0; i < names.Length && i < DecoSlots.GetLength(0); i++)
+            {
+                string nm = names[i].Trim();
+                if (nm.Length == 0) continue;
+                float sr = DecoSlots[i, 0] + (lv - 2) * ((i % 2 == 0) ? 0.3f : -0.3f);
+                float sf = DecoSlots[i, 1] - (lv - 2) * 0.35f;
+                // hang trong quay (phia nhan vien) quay mat ra khach; hang ngoai cung quay vao quay
+                AddProp(nm, bizPos + right * sr + fwd * sf, bizHeading + 180f * (sf < -1.6f ? 0f : 0f));
+            }
+        }
     }
+
+    // [right, fwd] so voi quay; nhan vien dung o fwd -1.25
+    static readonly float[,] DecoSlots = { { -1.9f, -1.2f }, { 1.9f, -1.2f }, { -3.6f, -0.2f }, { 3.6f, -0.2f }, { 0f, -2.8f }, { 4.6f, 1.2f }, { -4.6f, 1.2f } };
+    static readonly string[] DefaultDeco = {
+        "prop_vend_coffe_01,prop_water_cooler",
+        "prop_vend_soda_01,prop_ice_box_01,prop_plant_int_03a,prop_plant_int_03a",
+        "prop_vend_soda_02,prop_plant_int_02a,prop_plant_int_02a,prop_bush_med_03,prop_bush_med_03,prop_patio_lounger1,prop_patio_lounger1" };
 
     static readonly string[] TierName = { "Xe day", "Quay via he", "Quan nuoc co mai che", "Quan sang trong" };
     static readonly string[] TierPerk = {
         "1 ban",
-        "2 ban, chau cay",
-        "3 ban, o che mau, den suoi, ghe da, thung rac",
-        "4 ban, ghe quay bar, cay xanh, nhieu den suoi" };
+        "2 ban, chau cay, may ca phe",
+        "3 ban, o che mau, den suoi, ghe da, tu lanh, may nuoc",
+        "4 ban, ghe quay bar, cay canh, ghe nam, nhieu den suoi" };
 
     int Price() { return SalePrice + (bizLevel - 1) * 6; }
 
@@ -575,8 +604,9 @@ public class GtaVietLifeWorld : Script
             Ped p = World.CreatePed(mdl, pos);
             mdl.MarkAsNoLongerNeeded();
             if (p == null || !p.Exists()) return;
-            p.Heading = bizHeading;
-            pos = p.Position;                  // vi tri dung that cua nhan vien
+            // game co the day ped len mat quay (+1 m): ep xuong dung do cao mat dat, chan cham dat
+            Function.Call(Hash.SET_ENTITY_COORDS_NO_OFFSET, p, pos.X, pos.Y, pos.Z, false, false, false);
+            p.Heading = StaffFacing(pos);
             Log("nhan vien #" + staffPeds.Count + " z=" + pos.Z.ToString("0.00") + " nen=" + GroundForBiz().ToString("0.00") + " bizPosZ=" + bizPos.Z.ToString("0.00"));
             p.IsPersistent = true;
             Function.Call(Hash.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS, p, true);
@@ -860,13 +890,19 @@ public class GtaVietLifeWorld : Script
                 if (p.IsPositionFrozen)
                 {
                     // dang dung yen: neu bi day len cao (hoac lo lung) thi tra ve vi tri dung that
-                    if (Math.Abs(p.Position.Z - staffSlots[i].Z) > 0.3f && p.Position.DistanceTo2D(bizPos) < 8f)
-                        p.Position = staffSlots[i];
+                    if (p.Position.DistanceTo2D(bizPos) < 8f)
+                    {
+                        if (Math.Abs(p.Position.Z - staffSlots[i].Z) > 0.15f || p.Position.DistanceTo2D(staffSlots[i]) > 0.3f)
+                            Function.Call(Hash.SET_ENTITY_COORDS_NO_OFFSET, p, staffSlots[i].X, staffSlots[i].Y, staffSlots[i].Z, false, false, false);
+                        float want = StaffFacing(staffSlots[i]);
+                        float diff = Math.Abs(((p.Heading - want + 540f) % 360f) - 180f);
+                        if (diff > 25f) p.Heading = want;   // luon quay mat ra phia khach
+                    }
                     continue;
                 }
                 // ve cho dung
                 if (p.Position.DistanceTo(staffSlots[i]) > 1.5f) p.Position = staffSlots[i];
-                p.Heading = bizHeading;
+                p.Heading = StaffFacing(staffSlots[i]);
                 Function.Call(Hash.TASK_START_SCENARIO_IN_PLACE, p, "WORLD_HUMAN_STAND_IMPATIENT", 0, true);
                 p.IsPositionFrozen = true;
             }
