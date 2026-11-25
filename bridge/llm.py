@@ -81,8 +81,8 @@ def _get_json(url: str, timeout: float = 15.0) -> dict:
 
 
 class Brain:
-    PREFERRED = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-3.5-flash", "gemini-3-flash-preview",
-                 "gemini-2.5-flash-lite", "gemini-flash-lite-latest", "gemini-3.1-flash-lite"]
+    PREFERRED = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash",
+                 "gemini-flash-latest", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-2.5-flash"]
 
     def __init__(self, cfg: dict):
         self.cfg = cfg
@@ -109,6 +109,8 @@ class Brain:
                         print(f"[llm] gemini model {m} lỗi {e.code}")
                         if e.code in (404, 400):
                             self.dead.add(m)
+                            if m == self.model:
+                                self.model = self.PREFERRED[0] if self.PREFERRED[0] not in self.dead else self.model
                         continue
                     except (urllib.error.URLError, TimeoutError, KeyError, IndexError, ValueError) as e:
                         last_err = e

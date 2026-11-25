@@ -99,13 +99,18 @@ class Bridge:
             if result["affinity_delta"]:
                 self.memory.change_affinity(key, result["affinity_delta"])
             self.overlay.show("npc", f"{npc['name']}: {result['reply']}", 8000)
-            try:
-                ms = self.voice.speak(result["reply"], npc)
-            except Exception as e:  # mất mạng → không có giọng, vẫn có phụ đề
-                print(f"[tts] lỗi: {e}")
-                ms = 400 + 75 * len(result["reply"])
+            ms = 400 + 75 * len(result["reply"])  # ước lượng thời lượng để NPC mấp máy miệng
+
+            def speak():
+                try:
+                    self.voice.speak(result["reply"], npc)
+                except Exception as e:  # mất mạng → không có giọng, vẫn có phụ đề
+                    print(f"[tts] lỗi: {e}")
+                print(f"[{npc['name']}] giọng sẵn sàng sau {time.time() - t2:.1f}s")
+
+            threading.Thread(target=speak, daemon=True).start()
             t3 = time.time()
-            print(f"[{npc['name']}] nghe {t1 - t0:.1f}s · nghĩ {t2 - t1:.1f}s · nói {t3 - t2:.1f}s | "
+            print(f"[{npc['name']}] nghe {t1 - t0:.1f}s · nghĩ {t2 - t1:.1f}s | "
                   f"Bạn: {text} → {result['reply']} ({result['action']})")
             return f"{result['action']}\n{ms}\n{ascii_name(npc['name'])}"
 

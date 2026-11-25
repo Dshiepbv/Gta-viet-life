@@ -3,7 +3,7 @@
 
   "provider": "gemini",
   "gemini_api_key": "",
-  "gemini_model": "gemini-2.5-flash",
+  "gemini_model": "gemini-3.8-flash",
   "gemini_thinking_budget": 0,
 
   "ollama_enabled": true,

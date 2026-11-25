@@ -19,8 +19,14 @@ class Voice:
         self.dir = tempfile.mkdtemp(prefix="gtavl_")
         self.n = 0
         self.lock = threading.Lock()
+        self.use_params = True
+        self.epoch = 0
 
     def stop(self):
+        self.epoch += 1  # huỷ giọng đang tạo dở của lượt trước
+        self._halt()
+
+    def _halt(self):
         try:
             pygame.mixer.music.stop()
         except pygame.error:
@@ -29,24 +35,30 @@ class Voice:
     def speak(self, text: str, npc: dict) -> int:
         """Tạo giọng và phát ngay. Trả về thời lượng (ms)."""
         voice = VOICE_FEMALE if npc.get("gender") == "nữ" else VOICE_MALE
+        my_epoch = self.epoch
         with self.lock:
             self.n += 1
             path = os.path.join(self.dir, f"say_{self.n % 8}.mp3")
-            self.stop()
+            self._halt()
             try:
                 pygame.mixer.music.unload()
             except (pygame.error, AttributeError):
                 pass
-            for attempt in (1, 2, 3):
+            ok = False
+            for use_params in ((True, False) if self.use_params else (False,)):
                 try:
-                    comm = edge_tts.Communicate(text, voice, rate=npc.get("rate", "+0%"), pitch=npc.get("pitch", "+0Hz"))
-                    asyncio.run(comm.save(path))
+                    kw = dict(rate=npc.get("rate", "+0%"), pitch=npc.get("pitch", "+0Hz")) if use_params else {}
+                    asyncio.run(edge_tts.Communicate(text, voice, **kw).save(path))
+                    ok = True
                     break
                 except Exception as e:
-                    print(f"[tts] lần {attempt} lỗi: {e}")
-                    if attempt == 3:
-                        raise
-                    time.sleep(0.4)
+                    print(f"[tts] lỗi ({'có' if use_params else 'không'} chỉnh giọng): {e}")
+                    if use_params:
+                        self.use_params = False  # lần sau bỏ qua chỉnh cao độ/tốc độ cho nhanh
+            if not ok:
+                raise RuntimeError("không tạo được giọng nói")
+            if my_epoch != self.epoch:
+                return 0  # Sếp đã bắt đầu nói lượt mới, bỏ giọng cũ
             try:
                 length_ms = int(pygame.mixer.Sound(path).get_length() * 1000)
             except pygame.error:
