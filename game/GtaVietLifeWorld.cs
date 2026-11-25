@@ -736,6 +736,69 @@ public class GtaVietLifeWorld : Script
         Item("Quay lai", delegate { ShowBiz(); });
     }
 
+    const float RemoteFee = 1.10f;   // phi giao hang khi dat tu xa
+
+    string StockTag(Shop sh)
+    {
+        return sh.Stock <= 0 ? "HET HANG" : sh.Stock <= 10 ? "SAP HET (" + sh.Stock + ")" : sh.Stock + " phan";
+    }
+
+    // bang kho: tong quan tat ca quan, chon quan de dat hang tu xa
+    void ShowStockBoard()
+    {
+        SyncOut();
+        Begin("BANG KHO CAC QUAN", delegate { ShowBiz(); });
+        if (shops.Count == 0) { Info("Chua co quan nao."); Item("Quay lai", delegate { ShowBiz(); }); return; }
+        int low = 0, lowCost = 0;
+        for (int i = 0; i < shops.Count; i++)
+        {
+            Shop sh = shops[i];
+            if (sh.Stock <= 10) { low++; lowCost += (int)(StockPrice * RemoteFee); }
+            int idx = i;
+            Item("#" + (i + 1) + " " + ZoneName(sh.Pos) + " [" + ModeName[sh.Mode] + "]  kho: " + StockTag(sh) + "  (nv " + sh.Staff + ", hom nay ban " + sh.SoldToday + ", quy $" + sh.Cash + (i == activeShop ? ", dang o gan" : "") + ")", delegate { ShowStockShop(idx); });
+        }
+        if (low > 0)
+            Item("Nhap hang cho tat ca quan sap het (" + low + " quan, +" + StockPack + " phan moi quan)  -$" + lowCost, delegate
+            {
+                int n = 0;
+                for (int i = 0; i < shops.Count; i++) if (shops[i].Stock <= 10 && RemoteBuy(i, 1, true)) n++;
+                Notify("Da dat hang cho " + n + " quan.");
+                ShowStockBoard();
+            });
+        Item("Quay lai", delegate { ShowBiz(); });
+    }
+
+    void ShowStockShop(int idx)
+    {
+        if (idx < 0 || idx >= shops.Count) { ShowStockBoard(); return; }
+        SyncOut();
+        Shop sh = shops[idx];
+        Begin("KHO QUAN #" + (idx + 1) + " - " + ZoneName(sh.Pos), delegate { ShowStockBoard(); });
+        Info("Kho: " + StockTag(sh) + "   Nhan vien: " + sh.Staff + "   Quy tien: $" + sh.Cash + "   Phi giao hang tu xa +" + (int)((RemoteFee - 1f) * 100f) + "%");
+        int one = (int)(StockPrice * RemoteFee);
+        Item("Dat hang +" + StockPack + " phan  (-$" + one + ")", delegate { RemoteBuy(idx, 1, false); ShowStockShop(idx); });
+        Item("Dat hang +" + (StockPack * 5) + " phan  (-$" + one * 5 + ")", delegate { RemoteBuy(idx, 5, false); ShowStockShop(idx); });
+        Item("Dat hang +" + (StockPack * 10) + " phan  (-$" + one * 10 + ")", delegate { RemoteBuy(idx, 10, false); ShowStockShop(idx); });
+        Item("Dat diem den toi quan nay", delegate { Function.Call(Hash.SET_NEW_WAYPOINT, shops[idx].Pos.X, shops[idx].Pos.Y); Notify("Da dat diem den toi quan #" + (idx + 1) + "."); ShowStockShop(idx); });
+        Item("Quay lai bang kho", delegate { ShowStockBoard(); });
+    }
+
+    // dat hang tu xa: tra tien + phi giao hang, hang cong thang vao kho quan do
+    bool RemoteBuy(int idx, int packs, bool quiet)
+    {
+        if (idx < 0 || idx >= shops.Count) return false;
+        int cost = (int)(StockPrice * RemoteFee) * packs;
+        if (Game.Player.Money < cost) { if (!quiet) Notify("Khong du tien ($" + cost + ")."); return false; }
+        Game.Player.Money = Game.Player.Money - cost;
+        int add = StockPack * packs;
+        if (idx == activeShop) bizStock += add;
+        shops[idx].Stock += add;
+        if (idx == activeShop) shops[idx].Stock = bizStock;
+        shops[idx].OutNotified = false;
+        if (!quiet) Notify("~g~Da dat hang quan #" + (idx + 1) + ": +" + add + " phan~s~ (-$" + cost + "). Kho: " + shops[idx].Stock);
+        return true;
+    }
+
     void ShowShopList()
     {
         Begin("CAC QUAN CUA SEP", delegate { ShowBiz(); });
@@ -1853,7 +1916,8 @@ public class GtaVietLifeWorld : Script
     void ShowBiz()
     {
         Begin("KINH DOANH", delegate { ShowMain(); });
-        if (shops.Count > 0) Item("Cac quan cua Sep: " + shops.Count + "  (xem danh sach, dat diem den)...", delegate { ShowShopList(); });
+        if (shops.Count > 0) Item("Bang kho cac quan - dat hang tu xa...  (" + shops.Count + " quan)", delegate { ShowStockBoard(); });
+        if (shops.Count > 0) Item("Danh sach quan, dat diem den tren ban do...", delegate { ShowShopList(); });
         if (!hasBiz || !NearBiz())
         {
             if (hasBiz) Info("(Hay den gan quan de quan ly - cham xanh tren ban do)");
