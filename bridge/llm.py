@@ -193,7 +193,9 @@ class Brain:
         msgs = [{"role": "system", "content": system}]
         msgs += [{"role": "user" if r == "player" else "assistant", "content": t} for r, t in history]
         msgs.append({"role": "user", "content": player_text})
-        body = {"model": self.cfg.get("groq_model", "llama-3.3-70b-versatile"), "messages": msgs,
+        if not getattr(self, "groq_model", None):
+            self.groq_model = self.cfg.get("groq_model") or "llama-3.3-70b-versatile"
+        body = {"model": self.groq_model, "messages": msgs,
                 "temperature": 0.9, "max_tokens": 200, "response_format": {"type": "json_object"}}
         req = urllib.request.Request("https://api.groq.com/openai/v1/chat/completions",
                                      data=json.dumps(body).encode("utf-8"), method="POST",
@@ -204,8 +206,28 @@ class Brain:
                 data = json.loads(r.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
             print(f"[llm]   groq lỗi {e.code}: {e.read().decode('utf-8', 'replace')[:200]}")
+            if e.code in (404, 400) and not getattr(self, "_groq_listed", False):
+                self._groq_listed = True
+                self._groq_pick_model()
+                return self._groq_chat(system, history, player_text)
             raise
         return _parse(data["choices"][0]["message"]["content"])
+
+    def _groq_pick_model(self):
+        req = urllib.request.Request("https://api.groq.com/openai/v1/models", headers={
+            "User-Agent": "gta-viet-life", "Authorization": "Bearer " + self.cfg["groq_api_key"]})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            ids = [m["id"] for m in json.loads(r.read().decode("utf-8")).get("data", [])]
+        print(f"[llm] groq có các model: {ids}")
+        chat = [i for i in ids if not any(x in i.lower() for x in ("whisper", "guard", "tts", "playai", "orpheus", "embed"))]
+        def rank(i):
+            l = i.lower()
+            return (0 if "llama" in l and "70b" in l else 1 if "llama" in l and "scout" in l else 2 if "gpt-oss-120b" in l
+                    else 3 if "qwen" in l else 4 if "llama" in l else 5, i)
+        if not chat:
+            raise RuntimeError("Groq không có model chat nào")
+        self.groq_model = sorted(chat, key=rank)[0]
+        print(f"[llm] groq chọn model {self.groq_model}")
 
     def transcribe_groq(self, wav: bytes) -> str:
         """Nghe bằng Whisper large-v3-turbo của Groq (miễn phí, ~0.5 giây)."""
