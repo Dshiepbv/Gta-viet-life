@@ -225,8 +225,13 @@ public class GtaVietLifeWorld : Script
                 Shop rs = shops[ri];
                 if (rs.NextSale == 0) { rs.NextSale = now + rnd.Next(15000, 45000); continue; }
                 if (now < rs.NextSale) continue;
-                float rate = ModeTraffic[rs.Mode] * ZoneMult(rs.Pos) * (rs.Indoor ? 1.15f : 1f) * (1f + (rs.Level - 1) * 0.2f) * (rs.Staff > 0 ? 1f : 0.5f);
+                float rate = ModeTraffic[rs.Mode] * ZoneMult(rs.Pos) * (rs.Indoor ? 1.15f : 1f) * (1f + (rs.Level - 1) * 0.2f) * (1f + rs.Staff * 0.25f);
                 rs.NextSale = now + (int)(rnd.Next(42000, 78000) / Math.Max(0.2f, rate));
+                if (rs.Staff <= 0)
+                {
+                    if (!rs.OutNotified) { rs.OutNotified = true; Notify("~y~Quan #" + (ri + 1) + " chua co nhan vien~s~ nen khong ban duoc. Den quan thue nhan vien."); }
+                    continue;
+                }
                 if (rs.Stock <= 0)
                 {
                     if (!rs.OutNotified) { rs.OutNotified = true; Notify("~r~Quan #" + (ri + 1) + " het hang!~s~ Den nhap hang de tiep tuc ban."); }
@@ -358,7 +363,7 @@ public class GtaVietLifeWorld : Script
             {
                 Shop sh = shops[i];
                 string nm = "Quan " + (i + 1);
-                int target = (int)((15 + (sh.Level - 1) * 8 + sh.Staff * 12 + rnd.Next(0, 11) + Math.Max(0, rep / 5)) * ModeTraffic[sh.Mode] * ZoneMult(sh.Pos) * (sh.Indoor ? 1.15f : 1f));
+                int target = sh.Staff <= 0 ? 0 : (int)((15 + (sh.Level - 1) * 8 + sh.Staff * 12 + rnd.Next(0, 11) + Math.Max(0, rep / 5)) * ModeTraffic[sh.Mode] * ZoneMult(sh.Pos) * (sh.Indoor ? 1.15f : 1f));
                 int remain = Math.Max(0, target - sh.SoldToday);   // khach thay tan mat da ban theo thoi gian thuc
                 int sold = Math.Min(sh.Stock, remain);
                 sh.Stock -= sold;
@@ -1275,10 +1280,10 @@ public class GtaVietLifeWorld : Script
                 if (arrived || now - c.T > 30000)
                 {
                     if (!arrived) { Log("khach khong toi duoc quay (cach " + (int)p.Position.DistanceTo(bizPos) + " m), bo"); Release(c); customers.RemoveAt(i); continue; }
-                    bool served = true;   // quan tu van hanh, khong can chu dung do
+                    bool served = bizStaff > 0;   // can co nhan vien; chu dung xa hay gan deu khong anh huong
                     if (!served)
                     {
-                        if (now - c.T > 45000) { Notify("Khach bo di vi khong ai phuc vu. Thue nhan vien hoac dung gan quan."); Release(c); customers.RemoveAt(i); }
+                        if (now - c.T > 45000) { Notify("Khach bo di vi quan chua co nhan vien. Vao menu Kinh doanh de thue nhan vien."); Release(c); customers.RemoveAt(i); }
                         continue;
                     }
                     c.Stage = 1;
