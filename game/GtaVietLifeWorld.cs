@@ -1,0 +1,771 @@
+// GTA Việt Life: lớp "đời thật" (nhu cầu, nhà ở, việc làm, kinh doanh, lịch cư dân, luật và hậu quả).
+// File độc lập với GtaVietLife.cs (nói chuyện): chép cả hai vào thư mục "scripts".
+// Lỗi ở file này không làm hỏng phần nói chuyện.
+//
+// Phím:   M = mở/đóng menu đời sống; số 1..9 = chọn mục; M hoặc Backspace = quay lại/đóng.
+// Dữ liệu lưu trong GtaVietLifeWorld.sav (cạnh game). Gửi trạng thái cho cầu nối AI để NPC biết hoàn cảnh của Sếp.
+// Chữ trong game viết không dấu (font GTA không có dấu).
+
+using System;
+using System.Collections.Generic;
+using System.Collections.Specialized;
+using System.Drawing;
+using System.Globalization;
+using System.IO;
+using System.Net;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using GTA;
+using GTA.Math;
+using GTA.Native;
+using GTA.UI;
+
+public class GtaVietLifeWorld : Script
+{
+    // ------------------------------------------------------------ cấu hình
+    const string SaveFile = "GtaVietLifeWorld.sav";
+    const int FoodPrice = 15;
+    const int DrinkPrice = 5;
+    const int RentPerDay = 150;
+    const int BizPrice = 5000;
+    const int StockPrice = 500;
+    const int StockPack = 50;
+    const int SalePrice = 22;
+    const int WagePerDay = 100;
+    const int MaxStaff = 4;
+    const int FinePerStar = 150;
+
+    string server = "http://127.0.0.1:5577";
+    Keys menuKey = Keys.M;
+
+    // ------------------------------------------------------------ trạng thái đời sống
+    float hunger = 80, thirst = 80, energy = 90;
+    int rep = 0;
+    int debt = 0;
+
+    bool hasHome;
+    Vector3 home;
+
+    bool jobGiaoHang;
+    bool delivering;
+    Vector3 dest;
+    Blip destBlip;
+    int deadlineMs;
+    int payBase;
+    int deliveriesToday, earnedToday, deliveriesTotal;
+
+    bool hasBiz;
+    Vector3 bizPos;
+    Blip bizBlip;
+    int bizStock, bizStaff, bizCash;
+    readonly List<Ped> staffPeds = new List<Ped>();
+
+    // ------------------------------------------------------------ nội bộ
+    readonly Random rnd = new Random();
+    int lastMinuteOfDay = -1;
+    int dayCounter;
+    int lastDayTick;
+    int prevWanted;
+    int nextNeedHurt, nextWarn, nextStatePost, nextSave, nextResidentCheck;
+    float minuteAccum;
+    int sleepAt;
+
+    // menu
+    bool menuOpen;
+    string menuTitle = "";
+    List<string> menuLabels = new List<string>();
+    List<Action> menuActions = new List<Action>();
+    Action menuBack;
+
+    // cư dân (NPC có lịch)
+    class Resident
+    {
+        public Ped P;
+        public Vector3 Home;
+        public Vector3 Work;
+        public int Phase = -1;
+        public int LastCmd;
+    }
+    readonly List<Resident> residents = new List<Resident>();
+
+    public GtaVietLifeWorld()
+    {
+        int port = Settings.GetValue("Bridge", "Port", 5577);
+        server = "http://127.0.0.1:" + port;
+        menuKey = Settings.GetValue("Keys", "Menu", menuKey);
+
+        Load();
+
+        Tick += OnTick;
+        KeyDown += OnKeyDown;
+        Aborted += OnAborted;
+        Notify("~g~GTA Viet Life: Doi song~s~ da bat. Bam ~y~M~s~ de mo menu.");
+        if (hasBiz) CreateBizBlip();
+        for (int i = 0; i < bizStaff; i++) SpawnStaff();
+    }
+
+    // ------------------------------------------------------------ vòng lặp
+    void OnTick(object sender, EventArgs e)
+    {
+        Ped me = Game.Player.Character;
+        if (me == null || !me.Exists()) return;
+        int now = Game.GameTime;
+
+        if (sleepAt > 0 && now > sleepAt) { sleepAt = 0; FinishSleep(); }
+        if (sleepAt > 0) return;
+        UpdateClock();
+        UpdateNeeds(me, now);
+        UpdateWanted(me);
+        UpdateDelivery(me, now);
+        UpdateResidents(now);
+
+        if (now > nextStatePost) { nextStatePost = now + 15000; PostState(); }
+        if (now > nextSave) { nextSave = now + 30000; Save(); }
+
+        DrawHud();
+        if (menuOpen) DrawMenu();
+    }
+
+    void OnAborted(object sender, EventArgs e)
+    {
+        Save();
+        foreach (Ped p in staffPeds) if (p != null && p.Exists()) p.Delete();
+        if (bizBlip != null && bizBlip.Exists()) bizBlip.Delete();
+        if (destBlip != null && destBlip.Exists()) destBlip.Delete();
+        foreach (Resident r in residents) if (r.P != null && r.P.Exists()) r.P.IsPersistent = false;
+    }
+
+    // ------------------------------------------------------------ đồng hồ, nhu cầu, ngày mới
+    void UpdateClock()
+    {
+        TimeSpan t = World.CurrentTimeOfDay;
+        int m = t.Hours * 60 + t.Minutes;
+        if (lastMinuteOfDay < 0) { lastMinuteOfDay = m; return; }
+        int delta = (m - lastMinuteOfDay + 1440) % 1440;
+        lastMinuteOfDay = m;
+        if (delta == 0 || delta > 180) return; // đứng yên hoặc nhảy giờ (ngủ, console)
+        if (m < delta) dayCounter++; // vừa qua nửa đêm
+        minuteAccum += delta;
+        hunger = Clamp(hunger - 0.06f * delta);
+        thirst = Clamp(thirst - 0.09f * delta);
+        energy = Clamp(energy - 0.05f * delta);
+        if (dayCounter > lastDayTick) { lastDayTick = dayCounter; DailyTick(); }
+    }
+
+    void AdvanceTime(int minutes)
+    {
+        TimeSpan t = World.CurrentTimeOfDay;
+        int m = t.Hours * 60 + t.Minutes + minutes;
+        if (m >= 1440) { dayCounter++; m -= 1440; }
+        World.CurrentTimeOfDay = new TimeSpan(m / 60, m % 60, 0);
+        lastMinuteOfDay = m;
+        if (dayCounter > lastDayTick) { lastDayTick = dayCounter; DailyTick(); }
+    }
+
+    void UpdateNeeds(Ped me, int now)
+    {
+        if (!me.IsAlive) return;
+        float low = Math.Min(hunger, Math.Min(thirst, energy));
+        if (low <= 0f && now > nextNeedHurt)
+        {
+            nextNeedHurt = now + 3000;
+            if (me.Health > 120) me.Health = me.Health - 4;
+        }
+        if (low < 15f && now > nextWarn)
+        {
+            nextWarn = now + 60000;
+            string what = hunger < 15f ? "doi" : thirst < 15f ? "khat" : "kiet suc, can ngu";
+            Notify("~r~Sep dang " + what + "!~s~ Bam M de an/uong/ngu.");
+        }
+    }
+
+    void DailyTick()
+    {
+        deliveriesToday = 0;
+        earnedToday = 0;
+        string report = "~b~Qua ngay moi.~s~";
+
+        if (hasHome)
+        {
+            if (Game.Player.Money >= RentPerDay) { Game.Player.Money = Game.Player.Money - RentPerDay; report += " Tien nha -$" + RentPerDay + "."; }
+            else { debt += RentPerDay; report += " ~r~Thieu tien nha, ghi no $" + RentPerDay + ".~s~"; }
+        }
+        if (debt > 0)
+        {
+            debt += debt / 20; // lãi 5% mỗi ngày
+            int pay = Math.Min(Game.Player.Money, Math.Max(0, Game.Player.Money * 3 / 10));
+            pay = Math.Min(pay, debt);
+            if (pay > 0) { Game.Player.Money = Game.Player.Money - pay; debt -= pay; report += " Chu no lay $" + pay + "."; }
+            if (debt > 3000) { rep -= 2; report += " ~r~No qua nhieu, mat uy tin!~s~"; PostEvent("Có gã chơi nổi nhưng nợ nần chồng chất, người ta bắt đầu ngán."); }
+        }
+        if (hasBiz)
+        {
+            int customers = 15 + bizStaff * 12 + rnd.Next(0, 11) + Math.Max(0, rep / 5);
+            int sold = Math.Min(bizStock, customers);
+            bizStock -= sold;
+            int revenue = sold * SalePrice;
+            int wages = bizStaff * WagePerDay;
+            bizCash += revenue - wages;
+            if (bizCash < 0) { debt += -bizCash; bizCash = 0; }
+            if (sold >= 10) rep += 1;
+            report += " Quan: ban " + sold + " phan, thu $" + revenue + ", luong -$" + wages + ".";
+            if (bizStock == 0) report += " ~y~Het hang!~s~";
+        }
+        Notify(report);
+        Save();
+    }
+
+    // ------------------------------------------------------------ luật và hậu quả
+    void UpdateWanted(Ped me)
+    {
+        int w = Game.Player.WantedLevel;
+        if (w >= 2 && prevWanted < 2)
+        {
+            rep -= 3;
+            PostEvent("Có gã vừa gây chuyện lớn, cảnh sát đang rượt gần " + SafeStreet(me.Position) + ".");
+        }
+        if (prevWanted > 0 && w == 0 && me.IsAlive)
+        {
+            int fine = prevWanted * FinePerStar;
+            if (Game.Player.Money >= fine) { Game.Player.Money = Game.Player.Money - fine; Notify("~r~Bi phat $" + fine + "~s~ vi vi pham (" + prevWanted + " sao)."); }
+            else { debt += fine; Notify("~r~Thieu tien nop phat, ghi no $" + fine + ".~s~"); }
+            rep -= prevWanted;
+        }
+        prevWanted = w;
+    }
+
+    // ------------------------------------------------------------ việc làm: giao hàng
+    void StartDelivery()
+    {
+        int hour = World.CurrentTimeOfDay.Hours;
+        if (hour < 6 || hour >= 22) { Notify("Ngoai gio lam (ca 6h-22h)."); return; }
+        if (delivering) { Notify("Dang co don roi."); return; }
+        Ped me = Game.Player.Character;
+        Vector3 d = Vector3.Zero;
+        for (int i = 0; i < 8; i++)
+        {
+            double ang = rnd.NextDouble() * Math.PI * 2;
+            float dist = 600f + (float)rnd.NextDouble() * 900f;
+            Vector3 raw = me.Position + new Vector3((float)Math.Cos(ang) * dist, (float)Math.Sin(ang) * dist, 0f);
+            d = World.GetNextPositionOnStreet(raw);
+            if (d != Vector3.Zero) break;
+        }
+        if (d == Vector3.Zero) { Notify("Khong tim duoc diem giao, thu lai."); return; }
+        dest = d;
+        float len = me.Position.DistanceTo2D(dest);
+        payBase = 60 + (int)(len / 8f);
+        deadlineMs = Game.GameTime + (int)(len / 7f * 1000f) + 30000;
+        delivering = true;
+        if (destBlip != null && destBlip.Exists()) destBlip.Delete();
+        destBlip = World.CreateBlip(dest);
+        destBlip.Color = BlipColor.Yellow;
+        Function.Call(Hash.SET_NEW_WAYPOINT, dest.X, dest.Y);
+        Notify("~y~Don giao hang~s~: " + (int)len + " m, thuong $" + payBase + ". Dung han de du tien.");
+    }
+
+    void EndDelivery(bool success, bool late)
+    {
+        delivering = false;
+        if (destBlip != null && destBlip.Exists()) destBlip.Delete();
+        destBlip = null;
+        Function.Call(Hash.SET_WAYPOINT_OFF);
+        if (!success) { Notify("Da huy don."); return; }
+        int pay = late ? payBase / 2 : payBase;
+        Game.Player.Money = Game.Player.Money + pay;
+        deliveriesToday++;
+        deliveriesTotal++;
+        earnedToday += pay;
+        if (!late) rep += 1;
+        Notify((late ? "~y~Giao tre~s~, nhan $" : "~g~Giao xong!~s~ Nhan $") + pay + ". Hom nay " + deliveriesToday + " don, $" + earnedToday + ".");
+        if (deliveriesTotal % 5 == 0) PostEvent("Có gã chạy giao hàng rất chăm, ai cũng biết mặt.");
+    }
+
+    void UpdateDelivery(Ped me, int now)
+    {
+        if (!delivering) return;
+        if (me.Position.DistanceTo2D(dest) < 25f) { EndDelivery(true, now > deadlineMs); return; }
+        if (now > deadlineMs + 120000) { Notify("Qua tre, don bi huy."); rep -= 1; EndDelivery(false, true); }
+    }
+
+    // ------------------------------------------------------------ kinh doanh
+    void BuyBiz()
+    {
+        if (hasBiz) return;
+        if (Game.Player.Money < BizPrice) { Notify("Khong du $" + BizPrice + " de mo quan."); return; }
+        Game.Player.Money = Game.Player.Money - BizPrice;
+        hasBiz = true;
+        bizPos = Game.Player.Character.Position;
+        bizStock = 30;
+        bizStaff = 0;
+        bizCash = 0;
+        CreateBizBlip();
+        Notify("~g~Da mo quan!~s~ Tang 30 phan hang. Dung gan quan bam M de quan ly.");
+        PostEvent("Có gã vừa mở một quán nhỏ ở " + SafeStreet(bizPos) + ".");
+    }
+
+    void CreateBizBlip()
+    {
+        if (bizBlip != null && bizBlip.Exists()) bizBlip.Delete();
+        bizBlip = World.CreateBlip(bizPos);
+        bizBlip.Color = BlipColor.Green;
+        bizBlip.Name = "Quan cua Sep";
+    }
+
+    bool NearBiz()
+    {
+        return hasBiz && Game.Player.Character.Position.DistanceTo(bizPos) < 12f;
+    }
+
+    void SpawnStaff()
+    {
+        try
+        {
+            Model mdl = new Model(rnd.Next(2) == 0 ? "a_m_y_business_01" : "a_f_y_business_01");
+            if (!mdl.Request(1000)) return;
+            Vector3 pos = bizPos + new Vector3((float)(rnd.NextDouble() * 4 - 2), (float)(rnd.NextDouble() * 4 - 2), 0f);
+            Ped p = World.CreatePed(mdl, pos);
+            mdl.MarkAsNoLongerNeeded();
+            if (p == null || !p.Exists()) return;
+            p.IsPersistent = true;
+            Function.Call(Hash.TASK_WANDER_IN_AREA, p, bizPos.X, bizPos.Y, bizPos.Z, 6f, 2f, 5f);
+            staffPeds.Add(p);
+        }
+        catch (Exception ex) { Log("SpawnStaff loi: " + ex.Message); }
+    }
+
+    void FireStaff()
+    {
+        if (staffPeds.Count == 0) return;
+        Ped p = staffPeds[staffPeds.Count - 1];
+        staffPeds.RemoveAt(staffPeds.Count - 1);
+        if (p != null && p.Exists()) { p.IsPersistent = false; p.Task.WanderAround(); }
+    }
+
+    // ------------------------------------------------------------ cư dân có lịch sinh hoạt
+    void MakeResident()
+    {
+        Ped me = Game.Player.Character;
+        Ped best = null;
+        float bd = 6f;
+        foreach (Ped p in World.GetNearbyPeds(me, 6f))
+        {
+            if (p == null || !p.Exists() || p == me || !p.IsHuman || !p.IsAlive || p.IsPlayer) continue;
+            float d = p.Position.DistanceTo(me.Position);
+            if (d < bd) { bd = d; best = p; }
+        }
+        if (best == null) { Notify("Khong co ai o gan."); return; }
+        foreach (Resident r0 in residents) if (r0.P == best) { Notify("Nguoi nay da la cu dan roi."); return; }
+        Resident r = new Resident();
+        r.P = best;
+        r.Work = best.Position;
+        Vector3 h = Vector3.Zero;
+        for (int i = 0; i < 6 && h == Vector3.Zero; i++)
+        {
+            double ang = rnd.NextDouble() * Math.PI * 2;
+            float dist = 150f + (float)rnd.NextDouble() * 200f;
+            h = World.GetNextPositionOnStreet(best.Position + new Vector3((float)Math.Cos(ang) * dist, (float)Math.Sin(ang) * dist, 0f));
+        }
+        r.Home = h == Vector3.Zero ? best.Position : h;
+        best.IsPersistent = true;
+        Blip b = best.AddBlip();
+        b.Color = BlipColor.Blue;
+        b.Scale = 0.6f;
+        residents.Add(r);
+        Notify("~g~Cu dan moi~s~: ban ngay o day, toi ve nha.");
+    }
+
+    // 0 = ban ngay (7-19h) o cho lam, 1 = buoi toi (19-23h) gan nha, 2 = dem (23-7h) o nha
+    int PhaseNow()
+    {
+        int h = World.CurrentTimeOfDay.Hours;
+        if (h >= 7 && h < 19) return 0;
+        if (h >= 19 && h < 23) return 1;
+        return 2;
+    }
+
+    void UpdateResidents(int now)
+    {
+        if (now < nextResidentCheck || residents.Count == 0) return;
+        nextResidentCheck = now + 10000;
+        int phase = PhaseNow();
+        for (int i = residents.Count - 1; i >= 0; i--)
+        {
+            Resident r = residents[i];
+            Ped p = r.P;
+            if (p == null || !p.Exists() || !p.IsAlive) { residents.RemoveAt(i); continue; }
+            if (p.IsPositionFrozen) continue; // dang noi chuyen voi Sep
+            Vector3 c = phase == 0 ? r.Work : r.Home;
+            float radius = phase == 0 ? 20f : phase == 1 ? 10f : 3f;
+            float d = p.Position.DistanceTo2D(c);
+            if (d > radius + 10f)
+            {
+                if (now - r.LastCmd > 20000)
+                {
+                    r.LastCmd = now;
+                    Function.Call(Hash.TASK_FOLLOW_NAV_MESH_TO_COORD, p, c.X, c.Y, c.Z, 1.0f, -1, 2.0f, false, 0f);
+                }
+            }
+            else if (r.Phase != phase)
+            {
+                r.Phase = phase;
+                Function.Call(Hash.TASK_WANDER_IN_AREA, p, c.X, c.Y, c.Z, radius, 2f, 6f);
+            }
+        }
+    }
+
+    // ------------------------------------------------------------ nhà, ăn, uống, ngủ
+    bool Spend(int amount)
+    {
+        if (Game.Player.Money < amount) { Notify("Khong du tien ($" + amount + ")."); return false; }
+        Game.Player.Money = Game.Player.Money - amount;
+        return true;
+    }
+
+    void Eat()
+    {
+        if (!Spend(FoodPrice)) return;
+        hunger = Clamp(hunger + 40f);
+        Game.Player.Character.Health = Math.Min(Game.Player.Character.MaxHealth, Game.Player.Character.Health + 10);
+        Notify("Da an. No hon roi (-$" + FoodPrice + ").");
+    }
+
+    void Drink()
+    {
+        if (!Spend(DrinkPrice)) return;
+        thirst = Clamp(thirst + 40f);
+        Notify("Da uong nuoc (-$" + DrinkPrice + ").");
+    }
+
+    void SetHome()
+    {
+        if (hasHome) { Notify("Sep da co cho o roi."); return; }
+        home = Game.Player.Character.Position;
+        hasHome = true;
+        Notify("~g~Da thue cho o day~s~ ($" + RentPerDay + "/ngay). Ve day bam M de ngu.");
+    }
+
+    void Sleep()
+    {
+        Ped me = Game.Player.Character;
+        if (!hasHome || me.Position.DistanceTo(home) > 30f) { Notify("Phai o gan nha moi ngu duoc."); return; }
+        if (me.IsInVehicle()) { Notify("Xuong xe da."); return; }
+        GTA.UI.Screen.FadeOut(800);
+        sleepAt = Game.GameTime + 1100;
+    }
+
+    void FinishSleep()
+    {
+        Ped me = Game.Player.Character;
+        AdvanceTime(8 * 60);
+        energy = 100f;
+        hunger = Clamp(hunger - 15f);
+        thirst = Clamp(thirst - 15f);
+        me.Health = me.MaxHealth;
+        GTA.UI.Screen.FadeIn(800);
+        Notify("Da ngu 8 tieng. Khoe re!");
+        Save();
+    }
+
+    // ------------------------------------------------------------ menu
+    void OpenMenu()
+    {
+        menuOpen = true;
+        ShowMain();
+    }
+
+    void CloseMenu() { menuOpen = false; }
+
+    void Item(string label, Action act)
+    {
+        menuLabels.Add(label);
+        menuActions.Add(act);
+    }
+
+    void Begin(string title, Action back)
+    {
+        menuTitle = title;
+        menuLabels = new List<string>();
+        menuActions = new List<Action>();
+        menuBack = back;
+    }
+
+    void ShowMain()
+    {
+        Begin("DOI SONG  (M/Backspace: dong)", null);
+        Item("An com  (-$" + FoodPrice + ")", delegate { Eat(); });
+        Item("Uong nuoc  (-$" + DrinkPrice + ")", delegate { Drink(); });
+        if (hasHome) Item("Ngu o nha  (tua 8 gio)", delegate { CloseMenu(); Sleep(); });
+        else Item("Thue cho o day  ($" + RentPerDay + "/ngay)", delegate { SetHome(); ShowMain(); });
+        Item("Cong viec...", delegate { ShowJob(); });
+        Item("Kinh doanh...", delegate { ShowBiz(); });
+        Item("Dat nguoi gan nhat lam cu dan (co lich)", delegate { MakeResident(); });
+        Item("Thong tin", delegate { ShowInfo(); });
+        if (debt > 0) Item("Tra no  ($" + debt + ")", delegate { PayDebt(); ShowMain(); });
+    }
+
+    void ShowJob()
+    {
+        Begin("CONG VIEC", delegate { ShowMain(); });
+        if (!jobGiaoHang) Item("Dang ky lam Giao hang (ca 6h-22h)", delegate { jobGiaoHang = true; Notify("Da nhan viec ~g~Giao hang~s~."); ShowJob(); });
+        else
+        {
+            if (!delivering) Item("Nhan don giao hang", delegate { CloseMenu(); StartDelivery(); });
+            else Item("Huy don dang giao", delegate { EndDelivery(false, false); ShowJob(); });
+            Item("Nghi viec", delegate { if (delivering) EndDelivery(false, false); jobGiaoHang = false; ShowJob(); });
+        }
+        Item("Quay lai", delegate { ShowMain(); });
+    }
+
+    void ShowBiz()
+    {
+        Begin("KINH DOANH", delegate { ShowMain(); });
+        if (!hasBiz)
+        {
+            Item("Mo quan o day  (-$" + BizPrice + ")", delegate { BuyBiz(); ShowBiz(); });
+        }
+        else if (!NearBiz())
+        {
+            Item("(Hay den gan quan - cham xanh tren ban do)", delegate { });
+        }
+        else
+        {
+            Item("Nhap hang +" + StockPack + " phan  (-$" + StockPrice + ")  kho: " + bizStock, delegate
+            {
+                if (Spend(StockPrice)) { bizStock += StockPack; }
+                ShowBiz();
+            });
+            Item("Thue nhan vien  (luong $" + WagePerDay + "/ngay)  hien: " + bizStaff + "/" + MaxStaff, delegate
+            {
+                if (bizStaff < MaxStaff) { bizStaff++; SpawnStaff(); } else Notify("Da du nhan vien.");
+                ShowBiz();
+            });
+            Item("Sa thai 1 nhan vien", delegate
+            {
+                if (bizStaff > 0) { bizStaff--; FireStaff(); }
+                ShowBiz();
+            });
+            Item("Rut tien quan  ($" + bizCash + ")", delegate
+            {
+                Game.Player.Money = Game.Player.Money + bizCash;
+                Notify("Da rut $" + bizCash + ".");
+                bizCash = 0;
+                ShowBiz();
+            });
+        }
+        Item("Quay lai", delegate { ShowMain(); });
+    }
+
+    void ShowInfo()
+    {
+        Begin("THONG TIN", delegate { ShowMain(); });
+        Item("Tien: $" + Game.Player.Money + "   No: $" + debt, delegate { });
+        Item("Uy tin: " + rep + "   Giao hang hom nay: " + deliveriesToday + " don ($" + earnedToday + ")", delegate { });
+        Item("Nha: " + (hasHome ? "co ($" + RentPerDay + "/ngay)" : "chua thue"), delegate { });
+        Item("Quan: " + (hasBiz ? "kho " + bizStock + ", nv " + bizStaff + ", quy $" + bizCash : "chua co"), delegate { });
+        Item("Cu dan co lich: " + residents.Count, delegate { });
+        Item("Quay lai", delegate { ShowMain(); });
+    }
+
+    void PayDebt()
+    {
+        int pay = Math.Min(debt, Game.Player.Money);
+        if (pay <= 0) { Notify("Khong co tien de tra."); return; }
+        Game.Player.Money = Game.Player.Money - pay;
+        debt -= pay;
+        Notify("Da tra no $" + pay + (debt > 0 ? ", con $" + debt : ", het no!"));
+    }
+
+    void OnKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.KeyCode == menuKey)
+        {
+            if (!menuOpen) OpenMenu();
+            else if (menuBack != null) menuBack();
+            else CloseMenu();
+            return;
+        }
+        if (!menuOpen) return;
+        if (e.KeyCode == Keys.Back)
+        {
+            if (menuBack != null) menuBack(); else CloseMenu();
+            return;
+        }
+        int idx = -1;
+        if (e.KeyCode >= Keys.D1 && e.KeyCode <= Keys.D9) idx = (int)e.KeyCode - (int)Keys.D1;
+        else if (e.KeyCode >= Keys.NumPad1 && e.KeyCode <= Keys.NumPad9) idx = (int)e.KeyCode - (int)Keys.NumPad1;
+        if (idx >= 0 && idx < menuActions.Count)
+        {
+            try { menuActions[idx](); }
+            catch (Exception ex) { Log("menu loi: " + ex); Notify("Loi menu: " + Short(ex)); }
+        }
+    }
+
+    // ------------------------------------------------------------ vẽ màn hình
+    static Color NeedColor(float v)
+    {
+        return v < 15f ? Color.FromArgb(255, 255, 80, 80) : v < 35f ? Color.FromArgb(255, 255, 210, 80) : Color.White;
+    }
+
+    void DrawText(string s, float x, float y, float scale, Color c)
+    {
+        TextElement t = new TextElement(s, new PointF(x, y), scale, c);
+        t.Outline = true;
+        t.Draw();
+    }
+
+    void DrawHud()
+    {
+        float x = 280f, y = 688f;
+        DrawText("An " + (int)hunger, x, y, 0.32f, NeedColor(hunger));
+        DrawText("Uong " + (int)thirst, x + 60f, y, 0.32f, NeedColor(thirst));
+        DrawText("Nang luong " + (int)energy, x + 130f, y, 0.32f, NeedColor(energy));
+        string extra = "";
+        if (jobGiaoHang) extra += "Giao hang";
+        if (delivering)
+        {
+            int left = (deadlineMs - Game.GameTime) / 1000;
+            extra += " | con " + (int)Game.Player.Character.Position.DistanceTo2D(dest) + "m, " + (left > 0 ? left + "s" : "TRE");
+        }
+        if (debt > 0) extra += (extra.Length > 0 ? " | " : "") + "No $" + debt;
+        if (extra.Length > 0) DrawText(extra, x + 260f, y, 0.32f, Color.White);
+    }
+
+    void DrawMenu()
+    {
+        float x = 40f, y = 170f, w = 520f;
+        float h = 38f + menuLabels.Count * 26f;
+        new ContainerElement(new PointF(x, y), new SizeF(w, h), Color.FromArgb(200, 10, 10, 10)).Draw();
+        DrawText(menuTitle, x + 12f, y + 6f, 0.45f, Color.FromArgb(255, 255, 210, 80));
+        for (int i = 0; i < menuLabels.Count; i++)
+            DrawText((i + 1) + ". " + menuLabels[i], x + 12f, y + 38f + i * 26f, 0.38f, Color.White);
+    }
+
+    // ------------------------------------------------------------ cầu nối AI
+    void PostState()
+    {
+        NameValueCollection c = new NameValueCollection();
+        c["hour"] = World.CurrentTimeOfDay.Hours.ToString();
+        c["hunger"] = ((int)hunger).ToString();
+        c["thirst"] = ((int)thirst).ToString();
+        c["energy"] = ((int)energy).ToString();
+        c["rep"] = rep.ToString();
+        c["debt"] = debt.ToString();
+        c["job"] = jobGiaoHang ? "shipper giao hàng" : "";
+        c["business"] = hasBiz ? "quán nhỏ có " + bizStaff + " nhân viên" : "";
+        Send("/state", c);
+    }
+
+    void PostEvent(string text)
+    {
+        NameValueCollection c = new NameValueCollection();
+        c["text"] = text;
+        Send("/event", c);
+    }
+
+    void Send(string path, NameValueCollection data)
+    {
+        string url = server + path;
+        Task.Run(delegate
+        {
+            try
+            {
+                using (WebClient wc = new WebClient())
+                {
+                    wc.Proxy = null;
+                    wc.Encoding = Encoding.UTF8;
+                    wc.UploadValues(url, "POST", data);
+                }
+            }
+            catch { }
+        });
+    }
+
+    // ------------------------------------------------------------ lưu / nạp
+    void Save()
+    {
+        try
+        {
+            CultureInfo ci = CultureInfo.InvariantCulture;
+            List<string> l = new List<string>();
+            l.Add("hunger=" + hunger.ToString(ci));
+            l.Add("thirst=" + thirst.ToString(ci));
+            l.Add("energy=" + energy.ToString(ci));
+            l.Add("rep=" + rep);
+            l.Add("debt=" + debt);
+            l.Add("job=" + (jobGiaoHang ? 1 : 0));
+            l.Add("deliveries=" + deliveriesTotal);
+            l.Add("hasHome=" + (hasHome ? 1 : 0));
+            l.Add("home=" + home.X.ToString(ci) + "," + home.Y.ToString(ci) + "," + home.Z.ToString(ci));
+            l.Add("hasBiz=" + (hasBiz ? 1 : 0));
+            l.Add("biz=" + bizPos.X.ToString(ci) + "," + bizPos.Y.ToString(ci) + "," + bizPos.Z.ToString(ci));
+            l.Add("stock=" + bizStock);
+            l.Add("staff=" + bizStaff);
+            l.Add("cash=" + bizCash);
+            File.WriteAllLines(SaveFile, l.ToArray());
+        }
+        catch (Exception ex) { Log("save loi: " + ex.Message); }
+    }
+
+    void Load()
+    {
+        try
+        {
+            if (!File.Exists(SaveFile)) return;
+            CultureInfo ci = CultureInfo.InvariantCulture;
+            foreach (string line in File.ReadAllLines(SaveFile))
+            {
+                int i = line.IndexOf('=');
+                if (i < 0) continue;
+                string k = line.Substring(0, i), v = line.Substring(i + 1);
+                switch (k)
+                {
+                    case "hunger": hunger = float.Parse(v, ci); break;
+                    case "thirst": thirst = float.Parse(v, ci); break;
+                    case "energy": energy = float.Parse(v, ci); break;
+                    case "rep": rep = int.Parse(v); break;
+                    case "debt": debt = int.Parse(v); break;
+                    case "job": jobGiaoHang = v == "1"; break;
+                    case "deliveries": deliveriesTotal = int.Parse(v); break;
+                    case "hasHome": hasHome = v == "1"; break;
+                    case "home": home = ParseVec(v); break;
+                    case "hasBiz": hasBiz = v == "1"; break;
+                    case "biz": bizPos = ParseVec(v); break;
+                    case "stock": bizStock = int.Parse(v); break;
+                    case "staff": bizStaff = int.Parse(v); break;
+                    case "cash": bizCash = int.Parse(v); break;
+                }
+            }
+        }
+        catch (Exception ex) { Log("load loi: " + ex.Message); }
+    }
+
+    static Vector3 ParseVec(string v)
+    {
+        string[] p = v.Split(',');
+        CultureInfo ci = CultureInfo.InvariantCulture;
+        return new Vector3(float.Parse(p[0], ci), float.Parse(p[1], ci), float.Parse(p[2], ci));
+    }
+
+    // ------------------------------------------------------------ tiện ích
+    static float Clamp(float v) { return v < 0f ? 0f : v > 100f ? 100f : v; }
+
+    string SafeStreet(Vector3 pos)
+    {
+        try { return World.GetStreetName(pos); } catch { return "đâu đó trong thành phố"; }
+    }
+
+    void Notify(string msg) { GTA.UI.Notification.Show(msg); }
+
+    static void Log(string msg)
+    {
+        try { File.AppendAllText("GtaVietLifeWorld.log", DateTime.Now.ToString("HH:mm:ss") + " " + msg + Environment.NewLine); }
+        catch { }
+    }
+
+    static string Short(Exception ex)
+    {
+        string m = ex.Message ?? ex.GetType().Name;
+        return m.Length > 90 ? m.Substring(0, 90) : m;
+    }
+}

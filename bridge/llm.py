@@ -8,7 +8,10 @@ ACTIONS = ("none", "follow", "unfollow", "flee", "fight")
 
 SYSTEM = """Bạn đóng vai một cư dân trong thế giới game mô phỏng đời sống. Người chơi đang đứng trước mặt bạn và nói chuyện bằng giọng nói.
 Quy tắc:
-- Luôn nói tiếng Việt tự nhiên, đời thường, như người thật ngoài phố. Ngắn gọn 1-2 câu, tối đa khoảng 30 từ.
+- Luôn nói tiếng Việt tự nhiên, đời thường, như người thật ngoài phố. Ngắn gọn 1-2 câu, tối đa khoảng 25 từ.
+- TRẢ LỜI ĐÚNG ĐIỀU người chơi vừa nói/hỏi trước, rồi mới thêm ý riêng nếu cần. Không lan man, không đổi chủ đề, không hỏi dồn nhiều câu một lúc.
+- Không bịa địa danh, cửa hàng hay sự kiện cụ thể mà ngữ cảnh không có. Không biết thì nói không biết hoặc hỏi lại.
+- Nếu người chơi trông đói, khát, mệt, mắc nợ, có tiếng tốt/xấu... bạn có thể để ý và nói tới khi hợp lúc.
 - Giữ đúng tên, nghề nghiệp, tính cách, tâm trạng và độ thân thiết đã cho. Nhớ những gì hai bên đã nói trước đó.
 - Phản ứng theo hoàn cảnh: giờ giấc, thời tiết, nơi đang đứng, người chơi đang bị truy nã hay không.
 - Không bao giờ nhắc tới việc mình là AI, là game hay là nhân vật ảo.
@@ -73,6 +76,8 @@ def build_context(npc: dict, ctx: dict) -> str:
         lines.append("Bạn hiện đang đi theo người chơi.")
     if ctx.get("weapon") == "1":
         lines.append("Người chơi đang cầm vũ khí trên tay.")
+    if ctx.get("extra"):
+        lines.append(ctx["extra"])
     return "\n".join(lines)
 
 

@@ -22,6 +22,8 @@ class Voice:
         self.lock = threading.Lock()
         self.use_params = True
         self.epoch = 0
+        self.edge_fails = 0
+        self.edge_skip_until = 0.0
 
     def stop(self):
         self.epoch += 1  # huỷ giọng đang tạo dở của lượt trước
@@ -35,15 +37,22 @@ class Voice:
             pass
 
     def _make(self, text: str, voice: str, npc: dict, path: str) -> bool:
-        for use_params in ((True, False) if self.use_params else (False,)):
+        skip_edge = time.time() < self.edge_skip_until  # Edge đang lỗi liên tục: dùng thẳng giọng Google cho nhanh
+        for use_params in (() if skip_edge else ((True, False) if self.use_params else (False,))):
             try:
                 kw = dict(rate=npc.get("rate", "+0%"), pitch=npc.get("pitch", "+0Hz")) if use_params else {}
                 asyncio.run(edge_tts.Communicate(text, voice, **kw).save(path))
+                self.edge_fails = 0
                 return True
             except Exception as e:
                 print(f"[tts] lỗi ({'có' if use_params else 'không'} chỉnh giọng): {e}")
                 if use_params:
                     self.use_params = False
+        if not skip_edge:
+            self.edge_fails += 1
+            if self.edge_fails >= 2:
+                self.edge_skip_until = time.time() + 180
+                print("[tts] Edge lỗi liên tục, 3 phút tới dùng giọng Google")
         try:  # dự phòng: giọng Google
             from gtts import gTTS
             gTTS(text, lang="vi").save(path)

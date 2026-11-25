@@ -79,6 +79,8 @@ class Bridge:
         self.brain = Brain(cfg)
         self.voice = Voice(cfg)
         self.memory = Memory(os.path.join(HERE, cfg.get("memory_db", "memory.db")))
+        from life import Life
+        self.life = Life()
         self.busy = threading.Lock()
 
     def _get_stt(self):
@@ -108,6 +110,8 @@ class Bridge:
             key = ctx.get("key") or "tmp_0"
             npc = self.memory.get_or_create(key, ctx.get("gender", "male"), int(ctx.get("pedtype", "4") or 4))
             history = self.memory.history(key)
+            self.life.update_state({"hour": ctx.get("hour", "")})
+            ctx["extra"] = self.life.context(npc)
             result, text, by_audio = None, "", False
             if self.stt_mode == "groq":
                 try:
@@ -188,7 +192,13 @@ def make_handler(bridge: Bridge):
             raw = self.rfile.read(n).decode("utf-8") if n else ""
             ctx = {k: v[0] for k, v in parse_qs(raw).items()}
             try:
-                if self.path == "/start":
+                if self.path == "/state":
+                    bridge.life.update_state(ctx)
+                    self._send("ok")
+                elif self.path == "/event":
+                    bridge.life.add_rumor(ctx.get("text", ""))
+                    self._send("ok")
+                elif self.path == "/start":
                     bridge.start()
                     self._send("ok")
                 elif self.path == "/stop":

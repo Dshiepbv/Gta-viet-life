@@ -58,3 +58,10 @@ Ví dụ thử: "Chào anh, quanh đây có quán cà phê nào không?", "Đi t
 - **"Không chạy được GPU"**: thiếu thư viện CUDA, cầu nối tự chuyển sang CPU (chậm hơn). Chạy lại `install.bat`.
 - **Không thấy phụ đề**: game đang ở Fullscreen, chuyển sang Windowed Borderless.
 - **NPC không trả lời / "Xin lỗi, tôi đang vội"**: sai API key hoặc hết lượt Gemini miễn phí trong ngày; cài Ollama để có dự phòng.
+
+## Đời sống (GtaVietLifeWorld.cs)
+Chép `game/GtaVietLifeWorld.cs` vào `scripts` cùng file nói chuyện. Phím `M` mở menu (số 1-9 chọn):
+ăn/uống/ngủ, thuê nhà (tiền nhà mỗi ngày), việc giao hàng (ca 6h-22h), kinh doanh (mở quán, nhập hàng, thuê nhân viên, rút tiền),
+đặt NPC gần nhất làm "cư dân" có lịch (ban ngày ở chỗ làm, tối về nhà), thông tin, trả nợ.
+Phạt khi bị truy nã rồi thoát, nợ có lãi, uy tín tăng/giảm. Trạng thái được gửi cho cầu nối (`/state`, `/event`)
+để NPC biết hoàn cảnh và có tin đồn trong khu.
