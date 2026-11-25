@@ -323,8 +323,11 @@ public class GtaVietLife : Script
     // GVL.Vendors: Dictionary<int,string> handle -> "Ten cum|Ten mon:gia:no:khat;..."
     static string VendorRaw(Ped p)
     {
+        string raw; if (p == null) return null;
         var d = AppDomain.CurrentDomain.GetData("GVL.Vendors") as Dictionary<int, string>;
-        string raw; return d != null && p != null && d.TryGetValue(p.Handle, out raw) ? raw : null;
+        if (d != null && d.TryGetValue(p.Handle, out raw)) return raw;
+        var s2 = AppDomain.CurrentDomain.GetData("GVL.Shops") as Dictionary<int, string>;
+        return s2 != null && s2.TryGetValue(p.Handle, out raw) ? raw : null;
     }
     static string VendorMenu(Ped p)
     {
@@ -353,6 +356,8 @@ public class GtaVietLife : Script
         {
             string[] f = it.Split(':'); if (f.Length < 4) continue;
             if (NoAccent(f[0]) != want) continue;
+            bool goods = f[2].StartsWith("@");
+            if (goods) qty = 1;
             int price = int.Parse(f[1]) * qty;
             var pay = AppDomain.CurrentDomain.GetData("GVL.Pay") as Func<int, string, string, bool>;
             bool ok;
@@ -360,11 +365,30 @@ public class GtaVietLife : Script
             else if (Game.Player.Money >= price) { Game.Player.Money = Game.Player.Money - price; ok = true; }
             else ok = false;
             if (!ok) { Notify("~r~Khong du tien~s~ mua " + f[0] + " x" + qty + " ($" + price + ")."); return; }
+            if (goods) { GiveGoods(f[2].Substring(1), f[3], f[0], price); return; }
             AppDomain.CurrentDomain.SetData("GVL.NeedsAdd", new float[] { float.Parse(f[2]) * qty, float.Parse(f[3]) * qty, 0f });
             Notify("Da mua ~g~" + f[0] + " x" + qty + "~s~ (-$" + price + ").");
             return;
         }
         Notify("Quan khong co mon \"" + order + "\".");
+    }
+    void GiveGoods(string kind, string code, string name, int price)
+    {
+        Ped me = Game.Player.Character;
+        if (kind == "W")
+        {
+            try { WeaponHash h = (WeaponHash)Enum.Parse(typeof(WeaponHash), code.Replace("WEAPON_", ""), true); me.Weapons.Give(h, 120, true, true); Notify("Da mua ~g~" + name + "~s~ (-$" + price + ")."); return; }
+            catch { }
+            try { me.Weapons.Give((WeaponHash)Game.GenerateHash(code), 120, true, true); Notify("Da mua ~g~" + name + "~s~ (-$" + price + ")."); }
+            catch { Notify("Khong giao duoc " + name + " (khong co trong ban game nay), hoan tien."); var e = AppDomain.CurrentDomain.GetData("GVL.Earn") as Action<int, string, string>; if (e != null) e(price, "refund", name); else Game.Player.Money = Game.Player.Money + price; }
+            return;
+        }
+        Model m = new Model(code);
+        if (!m.IsInCdImage || !m.Request(1500)) { Notify("Mau " + name + " khong co trong ban game nay, hoan tien."); var e2 = AppDomain.CurrentDomain.GetData("GVL.Earn") as Action<int, string, string>; if (e2 != null) e2(price, "refund", name); else Game.Player.Money = Game.Player.Money + price; return; }
+        Vector3 pos = me.Position + me.ForwardVector * 9f;
+        if (kind == "V") { Vector3 st = World.GetNextPositionOnStreet(pos); if (st != Vector3.Zero) pos = st; }
+        Vehicle v = World.CreateVehicle(m, pos, me.Heading);
+        if (v != null && v.Exists()) { v.IsPersistent = true; Notify("Da mua ~g~" + name + "~s~ (-$" + price + "). Xe cho Sep o truoc mat."); }
     }
     readonly Dictionary<int, int> greeted = new Dictionary<int, int>();
     int nextGreet;
@@ -373,11 +397,9 @@ public class GtaVietLife : Script
     {
         if (now < nextGreet || recording || waiting || speakingPed != null) return;
         nextGreet = now + 1500;
-        var d = AppDomain.CurrentDomain.GetData("GVL.Vendors") as Dictionary<int, string>;
-        if (d == null) return;
         foreach (Ped p in World.GetNearbyPeds(me, 4f))
         {
-            if (!d.ContainsKey(p.Handle) || !p.IsAlive || !p.IsOnScreen) continue;
+            if (VendorRaw(p) == null || !p.IsAlive || !p.IsOnScreen) continue;
             int last; if (greeted.TryGetValue(p.Handle, out last) && now - last < 240000) continue;
             greeted[p.Handle] = now;
             var c = new NameValueCollection();

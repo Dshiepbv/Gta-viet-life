@@ -21,7 +21,7 @@ public class GtaVietLifeStreet : Script
     const string LogFile = "GtaVietLifeStreet.log";
 
     bool enabled = true;
-    int maxHubs = 7;                 // số cụm tối đa cùng lúc quanh người chơi
+    int maxHubs = 12;                 // số cụm tối đa cùng lúc quanh người chơi
     float spawnMin = 30f, spawnMax = 80f, despawnDist = 160f;
     int customerMax = 5;
     float rushHourBoost = 1.0f;
@@ -43,6 +43,15 @@ public class GtaVietLifeStreet : Script
         new Kind { Name = "com tam", Extra = "prop_parasol_01", Stall = "prop_food_van_01", Table = "prop_table_03", Seat = "prop_chair_01a", Menu = "Com tam:12:45:0;Ga ran:14:35:0;Tra da:2:0:20", H1 = 10, H2 = 15, Seats = 4 },
         new Kind { Name = "ca phe coc", Extra = "prop_parasol_01", Stall = "prop_vend_coffe_01", Table = "prop_table_03", Seat = "prop_chair_01a", Menu = "Ca phe sua:5:0:25;Tra da:2:0:20;Nuoc ep:6:0:30;Banh ngot:5:20:0", H1 = 14, H2 = 20, Seats = 4 },
         new Kind { Name = "tra da / nhau", Extra = "prop_beer_box_01", Stall = "prop_bbq_1", Table = "prop_table_03", Seat = "prop_chair_01a", Menu = "Tra da:2:0:20;Bia hoi:4:0:15;Ga ran:14:35:0;Mi goi:2:20:0", H1 = 17, H2 = 24, Seats = 5 },
+    };
+    // nhóm người làm nghề ngoài đường (không có quầy): tên, scenario, số người, có xe máy dựng cạnh, giờ hợp
+    class Job { public string Name, Scenario, Model; public int N, H1, H2; public bool Bikes; }
+    static readonly Job[] Jobs = {
+        new Job { Name = "xe om doi khach", Scenario = "WORLD_HUMAN_STAND_IMPATIENT", Model = "a_m_m_ktown_01", N = 3, Bikes = true, H1 = 6, H2 = 21 },
+        new Job { Name = "lao cong", Scenario = "WORLD_HUMAN_JANITOR", Model = "s_m_y_garbage", N = 1, Bikes = false, H1 = 5, H2 = 10 },
+        new Job { Name = "tho xay dung", Scenario = "WORLD_HUMAN_CONST_DRILL", Model = "s_m_y_construct_01", N = 2, Bikes = false, H1 = 7, H2 = 17 },
+        new Job { Name = "bao ve", Scenario = "WORLD_HUMAN_GUARD_STAND", Model = "s_m_m_security_01", N = 1, Bikes = false, H1 = 0, H2 = 24 },
+        new Job { Name = "shipper doi don", Scenario = "WORLD_HUMAN_STAND_MOBILE", Model = "a_m_y_ktown_01", N = 2, Bikes = true, H1 = 8, H2 = 22 },
     };
     readonly string[] vendorModels = { "a_f_m_ktown_01", "a_m_m_ktown_01", "a_f_y_ktown_01" };
     readonly string[] guestModels = { "a_m_y_ktown_01", "a_f_y_ktown_01", "a_m_m_ktown_01", "a_f_m_ktown_01", "a_m_y_ktown_02", "a_f_y_ktown_02" };
@@ -125,6 +134,48 @@ public class GtaVietLifeStreet : Script
         AppDomain.CurrentDomain.SetData("GVL.Vendors", d);
     }
 
+    void TryMakeJob(Ped me, int hour)
+    {
+        var fit = new List<Job>(); foreach (Job j in Jobs) if (hour >= j.H1 && hour < j.H2) fit.Add(j);
+        if (fit.Count == 0) return;
+        Job job = fit[rnd.Next(fit.Count)];
+        Vector3 pp = me.Position;
+        double ang = (me.Heading + 90.0 + (rnd.NextDouble() - 0.5) * 140.0) * Math.PI / 180.0;
+        float dist = spawnMin + (float)rnd.NextDouble() * (spawnMax - spawnMin);
+        Vector3 raw = pp + new Vector3((float)Math.Cos(ang) * dist, (float)Math.Sin(ang) * dist, 0f);
+        var outPos = new OutputArgument();
+        if (!Function.Call<bool>(Hash.GET_SAFE_COORD_FOR_PED, raw.X, raw.Y, raw.Z, true, outPos, 16)) return;
+        Vector3 pos = outPos.GetResult<Vector3>();
+        if (pos == Vector3.Zero || InView(pos)) return;
+        foreach (Hub h in hubs) if (h.Pos.DistanceTo(pos) < 35f) return;
+        Vector3 st = World.GetNextPositionOnStreet(pos);
+        float heading = (st == Vector3.Zero) ? (float)(rnd.NextDouble() * 360.0) : (st - pos).ToHeading();
+        Model m = Load(job.Model); if (m == null) m = Load("a_m_m_ktown_01"); if (m == null) return;
+        Hub hub = new Hub { Pos = pos, Heading = heading, Kind = 0 };
+        double hr = heading * Math.PI / 180.0;
+        Vector3 fwd = new Vector3((float)(-Math.Sin(hr)), (float)Math.Cos(hr), 0f); Vector3 right = new Vector3(fwd.Y, -fwd.X, 0f);
+        for (int i = 0; i < job.N; i++)
+        {
+            Vector3 pp2 = pos + right * (i * 1.4f);
+            Ped w = World.CreatePed(m, pp2, heading);
+            if (w == null || !w.Exists()) continue;
+            w.IsPersistent = false; w.BlockPermanentEvents = true;
+            w.Task.StartScenarioAtPosition(job.Scenario, pp2, heading, 0, false, true);
+            hub.Peds.Add(w);
+        }
+        if (job.Bikes)
+        {
+            for (int i = 0; i < job.N; i++)
+            {
+                Model bm = Load(bikeModels[rnd.Next(bikeModels.Length)]); if (bm == null) break;
+                Vehicle b = World.CreateVehicle(bm, pos + fwd * 2.5f + right * (i * 1.4f), heading + 90f);
+                if (b != null && b.Exists()) { b.IsPersistent = false; b.IsEngineRunning = false; hub.Bikes.Add(b); }
+            }
+        }
+        Log("lap nhom '" + job.Name + "' tai " + (int)pos.X + "," + (int)pos.Y + " | " + hub.Peds.Count + " nguoi");
+        hubs.Add(hub); nMade++;
+    }
+
     void Clear(Hub h)
     {
         foreach (Ped p in h.Peds) if (p != null && p.Exists()) p.Delete();
@@ -151,6 +202,7 @@ public class GtaVietLifeStreet : Script
 
     void TryMakeHub(Ped me, int hour)
     {
+        if (rnd.Next(100) < 40) { TryMakeJob(me, hour); return; }
         Kind kind = PickKind(hour);
         if (kind == null && rnd.Next(100) < 70) return;
         if (kind == null) kind = Kinds[3];

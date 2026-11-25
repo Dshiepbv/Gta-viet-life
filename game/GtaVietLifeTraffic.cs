@@ -26,7 +26,7 @@ public class GtaVietLifeTraffic : Script
     bool enabled = true;
     float bikeShare = 0.88f;            // tỉ lệ xe máy trong tổng xe NPC gần người chơi
     float densMajor = 1.0f, densSide = 0.9f, densRush = 1.0f, densOff = 0.7f;
-    float pedSide = 1.5f, pedMajor = 1.0f;
+    float pedSide = 2.0f, pedMajor = 1.6f;
     float spdMajor = 13f, spdSide = 8f, spdRush = 6f;      // m/s: 13 ≈ 47 km/h, 8 ≈ 29 km/h, 6 ≈ 22 km/h
     float aggressiveness = 0.0f;
     float scanRadius = 150f, spawnMin = 80f, spawnMax = 140f;
