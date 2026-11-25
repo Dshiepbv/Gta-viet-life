@@ -79,6 +79,7 @@ public class GtaVietLifeWorld : Script
     readonly List<bool> chairBusy = new List<bool>();
     readonly List<float> chairFace = new List<float>();
     float seatZ = 0.55f;
+    float staffZ = 0f;
     class Cust
     {
         public Ped P;
@@ -129,6 +130,7 @@ public class GtaVietLifeWorld : Script
         server = "http://127.0.0.1:" + port;
         menuKey = Settings.GetValue("Keys", "Menu", menuKey);
         seatZ = Settings.GetValue("Business", "SeatZ", seatZ);
+        staffZ = Settings.GetValue("Business", "StaffZ", staffZ);
 
         Load();
 
@@ -375,20 +377,23 @@ public class GtaVietLifeWorld : Script
         chairFace.Clear();
     }
 
-    void AddProp(string model, Vector3 pos, float heading)
+    Prop AddProp(string model, Vector3 pos, float heading) { return AddProp(model, pos, heading, true); }
+
+    Prop AddProp(string model, Vector3 pos, float heading, bool onGround)
     {
         try
         {
             Model m = new Model(model);
-            if (!m.IsValid || !m.Request(1500)) { Log("khong nap duoc prop " + model); return; }
-            Prop p = World.CreateProp(m, pos, new Vector3(0f, 0f, heading), false, true);
+            if (!m.IsValid || !m.Request(1500)) { Log("khong nap duoc prop " + model); return null; }
+            Prop p = World.CreateProp(m, pos, new Vector3(0f, 0f, heading), false, onGround);
             m.MarkAsNoLongerNeeded();
-            if (p == null || !p.Exists()) return;
+            if (p == null || !p.Exists()) return null;
             p.IsPersistent = true;
             Function.Call(Hash.FREEZE_ENTITY_POSITION, p, true);
             bizProps.Add(p);
+            return p;
         }
-        catch (Exception ex) { Log("AddProp loi: " + ex.Message); }
+        catch (Exception ex) { Log("AddProp loi: " + ex.Message); return null; }
     }
 
     // Quan: lv1 = quay + thung hang + ban nho; moi cap nang cap them bo ban ghe + o che
@@ -400,8 +405,10 @@ public class GtaVietLifeWorld : Script
         Vector3 right = new Vector3((float)Math.Cos(h), (float)Math.Sin(h), 0f);
         Vector3 fwd = new Vector3(-(float)Math.Sin(h), (float)Math.Cos(h), 0f);
         AddProp("prop_hotdogstand_01", bizPos, bizHeading);
-        AddProp("prop_cs_cardbox_01", bizPos - right * 2f - fwd * 1.2f, bizHeading);
-        AddProp("prop_cs_cardbox_01", bizPos - right * 2f - fwd * 2.2f, bizHeading + 20f);
+        // thung hang xep gon canh quay (2 thung chong len nhau)
+        Prop box1 = AddProp("prop_cs_cardbox_01", bizPos + right * 1.5f - fwd * 0.8f, bizHeading);
+        if (box1 != null)
+            AddProp("prop_cs_cardbox_01", box1.Position + new Vector3(0f, 0f, 0.4f), bizHeading + 8f, false);
         for (int l = 1; l <= bizLevel; l++)
         {
             Vector3 c = bizPos + fwd * (3f + l * 2.5f) + right * ((l % 2 == 0) ? -2.5f : 2.5f);
@@ -431,7 +438,8 @@ public class GtaVietLifeWorld : Script
             int k = staffPeds.Count;
             // nhan vien dung sau quay (k=0) hoac ben canh quay, quay mat ve phia khach
             Vector3 pos0 = bizPos - fwd * 1.1f + right * (k == 0 ? 0f : (k % 2 == 1 ? 1f : -1f) * 0.9f * ((k + 1) / 2));
-            Vector3 pos = new Vector3(pos0.X, pos0.Y, GroundZ(pos0) + 1.0f);
+            float gz = (bizProps.Count > 0 && bizProps[0] != null && bizProps[0].Exists()) ? bizProps[0].Position.Z : GroundZ(pos0);
+            Vector3 pos = new Vector3(pos0.X, pos0.Y, gz + 1.0f + staffZ);
             Ped p = World.CreatePed(mdl, pos);
             mdl.MarkAsNoLongerNeeded();
             if (p == null || !p.Exists()) return;
