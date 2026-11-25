@@ -66,6 +66,8 @@ public class GtaVietLife : Script
 
     // ----------------------------------------------------------------- vòng lặp
 
+    int nextMute;
+
     void OnTick(object sender, EventArgs e)
     {
         Action a;
@@ -85,6 +87,23 @@ public class GtaVietLife : Script
                 Function.Call(Hash.PLAY_FACIAL_ANIM, speakingPed, "mic_chatter", "mp_facial");
                 nextFacial = now + 900;
             }
+        }
+
+        // Tắt hẳn tiếng thoại tiếng Anh có sẵn của game ở mọi NPC gần đó
+        if (now > nextMute)
+        {
+            nextMute = now + 500;
+            try
+            {
+                foreach (Ped np in World.GetNearbyPeds(Game.Player.Character, 30f))
+                {
+                    if (np == null || !np.Exists() || np == Game.Player.Character) continue;
+                    Function.Call((Hash)0x9D64D7405520E3D3, np, true);               // STOP_PED_SPEAKING
+                    Function.Call((Hash)0xB8BEC0CA6F0EDB0F, np);                     // STOP_CURRENT_PLAYING_AMBIENT_SPEECH
+                    Function.Call((Hash)0xA9A41C1E940FB0E8, np, true);               // DISABLE_PED_PAIN_AUDIO
+                }
+            }
+            catch { }
         }
 
         // Nói xong thì để NPC đi tiếp việc của mình

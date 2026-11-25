@@ -21,6 +21,8 @@
   "mic_device": null,
 
   "tts_volume": 1.0,
+  "gemini_tts": true,
+  "gemini_tts_model": "",
 
   "overlay": true,
   "overlay_font_size": 22,

@@ -60,12 +60,14 @@ CATCH = ["hay mở đầu bằng 'À này'", "hay thở dài 'Haizz'", "hay cư�
          "hay chêm 'thật đấy'", "hay hỏi lại 'phải không?'", "hay than giá cả đắt đỏ", "hay nhắc 'hồi xưa'"]
 
 
-def style_for(npc: dict, ctx: dict) -> str:
+def profile_for(npc: dict):
     import hashlib
     h = int(hashlib.md5(str(npc.get("key", npc.get("name", ""))).encode("utf-8")).hexdigest(), 16)
-    region, words = REGIONS[h % len(REGIONS)]
-    age, agew = AGES[(h >> 4) % len(AGES)]
-    catch = CATCH[(h >> 8) % len(CATCH)]
+    return h, REGIONS[h % len(REGIONS)], AGES[(h >> 4) % len(AGES)], CATCH[(h >> 8) % len(CATCH)]
+
+
+def style_for(npc: dict, ctx: dict) -> str:
+    h, (region, words), (age, agew), catch = profile_for(npc)
     out = [f"Phong cách nói của bạn: giọng {region}; {words}. Tuổi: {age}, {agew}. Thói quen: {catch}."]
     hint = []
     try:
