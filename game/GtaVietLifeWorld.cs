@@ -1446,7 +1446,7 @@ public class GtaVietLifeWorld : Script
             sitBench = b;
             sitIdx = 9999;
             me.Task.ClearAllImmediately();
-            Function.Call(Hash.TASK_START_SCENARIO_AT_POSITION, me, "PROP_HUMAN_SEAT_BENCH", b.Position.X, b.Position.Y, b.Position.Z + 0.5f, b.Heading, -1, true, true);
+            Function.Call(Hash.TASK_START_SCENARIO_AT_POSITION, me, "PROP_HUMAN_SEAT_BENCH", b.Position.X, b.Position.Y, b.Position.Z + 0.5f, b.Heading + 180f, -1, true, true);
             return;
         }
         Prop ch = chairProps[i];
