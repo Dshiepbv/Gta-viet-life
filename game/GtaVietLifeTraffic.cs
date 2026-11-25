@@ -30,7 +30,7 @@ public class GtaVietLifeTraffic : Script
     float spdMajor = 13f, spdSide = 8f, spdRush = 6f;      // m/s: 13 ≈ 47 km/h, 8 ≈ 29 km/h, 6 ≈ 22 km/h
     float aggressiveness = 0.0f;
     float scanRadius = 150f, spawnMin = 80f, spawnMax = 140f;
-    int targetMajor = 50, targetSide = 40;                  // số xe máy mục tiêu quanh người chơi
+    int targetMajor = 150, targetSide = 120;                  // số xe máy mục tiêu quanh người chơi
     float rushBoost = 1.4f;
     int rushAm1 = 7, rushAm2 = 9, rushPm1 = 17, rushPm2 = 19;
 
@@ -197,7 +197,7 @@ public class GtaVietLifeTraffic : Script
         if (bikes < target && me.Position.DistanceTo(Vector3.Zero) > 1f && Game.Player.WantedLevel == 0)
         {
             int made = 0;
-            for (int tries = 0; tries < 12 && made < 4 && bikes + made < target; tries++)
+            for (int tries = 0; tries < 24 && made < 8 && bikes + made < target; tries++)
             {
                 if (SpawnBike(me)) made++;
             }
