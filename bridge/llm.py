@@ -92,15 +92,22 @@ class Brain:
         self.model = first
         self.dead = set()
 
+    def _demote(self, m):
+        if m in self.candidates:
+            self.candidates.remove(m)
+            self.candidates.append(m)
+        if self.model == m:
+            self.model = next((c for c in self.candidates if c not in self.dead), m)
+
     def _hedged(self, call):
         """Gọi Gemini; nếu model đầu chưa trả lời sau 2.5 giây (hoặc lỗi) thì gọi thêm model kế tiếp song song, lấy kết quả về trước."""
         import concurrent.futures as cf
-        models = ([self.model] + [m for m in self.candidates if m != self.model and m not in self.dead])[:4]
+        models = ([self.model] + [m for m in self.candidates if m != self.model and m not in self.dead])[:5]
         ex = cf.ThreadPoolExecutor(max_workers=len(models))
         futs, nxt, launched, last = {}, 0, 0.0, None
         try:
             while True:
-                if nxt < len(models) and (not futs or time.time() - launched >= 2.5):
+                if nxt < len(models) and (not futs or time.time() - launched >= 2.0):
                     m = models[nxt]
                     futs[ex.submit(call, m)] = m
                     nxt += 1
@@ -115,11 +122,13 @@ class Brain:
                     except urllib.error.HTTPError as e:
                         last = e
                         print(f"[llm] gemini model {m} lỗi {e.code}")
+                        self._demote(m)
                         if e.code in (404, 400):
                             self.dead.add(m)
                     except Exception as e:
                         last = e
                         print(f"[llm] gemini model {m} lỗi: {e}")
+                        self._demote(m)
                 if not futs and nxt >= len(models):
                     raise RuntimeError(f"mọi model Gemini đều lỗi: {last}")
         finally:
@@ -170,7 +179,7 @@ class Brain:
         body = {"systemInstruction": {"parts": [{"text": system}]}, "contents": contents, "generationConfig": gen}
         url = (f"https://generativelanguage.googleapis.com/v1beta/models/{model or self.model}:generateContent"
                f"?key={self.cfg['gemini_api_key']}")
-        data = _post_json(url, body)
+        data = _post_json(url, body, timeout=9.0)
         text = "".join(p.get("text", "") for p in data["candidates"][0]["content"]["parts"])
         return _parse(text)
 
