@@ -590,12 +590,70 @@ public class GtaVietLifeWorld : Script
         PostEvent("Có gã vừa mở một quán nhỏ ở " + SafeStreet(bizPos) + ".");
     }
 
+    // cac khu mat bang dang cho thue (toa do gan dung, den noi la chon hinh thuc va mo quan)
+    static readonly object[][] Listings = {
+        new object[] { "Quang truong Legion", 195f, -934f },
+        new object[] { "Vinewood Boulevard", 300f, 190f },
+        new object[] { "Bai bien Vespucci", -1340f, -1170f },
+        new object[] { "Cau tau Del Perro", -1850f, -1235f },
+        new object[] { "Pillbox Hill", 250f, -600f },
+        new object[] { "Mirror Park", 1050f, -700f },
+        new object[] { "Sandy Shores", 1960f, 3740f },
+        new object[] { "Grapeseed", 1700f, 4800f },
+        new object[] { "Paleto Bay", -100f, 6450f } };
+    readonly List<Blip> listingBlips = new List<Blip>();
+
+    void ShowListings()
+    {
+        Begin("TIM MAT BANG KINH DOANH", delegate { ShowOpenMenu(); });
+        Vector3 pp = Game.Player.Character.Position;
+        Info("Chon mot khu de dat diem den tren ban do, den noi roi mo quan (menu M > Kinh doanh)");
+        for (int i = 0; i < Listings.Length; i++)
+        {
+            string nm = (string)Listings[i][0];
+            Vector3 lp = new Vector3((float)Listings[i][1], (float)Listings[i][2], 0f);
+            float zm = ZoneMult(lp);
+            bool taken = false;
+            foreach (Shop sh in shops) if (sh.Pos.DistanceTo2D(lp) < ShopGap) taken = true;
+            int idx = i;
+            Item(nm + (taken ? "  [da co quan cua Sep]" : "") + "  (" + ZoneName(lp) + ", khach x" + zm.ToString("0.0", CultureInfo.InvariantCulture) + ", thue $" + (int)(ModeRent[1] * zm) + "/ngay, mua dut $" + (int)(ModeSetup[3] * zm) + ", " + (int)pp.DistanceTo2D(lp) + " m)", delegate
+            {
+                Vector3 q = new Vector3((float)Listings[idx][1], (float)Listings[idx][2], 0f);
+                Function.Call(Hash.SET_NEW_WAYPOINT, q.X, q.Y);
+                Notify("Da dat diem den: ~y~" + (string)Listings[idx][0] + "~s~. Den noi roi mo quan.");
+                ShowListings();
+            });
+        }
+        Item("Danh dau tat ca mat bang tren ban do", delegate
+        {
+            foreach (Blip b in listingBlips) if (b != null && b.Exists()) b.Delete();
+            listingBlips.Clear();
+            for (int j = 0; j < Listings.Length; j++)
+            {
+                Blip bl = World.CreateBlip(new Vector3((float)Listings[j][1], (float)Listings[j][2], 0f));
+                bl.Color = BlipColor.Yellow;
+                bl.Name = "Mat bang cho thue: " + (string)Listings[j][0];
+                listingBlips.Add(bl);
+            }
+            Notify("Da danh dau " + listingBlips.Count + " khu mat bang (cham vang tren ban do).");
+            ShowListings();
+        });
+        Item("Xoa danh dau tren ban do", delegate
+        {
+            foreach (Blip b in listingBlips) if (b != null && b.Exists()) b.Delete();
+            listingBlips.Clear();
+            ShowListings();
+        });
+        Item("Quay lai", delegate { ShowOpenMenu(); });
+    }
+
     void ShowOpenMenu()
     {
         Vector3 pp = Game.Player.Character.Position;
         float zm = ZoneMult(pp);
         Begin("MO QUAN MOI", delegate { ShowBiz(); });
-        Item("Khu: " + ZoneName(pp) + "  (dong khach x" + zm.ToString("0.0", CultureInfo.InvariantCulture) + ")", delegate { });
+        Info("Dang dung o: " + ZoneName(pp) + "  (dong khach x" + zm.ToString("0.0", CultureInfo.InvariantCulture) + ")");
+        Item("Tim mat bang cho thue o khu khac...", delegate { ShowListings(); });
         for (int m = 0; m < 4; m++)
         {
             int mode = m;
@@ -1657,12 +1715,33 @@ public class GtaVietLifeWorld : Script
         menuActions.Add(act);
     }
 
+    // dong chi de doc (khong chon duoc)
+    void Info(string label)
+    {
+        menuLabels.Add(label);
+        menuActions.Add(null);
+    }
+
+    int menuSel;
+    int NextActionable(int from, int dir)
+    {
+        int n = menuActions.Count;
+        if (n == 0) return 0;
+        for (int k = 1; k <= n; k++)
+        {
+            int j = ((from + dir * k) % n + n) % n;
+            if (menuActions[j] != null) return j;
+        }
+        return from;
+    }
+
     void Begin(string title, Action back)
     {
         menuTitle = title;
         menuLabels = new List<string>();
         menuActions = new List<Action>();
         menuBack = back;
+        menuSel = -1;   // se chon dong dau tien chon duoc khi ve
     }
 
     void ShowMain()
@@ -1700,14 +1779,14 @@ public class GtaVietLifeWorld : Script
         if (shops.Count > 0) Item("Cac quan cua Sep: " + shops.Count + "  (xem danh sach, dat diem den)...", delegate { ShowShopList(); });
         if (!hasBiz || !NearBiz())
         {
-            if (hasBiz) Item("(Hay den gan quan de quan ly - cham xanh tren ban do)", delegate { });
+            if (hasBiz) Info("(Hay den gan quan de quan ly - cham xanh tren ban do)");
             Item("Mo quan moi o day...  (khu " + ZoneName(Game.Player.Character.Position) + ")", delegate { ShowOpenMenu(); });
         }
         else
         {
             Shop cur = shops[activeShop];
             SyncOut();
-            Item("Quan #" + (activeShop + 1) + ": " + ModeName[cur.Mode] + " - " + ZoneName(cur.Pos) + "  (khach x" + (ModeTraffic[cur.Mode] * ZoneMult(cur.Pos)).ToString("0.0", CultureInfo.InvariantCulture) + (cur.Rent > 0 ? ", " + FeeWord(cur.Mode) + " $" + cur.Rent + "/ngay" : ", khong tien thue") + (cur.Mode == 2 ? ", con " + cur.DaysLeft + " ngay" : "") + ")", delegate { });
+            Info("Quan #" + (activeShop + 1) + ": " + ModeName[cur.Mode] + " - " + ZoneName(cur.Pos) + "  (khach x" + (ModeTraffic[cur.Mode] * ZoneMult(cur.Pos)).ToString("0.0", CultureInfo.InvariantCulture) + (cur.Rent > 0 ? ", " + FeeWord(cur.Mode) + " $" + cur.Rent + "/ngay" : ", khong tien thue") + (cur.Mode == 2 ? ", con " + cur.DaysLeft + " ngay" : "") + ")");
             Item("Nhap hang +" + StockPack + " phan  (-$" + StockPrice + ")  kho: " + bizStock, delegate
             {
                 if (Spend(StockPrice)) { bizStock += StockPack; }
@@ -1715,7 +1794,7 @@ public class GtaVietLifeWorld : Script
             });
             Item("Doi quan sang cho phang gan day (mien phi)", delegate { RelocateBiz(); ShowBiz(); });
             int cap = ModeCap[cur.Mode];
-            Item("Hien tai: cap " + bizLevel + " - " + TierName[bizLevel - 1] + "  (gia ban $" + Price() + "/phan)", delegate { });
+            Info("Hien tai: cap " + bizLevel + " - " + TierName[bizLevel - 1] + "  (gia ban $" + Price() + "/phan)");
             Item(bizLevel >= cap ? "Cap toi da cua hinh thuc nay (" + cap + ")" + (cap < 4 ? " - muon len nua hay chuyen hinh thuc thue tot hon" : "") : "Nang cap len cap " + (bizLevel + 1) + " " + TierName[bizLevel] + " (" + TierPerk[bizLevel] + ")  -$" + (2500 * bizLevel), delegate
             {
                 if (bizLevel >= ModeCap[shops[activeShop].Mode]) Notify("Hinh thuc " + ModeName[shops[activeShop].Mode] + " chi toi da cap " + ModeCap[shops[activeShop].Mode] + ".");
@@ -1748,11 +1827,11 @@ public class GtaVietLifeWorld : Script
     void ShowInfo()
     {
         Begin("THONG TIN", delegate { ShowMain(); });
-        Item("Tien: $" + Game.Player.Money + "   No: $" + debt, delegate { });
-        Item("Uy tin: " + rep + "   Giao hang hom nay: " + deliveriesToday + " don ($" + earnedToday + ")", delegate { });
-        Item("Nha: " + (hasHome ? (homeName.Length > 0 ? homeName : "cho tu chon") + " ($" + rentPerDay + "/ngay)" : "chua thue"), delegate { });
-        Item("Quan: " + (shops.Count > 0 ? shops.Count + " quan (dang chay: #" + (activeShop + 1) + " cap " + bizLevel + " " + TierName[bizLevel - 1] + ", kho " + bizStock + ", nv " + bizStaff + ", quy $" + bizCash + ")" : "chua co"), delegate { });
-        Item("Cu dan co lich: " + residents.Count, delegate { });
+        Info("Tien: $" + Game.Player.Money + "   No: $" + debt);
+        Info("Uy tin: " + rep + "   Giao hang hom nay: " + deliveriesToday + " don ($" + earnedToday + ")");
+        Info("Nha: " + (hasHome ? (homeName.Length > 0 ? homeName : "cho tu chon") + " ($" + rentPerDay + "/ngay)" : "chua thue"));
+        Info("Quan: " + (shops.Count > 0 ? shops.Count + " quan (dang chay: #" + (activeShop + 1) + " cap " + bizLevel + " " + TierName[bizLevel - 1] + ", kho " + bizStock + ", nv " + bizStaff + ", quy $" + bizCash + ")" : "chua co"));
+        Info("Cu dan co lich: " + residents.Count);
         Item("Quay lai", delegate { ShowMain(); });
     }
 
@@ -1908,13 +1987,26 @@ public class GtaVietLifeWorld : Script
             if (menuBack != null) menuBack(); else CloseMenu();
             return;
         }
-        int idx = -1;
-        if (e.KeyCode >= Keys.D1 && e.KeyCode <= Keys.D9) idx = (int)e.KeyCode - (int)Keys.D1;
-        else if (e.KeyCode >= Keys.NumPad1 && e.KeyCode <= Keys.NumPad9) idx = (int)e.KeyCode - (int)Keys.NumPad1;
-        if (idx >= 0 && idx < menuActions.Count)
+        if (menuSel < 0 || menuSel >= menuActions.Count || menuActions[menuSel] == null) menuSel = NextActionable(-1, 1);
+        if (e.KeyCode == Keys.Up) { menuSel = NextActionable(menuSel, -1); return; }
+        if (e.KeyCode == Keys.Down) { menuSel = NextActionable(menuSel, 1); return; }
+        if (e.KeyCode == Keys.Return)
         {
-            Action act = menuActions[idx];
-            pendingActs.Enqueue(act);   // chay o tick ke tiep (trong vong lap chinh)
+            if (menuSel >= 0 && menuSel < menuActions.Count && menuActions[menuSel] != null) pendingActs.Enqueue(menuActions[menuSel]);
+            return;
+        }
+        int num = -1;
+        if (e.KeyCode >= Keys.D1 && e.KeyCode <= Keys.D9) num = (int)e.KeyCode - (int)Keys.D1;
+        else if (e.KeyCode >= Keys.NumPad1 && e.KeyCode <= Keys.NumPad9) num = (int)e.KeyCode - (int)Keys.NumPad1;
+        if (num >= 0)
+        {
+            int seen = 0;
+            for (int ai = 0; ai < menuActions.Count; ai++)
+            {
+                if (menuActions[ai] == null) continue;
+                if (seen == num) { menuSel = ai; pendingActs.Enqueue(menuActions[ai]); break; }
+                seen++;
+            }
         }
     }
 
@@ -1961,14 +2053,56 @@ public class GtaVietLifeWorld : Script
         if (extra.Length > 0) DrawText(extra, x, y + (hasBiz ? 86f : 66f), 0.32f, Color.White);
     }
 
+    // tach nhan thanh dong chinh + dong phu: "Ten  (chi tiet)" -> Ten / chi tiet
+    static void SplitLabel(string label, out string main, out string detail)
+    {
+        int i = label.IndexOf("  (");
+        if (i > 0 && label.EndsWith(")"))
+        {
+            main = label.Substring(0, i);
+            detail = label.Substring(i + 3, label.Length - i - 4);
+        }
+        else { main = label; detail = ""; }
+    }
+
     void DrawMenu()
     {
-        float x = 40f, y = 170f, w = 520f;
-        float h = 38f + menuLabels.Count * 26f;
-        new GTA.UI.ContainerElement(new PointF(x, y), new SizeF(w, h), Color.FromArgb(200, 10, 10, 10)).Draw();
-        DrawText(menuTitle, x + 12f, y + 6f, 0.45f, Color.FromArgb(255, 255, 210, 80));
-        for (int i = 0; i < menuLabels.Count; i++)
-            DrawText((i + 1) + ". " + menuLabels[i], x + 12f, y + 38f + i * 26f, 0.38f, Color.White);
+        if (menuSel < 0 || menuSel >= menuActions.Count || menuActions[menuSel] == null) menuSel = NextActionable(-1, 1);
+        float x = 40f, y = 150f, w = 600f, pad = 14f;
+        int total = menuLabels.Count;
+        const int maxRows = 11;
+        int first = 0;
+        if (total > maxRows) first = Math.Max(0, Math.Min(total - maxRows, menuSel - maxRows / 2));
+        int last = Math.Min(total, first + maxRows);
+        float h = 52f;
+        for (int i = first; i < last; i++) { string m0, d0; SplitLabel(menuLabels[i], out m0, out d0); h += d0.Length > 0 ? 46f : 30f; }
+        h += 30f;
+        Color gold = Color.FromArgb(255, 255, 205, 90);
+        // nen + vien vang + thanh tieu de
+        new GTA.UI.ContainerElement(new PointF(x - 2f, y - 2f), new SizeF(w + 4f, h + 4f), Color.FromArgb(230, 200, 150, 40)).Draw();
+        new GTA.UI.ContainerElement(new PointF(x, y), new SizeF(w, h), Color.FromArgb(235, 16, 18, 24)).Draw();
+        new GTA.UI.ContainerElement(new PointF(x, y), new SizeF(w, 40f), Color.FromArgb(240, 36, 40, 52)).Draw();
+        DrawText(menuTitle, x + pad, y + 5f, 0.5f, gold);
+        float cy = y + 48f;
+        int shownNum = 0;
+        for (int i = 0; i < first; i++) if (menuActions[i] != null) shownNum++;
+        for (int i = first; i < last; i++)
+        {
+            string m, d; SplitLabel(menuLabels[i], out m, out d);
+            float rh = d.Length > 0 ? 46f : 30f;
+            bool act = menuActions[i] != null;
+            bool sel = i == menuSel;
+            if (sel) new GTA.UI.ContainerElement(new PointF(x + 6f, cy - 2f), new SizeF(w - 12f, rh - 2f), Color.FromArgb(235, 215, 165, 50)).Draw();
+            Color mc = sel ? Color.FromArgb(255, 20, 20, 24) : (act ? Color.White : Color.FromArgb(255, 150, 156, 170));
+            Color dc = sel ? Color.FromArgb(255, 60, 48, 20) : Color.FromArgb(255, 150, 156, 170);
+            string prefix = act ? (shownNum + 1 <= 9 ? (shownNum + 1) + "  " : "    ") : "    ";
+            if (act) shownNum++;
+            DrawText(prefix + m, x + pad, cy, 0.4f, mc);
+            if (d.Length > 0) DrawText(d, x + pad + 26f, cy + 22f, 0.31f, dc);
+            cy += rh;
+        }
+        if (total > maxRows) DrawText((first > 0 ? "^ " : "  ") + "(" + (menuSel + 1) + "/" + total + ")" + (last < total ? " v" : ""), x + w - 110f, y + 8f, 0.32f, Color.FromArgb(255, 180, 184, 196));
+        DrawText("Mui ten Len/Xuong chon  -  Enter hoac so: chay  -  Backspace: quay lai  -  M: dong", x + pad, y + h - 26f, 0.29f, Color.FromArgb(255, 150, 156, 170));
     }
 
     // ------------------------------------------------------------ cầu nối AI
