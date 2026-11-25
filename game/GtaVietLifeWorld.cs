@@ -216,6 +216,32 @@ public class GtaVietLifeWorld : Script
             for (int si = 0; si < shops.Count; si++) { float dd = me.Position.DistanceTo2D(shops[si].Pos); if (dd < bd) { bd = dd; bi = si; } }
             if (bi >= 0 && bi != activeShop && bd < 90f && (activeShop < 0 || me.Position.DistanceTo2D(bizPos) > 90f)) ActivateShop(bi);
         }
+        if (shops.Count > 1 || (shops.Count == 1 && activeShop < 0))
+        {
+            // quan o xa van ban hang: moi quan chot don theo nhip rieng, bao doanh so ngay
+            for (int ri = 0; ri < shops.Count; ri++)
+            {
+                if (ri == activeShop) continue;
+                Shop rs = shops[ri];
+                if (rs.NextSale == 0) { rs.NextSale = now + rnd.Next(15000, 45000); continue; }
+                if (now < rs.NextSale) continue;
+                float rate = ModeTraffic[rs.Mode] * ZoneMult(rs.Pos) * (rs.Indoor ? 1.15f : 1f) * (1f + (rs.Level - 1) * 0.2f) * (rs.Staff > 0 ? 1f : 0.5f);
+                rs.NextSale = now + (int)(rnd.Next(42000, 78000) / Math.Max(0.2f, rate));
+                if (rs.Stock <= 0)
+                {
+                    if (!rs.OutNotified) { rs.OutNotified = true; Notify("~r~Quan #" + (ri + 1) + " het hang!~s~ Den nhap hang de tiep tuc ban."); }
+                    continue;
+                }
+                rs.OutNotified = false;
+                int rq = Math.Min(rs.Stock, rnd.Next(1, 4));
+                rs.Stock -= rq;
+                rs.SoldToday += rq;
+                int rpay = rq * (SalePrice + (rs.Level - 1) * 6);
+                Game.Player.Money = Game.Player.Money + rpay;
+                Notify("~g~Quan #" + (ri + 1) + ": +$" + rpay + "~s~ ban " + rq + " phan (kho con " + rs.Stock + ", " + ZoneName(rs.Pos) + ").");
+                if (rs.Stock <= 5 && rs.Stock > 0) Notify("~y~Quan #" + (ri + 1) + " sap het hang~s~ (con " + rs.Stock + " phan).");
+            }
+        }
         if (hasBiz && now > nextStaffSpawn)
         {
             nextStaffSpawn = now + 3000;
@@ -453,6 +479,8 @@ public class GtaVietLifeWorld : Script
         public int Level = 1, Stock, Staff, Cash, SoldToday;
         public int Mode, Rent, DaysLeft, Overdue, Paid;
         public bool Indoor;
+        public int NextSale;       // moc thoi gian ban hang tu dong cua quan o xa
+        public bool OutNotified;
         public Blip Blip;
     }
     readonly List<Shop> shops = new List<Shop>();
