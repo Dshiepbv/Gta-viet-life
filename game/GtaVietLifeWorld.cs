@@ -608,15 +608,15 @@ public class GtaVietLifeWorld : Script
         { -2.3f, -4.2f }, { 2.3f, -4.2f }, { -5.8f, -2.2f }, { 5.8f, -2.2f }, { -5.8f, 0.2f } };
     static readonly string[] DefaultDeco = {
         "prop_watercooler",
-        "prop_ice_box_01,prop_plant_int_03a,prop_plant_int_03a",
+        "prop_plant_int_03a,prop_plant_int_03a,prop_bush_med_03",
         "prop_plant_int_02a,prop_plant_int_02a,prop_bush_med_03,prop_bush_med_03,prop_patio_lounger1,prop_patio_lounger1" };
 
-    static readonly string[] TierName = { "Xe day", "Quay via he", "Quan nuoc co mai che", "Quan sang trong" };
+    static readonly string[] TierName = { "Ca phe via he", "Quan nuoc mai che", "Ca phe pho", "Ca phe sang trong kieu Au" };
     static readonly string[] TierPerk = {
         "1 ban",
-        "2 ban, chau cay, may ca phe",
-        "3 ban, o che mau, den suoi, ghe da, tu lanh, may nuoc",
-        "4 ban, ghe quay bar, cay canh, ghe nam, nhieu den suoi" };
+        "2 ban, chau cay, binh nuoc",
+        "3 ban, o che mau, den suoi, ghe da, cay canh",
+        "4 ban, ghe quay bar, hang cay xanh, ghe nam thu gian, nhieu den suoi" };
 
     int Price() { return SalePrice + (bizLevel - 1) * 6; }
 
