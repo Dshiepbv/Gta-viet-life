@@ -256,8 +256,10 @@ class Brain:
         msgs.append({"role": "user", "content": player_text})
         if not getattr(self, "groq_model", None):
             self.groq_model = self.cfg.get("groq_model") or "llama-3.3-70b-versatile"
-        body = {"model": self.groq_model, "messages": msgs,
-                "temperature": 0.9, "max_tokens": 200, "response_format": {"type": "json_object"}}
+        body = {"model": self.groq_model, "messages": msgs, "temperature": 0.9, "max_tokens": 700}
+        if "gpt-oss" in self.groq_model:
+            body["reasoning_effort"] = "low"   # model suy luận: nghĩ ngắn để còn chỗ cho câu trả lời JSON
+        # không dùng response_format=json_object: model suy luận hay làm hỏng bước kiểm tra JSON của Groq
         req = urllib.request.Request("https://api.groq.com/openai/v1/chat/completions",
                                      data=json.dumps(body).encode("utf-8"), method="POST",
                                      headers={"Content-Type": "application/json", "User-Agent": "gta-viet-life",
@@ -267,7 +269,7 @@ class Brain:
                 data = json.loads(r.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
             print(f"[llm]   groq lỗi {e.code}: {e.read().decode('utf-8', 'replace')[:200]}")
-            if e.code in (404, 400) and not getattr(self, "_groq_listed", False):
+            if e.code == 404 and not getattr(self, "_groq_listed", False):
                 self._groq_listed = True
                 self._groq_pick_model()
                 return self._groq_chat(system, history, player_text)
