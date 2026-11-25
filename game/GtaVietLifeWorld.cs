@@ -586,7 +586,7 @@ public class GtaVietLifeWorld : Script
         if (bizLevel >= 2)
         {
             AddProp("prop_pot_plant_05a", bizPos + right * 2.2f + fwd * 0.6f, bizHeading);
-            AddProp("prop_pot_plant_05a", bizPos - right * 2.2f + fwd * 0.6f, bizHeading);
+            AddProp("prop_pot_plant_05a", bizPos - right * 3.2f + fwd * 3.2f, bizHeading);   // chau cay canh dau ghe dai, khong de vao cho ghe cao
         }
         // cap 3: den suoi, thung rac, ghe da
         if (bizLevel >= 3)
