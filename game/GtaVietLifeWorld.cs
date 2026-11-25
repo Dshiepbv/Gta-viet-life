@@ -41,6 +41,7 @@ public class GtaVietLifeWorld : Script
     Keys menuKey = Keys.M;
     Keys sitKey = Keys.E;
     int sitIdx = -1;
+    readonly Queue<Action> pendingActs = new Queue<Action>();   // viec can goi AddProp/CreatePed phai chay trong vong lap chinh, khong phai trong su kien phim
 
     // ------------------------------------------------------------ trạng thái đời sống
     float hunger = 80, thirst = 80, energy = 90;
@@ -189,6 +190,12 @@ public class GtaVietLifeWorld : Script
         Ped me = Game.Player.Character;
         if (me == null || !me.Exists()) return;
         int now = Game.GameTime;
+
+        while (pendingActs.Count > 0)
+        {
+            Action pa = pendingActs.Dequeue();
+            try { pa(); } catch (Exception ex) { Log("viec cho loi: " + ex); Notify("Loi: " + Short(ex)); }
+        }
 
         if (sleepAt > 0 && now > sleepAt) { sleepAt = 0; FinishSleep(); }
         if (sleepAt > 0) return;
@@ -580,27 +587,29 @@ public class GtaVietLifeWorld : Script
             AddProp("prop_patio_heater_01", bizPos + fwd * 6.5f, bizHeading);
         }
         // do sang hon theo cap: may pha ca phe, tu lanh, cay canh lon, hang rao hoa... (danh sach doi duoc trong .ini)
+        int slotIdx = 0;
         for (int lv = 2; lv <= bizLevel; lv++)
         {
             string[] names = Settings.GetValue("Business", "Deco" + lv, DefaultDeco[lv - 2]).Split(',');
-            for (int i = 0; i < names.Length && i < DecoSlots.GetLength(0); i++)
+            foreach (string raw in names)
             {
-                string nm = names[i].Trim();
+                string nm = raw.Trim();
                 if (nm.Length == 0) continue;
-                float sr = DecoSlots[i, 0] + (lv - 2) * ((i % 2 == 0) ? 0.3f : -0.3f);
-                float sf = DecoSlots[i, 1] - (lv - 2) * 0.35f;
-                // hang trong quay (phia nhan vien) quay mat ra khach; hang ngoai cung quay vao quay
-                AddProp(nm, bizPos + right * sr + fwd * sf, bizHeading + 180f * (sf < -1.6f ? 0f : 0f));
+                if (slotIdx >= DecoSlots.GetLength(0)) break;
+                AddProp(nm, bizPos + right * DecoSlots[slotIdx, 0] + fwd * DecoSlots[slotIdx, 1], bizHeading);
+                slotIdx++;
             }
         }
     }
 
-    // [right, fwd] so voi quay; nhan vien dung o fwd -1.25
-    static readonly float[,] DecoSlots = { { -1.9f, -1.2f }, { 1.9f, -1.2f }, { -3.6f, -0.2f }, { 3.6f, -0.2f }, { 0f, -2.8f }, { 4.6f, 1.2f }, { -4.6f, 1.2f } };
+    // [right, fwd] so voi quay, cach xa quay >= 3 m de khong chong len nhau hay len cho nhan vien
+    static readonly float[,] DecoSlots = {
+        { -4.4f, -1.2f }, { 4.4f, -1.2f }, { -4.4f, -3.0f }, { 4.4f, -3.0f }, { 0f, -4.4f },
+        { -2.3f, -4.2f }, { 2.3f, -4.2f }, { -5.8f, -2.2f }, { 5.8f, -2.2f }, { -5.8f, 0.2f } };
     static readonly string[] DefaultDeco = {
-        "prop_vend_coffe_01,prop_water_cooler",
-        "prop_vend_soda_01,prop_ice_box_01,prop_plant_int_03a,prop_plant_int_03a",
-        "prop_vend_soda_02,prop_plant_int_02a,prop_plant_int_02a,prop_bush_med_03,prop_bush_med_03,prop_patio_lounger1,prop_patio_lounger1" };
+        "prop_watercooler",
+        "prop_ice_box_01,prop_plant_int_03a,prop_plant_int_03a",
+        "prop_plant_int_02a,prop_plant_int_02a,prop_bush_med_03,prop_bush_med_03,prop_patio_lounger1,prop_patio_lounger1" };
 
     static readonly string[] TierName = { "Xe day", "Quay via he", "Quan nuoc co mai che", "Quan sang trong" };
     static readonly string[] TierPerk = {
@@ -1436,8 +1445,8 @@ public class GtaVietLifeWorld : Script
         else if (e.KeyCode >= Keys.NumPad1 && e.KeyCode <= Keys.NumPad9) idx = (int)e.KeyCode - (int)Keys.NumPad1;
         if (idx >= 0 && idx < menuActions.Count)
         {
-            try { menuActions[idx](); }
-            catch (Exception ex) { Log("menu loi: " + ex); Notify("Loi menu: " + Short(ex)); }
+            Action act = menuActions[idx];
+            pendingActs.Enqueue(act);   // chay o tick ke tiep (trong vong lap chinh)
         }
     }
 
