@@ -1467,7 +1467,7 @@ public class GtaVietLifeWorld : Script
         Item("Quay lai bang kho", delegate { ShowStockBoard(); });
     }
 
-    // tu dong nhap hang khi kho sap het (bat/tat trong .ini: [Biz] AutoRestock); chi mua khi du tien, uu tien lo lon neu du gia
+    // tu dong nhap hang khi kho sap het (bat/tat trong .ini: [Biz] AutoRestock); chi mua khi du tien: lo 10 (chiet khau 12%) neu du, khong thi lo 5, khong thi 1 lo
     int nextAutoBuy;
     void AutoRestock()
     {
@@ -1478,9 +1478,9 @@ public class GtaVietLifeWorld : Script
             for (int i = 0; i < shops.Count; i++)
             {
                 if (shops[i].Stock > 20) continue;
-                int c5 = PackCost(shops[i].Type, 5, true), c1 = PackCost(shops[i].Type, 1, true);
-                int packs = Funds() > c5 * 3 ? 5 : 1;
-                int cost = packs == 5 ? c5 : c1;
+                int c10 = PackCost(shops[i].Type, 10, true), c5 = PackCost(shops[i].Type, 5, true), c1 = PackCost(shops[i].Type, 1, true);
+                int packs = Funds() >= c10 ? 10 : Funds() >= c5 ? 5 : 1;
+                int cost = packs == 10 ? c10 : packs == 5 ? c5 : c1;
                 if (Funds() < cost) continue;
                 if (RemoteBuy(i, packs, true)) { n++; total += cost; }
             }
