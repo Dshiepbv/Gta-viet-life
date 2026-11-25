@@ -1172,12 +1172,22 @@ public class GtaVietLifeWorld : Script
         t.Draw();
     }
 
+    void DrawBar(string label, float value, float x, float y, Color fill)
+    {
+        float w = 170f, h = 16f;
+        new ContainerElement(new PointF(x, y), new SizeF(w, h), Color.FromArgb(150, 0, 0, 0)).Draw();
+        Color c = value < 15f ? Color.FromArgb(230, 230, 60, 60) : fill;
+        float fw = (w - 4f) * Math.Max(0f, Math.Min(100f, value)) / 100f;
+        if (fw > 0f) new ContainerElement(new PointF(x + 2f, y + 2f), new SizeF(fw, h - 4f), c).Draw();
+        DrawText(label + " " + (int)value + "%", x + 6f, y - 3f, 0.34f, Color.White);
+    }
+
     void DrawHud()
     {
-        float x = 280f, y = 688f;
-        DrawText("An " + (int)hunger, x, y, 0.32f, NeedColor(hunger));
-        DrawText("Uong " + (int)thirst, x + 60f, y, 0.32f, NeedColor(thirst));
-        DrawText("Nang luong " + (int)energy, x + 130f, y, 0.32f, NeedColor(energy));
+        float x = 18f, y = 18f;
+        DrawBar("An", hunger, x, y, Color.FromArgb(220, 235, 150, 40));
+        DrawBar("Uong", thirst, x, y + 22f, Color.FromArgb(220, 60, 160, 235));
+        DrawBar("Nang luong", energy, x, y + 44f, Color.FromArgb(220, 235, 210, 60));
         string extra = "";
         if (jobGiaoHang) extra += "Giao hang";
         if (delivering)
@@ -1186,7 +1196,7 @@ public class GtaVietLifeWorld : Script
             extra += " | con " + (int)Game.Player.Character.Position.DistanceTo2D(dest) + "m, " + (left > 0 ? left + "s" : "TRE");
         }
         if (debt > 0) extra += (extra.Length > 0 ? " | " : "") + "No $" + debt;
-        if (extra.Length > 0) DrawText(extra, x + 260f, y, 0.32f, Color.White);
+        if (extra.Length > 0) DrawText(extra, x, y + 68f, 0.32f, Color.White);
     }
 
     void DrawMenu()
