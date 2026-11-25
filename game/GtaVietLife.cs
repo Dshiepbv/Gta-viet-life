@@ -58,7 +58,7 @@ public class GtaVietLife : Script
         Task.Run(() =>
         {
             try { Get("/ping"); Notify("~g~GTA Viet Life~s~: da ket noi cau noi AI."); }
-            catch { Notify("~r~GTA Viet Life~s~: chua bat cau noi AI (start_bridge.bat)."); }
+            catch (Exception ex) { Log("ping loi: " + ex); Notify("~r~GTA Viet Life~s~: chua noi duoc cau noi AI. Bam N de thu lai. (" + Short(ex) + ")"); }
         });
     }
 
@@ -120,7 +120,7 @@ public class GtaVietLife : Script
                 p.Task.TurnTo(Game.Player.Character, -1);
             }
             p.Task.LookAt(Game.Player.Character, 10000);
-            Task.Run(() => { try { Post("/start", null); } catch { } });
+            Task.Run(() => { try { Post("/start", null); } catch (Exception ex) { Log("/start loi: " + ex); Notify("~r~Cau noi AI loi:~s~ " + Short(ex)); } });
         }
         else if (e.KeyCode == markKey)
         {
@@ -144,9 +144,10 @@ public class GtaVietLife : Script
         {
             string resp;
             try { resp = Post("/stop", ctx); }
-            catch (Exception)
+            catch (Exception ex)
             {
-                mainThread.Enqueue(() => { waiting = false; Notify("~r~Khong goi duoc cau noi AI.~s~ Bat start_bridge.bat chua Sep?"); });
+                Log("/stop loi: " + ex);
+                mainThread.Enqueue(() => { waiting = false; Notify("~r~Khong goi duoc cau noi AI:~s~ " + Short(ex)); });
                 return;
             }
             mainThread.Enqueue(() => HandleReply(p, resp));
@@ -280,10 +281,23 @@ public class GtaVietLife : Script
         mainThread.Enqueue(() => GTA.UI.Notification.Show(msg));
     }
 
+    static void Log(string msg)
+    {
+        try { System.IO.File.AppendAllText("GtaVietLife.log", DateTime.Now.ToString("HH:mm:ss") + " " + msg + Environment.NewLine); }
+        catch { }
+    }
+
+    static string Short(Exception ex)
+    {
+        string m = ex.Message ?? ex.GetType().Name;
+        return m.Length > 90 ? m.Substring(0, 90) : m;
+    }
+
     string Post(string path, NameValueCollection data)
     {
         using (var wc = new WebClient())
         {
+            wc.Proxy = null; // khong di qua proxy he thong (localhost)
             wc.Encoding = Encoding.UTF8;
             byte[] r = wc.UploadValues(server + path, "POST", data ?? new NameValueCollection());
             return Encoding.UTF8.GetString(r);
@@ -294,6 +308,7 @@ public class GtaVietLife : Script
     {
         using (var wc = new WebClient())
         {
+            wc.Proxy = null;
             wc.Encoding = Encoding.UTF8;
             return wc.DownloadString(server + path);
         }
