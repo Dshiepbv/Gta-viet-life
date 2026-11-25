@@ -41,6 +41,7 @@ public class GtaVietLifeWorld : Script
     Keys menuKey = Keys.M;
     Keys sitKey = Keys.E;
     int sitIdx = -1;
+    int safeUntil;
     readonly Queue<Action> pendingActs = new Queue<Action>();   // viec can goi AddProp/CreatePed phai chay trong vong lap chinh, khong phai trong su kien phim
 
     // ------------------------------------------------------------ trạng thái đời sống
@@ -190,6 +191,8 @@ public class GtaVietLifeWorld : Script
         Ped me = Game.Player.Character;
         if (me == null || !me.Exists()) return;
         int now = Game.GameTime;
+
+        if (safeUntil > 0 && now > safeUntil) { safeUntil = 0; Function.Call(Hash.SET_ENTITY_INVINCIBLE, me, false); }
 
         while (pendingActs.Count > 0)
         {
@@ -1423,10 +1426,24 @@ public class GtaVietLifeWorld : Script
         sitIdx = -1;
         me.Task.ClearAll();
         SnapNearGround(me);
+        Function.Call(Hash.SET_ENTITY_INVINCIBLE, me, true);   // khong chet vi roi khi dung day
+        safeUntil = Game.GameTime + 3000;
     }
 
     void OnKeyDown(object sender, KeyEventArgs e)
     {
+        if (e.KeyCode == Keys.F8 && hasBiz)
+        {
+            // thoat ket / bi hat len cao: dua Sep ve mat dat canh quan
+            Ped pl8 = Game.Player.Character;
+            Function.Call(Hash.SET_ENTITY_INVINCIBLE, pl8, true);
+            pl8.Task.ClearAllImmediately();
+            Vector3 t = bizPos + new Vector3(-(float)Math.Sin(bizHeading * Math.PI / 180.0), (float)Math.Cos(bizHeading * Math.PI / 180.0), 0f) * 3f;
+            Function.Call(Hash.SET_ENTITY_COORDS_NO_OFFSET, pl8, t.X, t.Y, GroundForBiz() + 1f, false, false, false);
+            sitIdx = -1;
+            safeUntil = Game.GameTime + 4000;
+            Notify("Da dua Sep ve mat dat canh quan.");
+        }
         if (e.KeyCode == Keys.F9 && hasBiz)
         {
             staffAngle = (staffAngle + 1) % 4;
