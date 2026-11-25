@@ -574,7 +574,10 @@ public class GtaVietLifeWorld : Script
             if (bizProps.Count > 0) { chairProps.Add(bizProps[bizProps.Count - 1]); chairBusy.Add(false); chairFace.Add(FaceHeading(c - right * ChairDist, c)); chairTable.Add(c); tableCups.Add(null); }
             AddProp(parasols[Math.Min(l, 4) - 1], c, bizHeading);
         }
-        foreach (Prop chp in chairProps) if (chp != null && chp.Exists()) Function.Call(Hash.SET_ENTITY_COLLISION, chp, false, false);   // nguoi ngoi vao ghe co va cham => bi hat len troi
+        foreach (Prop chp in chairProps) if (chp != null && chp.Exists()) Function.Call(Hash.SET_ENTITY_COLLISION, chp, false, false);
+        for (int ci = 0; ci < chairProps.Count; ci++)
+            if (chairProps[ci] != null && chairProps[ci].Exists())
+                Log("ghe " + ci + ": vi tri " + chairProps[ci].Position.X.ToString("0.0") + "," + chairProps[ci].Position.Y.ToString("0.0") + " cach ban " + chairProps[ci].Position.DistanceTo2D(chairTable[ci]).ToString("0.00") + " m, ChairDist=" + ChairDist.ToString("0.00"));   // nguoi ngoi vao ghe co va cham => bi hat len troi
         // cap 2: chau cay hai ben quay
         if (bizLevel >= 2)
         {
