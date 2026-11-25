@@ -357,8 +357,8 @@ public class GtaVietLifeWorld : Script
         {
             Vector3 c = bizPos + fwd * (3f + l * 2.5f) + right * ((l % 2 == 0) ? -2.5f : 2.5f);
             AddProp("prop_table_03", c, bizHeading);
-            AddProp("prop_chair_01a", c + right * 1.1f, bizHeading + 90f);
-            AddProp("prop_chair_01a", c - right * 1.1f, bizHeading - 90f);
+            AddProp("prop_chair_01a", c + right * 1.1f, bizHeading - 90f);
+            AddProp("prop_chair_01a", c - right * 1.1f, bizHeading + 90f);
             AddProp("prop_parasol_01", c, bizHeading);
         }
     }
