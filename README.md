@@ -94,3 +94,10 @@ GitHub tu build `GtaDashboard-N.apk` (muc Releases, tag `dash-N`). Cai xong mo l
 
 ### Xem khi o ngoai (4G, di lam)
 Cai Tailscale (mien phi) tren PC va dien thoai, dang nhap cung mot tai khoan. `start_dashboard.bat` se in them dong "qua Tailscale" voi dia chi dang `http://100.x.x.x:5588` — nhap dia chi do vao APK. Nen dat `dash_pin`. PC phai bat va chay `start_dashboard.bat`; luon cho phep cong 5588 trong tuong lua Windows.
+
+## Xem 24/24 ca khi PC tat (Google Apps Script — dung tai khoan Google cua Sep)
+1. Vao https://script.google.com > New project > dan noi dung `apps_script/Code.gs`. Doi `PIN` (ma tren dien thoai) va `KEY` (khoa cua PC).
+2. Deploy > New deployment > loai Web app > Execute as: Me, Who has access: Anyone > Deploy. Cap quyen khi duoc hoi. Copy link `.../exec`.
+3. Tren PC, trong `bridge/config.json` them `"cloud_url": "<link exec>"` va `"cloud_key": "<KEY>"`. Chay `start_dashboard.bat` (chi can bat khi vua choi xong / vua mo game; no tu day so lieu len va keo lenh ve).
+4. Mo APK, dan link `.../exec` vao o dia chi, nhap PIN. Xem va giao dich duoc tu bat ky dau, PC tat van duoc.
+Khi PC tat: so lieu la UOC TINH tu so lieu cuoi, lenh xep hang cho; bat PC + `start_dashboard.bat` thi lenh duoc keo ve, mo game thi ap dung.

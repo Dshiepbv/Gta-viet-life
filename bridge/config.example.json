@@ -2,6 +2,8 @@
   "port": 5577,
   "game_dir": "E:\\GTA-Viet_Life\\GTAV",
   "dash_pin": "",
+  "cloud_url": "",
+  "cloud_key": "",
 
   "provider": "gemini",
   "gemini_api_key": "",
