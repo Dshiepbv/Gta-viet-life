@@ -42,7 +42,7 @@ public class GtaVietLifeWorld : Script
     Keys sitKey = Keys.E;
     int sitIdx = -1;
     int safeUntil;
-    int nextStaffCheck;
+    int nextStaffSpawn;   // lan kiem tra bu nhan vien
     Prop sitBench;
     readonly List<Prop> benchProps = new List<Prop>();
     readonly Queue<Action> pendingActs = new Queue<Action>();   // viec can goi AddProp/CreatePed phai chay trong vong lap chinh, khong phai trong su kien phim
@@ -202,9 +202,9 @@ public class GtaVietLifeWorld : Script
         if (safeUntil > 0 && now > safeUntil) { safeUntil = 0; Function.Call(Hash.SET_ENTITY_INVINCIBLE, me, false); }
 
         if (rebuildAt > 0 && now > rebuildAt && hasBiz) { rebuildAt = 0; BuildBizProps(); }
-        if (hasBiz && now > nextStaffCheck)
+        if (hasBiz && now > nextStaffSpawn)
         {
-            nextStaffCheck = now + 3000;
+            nextStaffSpawn = now + 3000;
             if (staffPeds.Count < Math.Min(bizStaff, MaxVisibleStaff) && me.Position.DistanceTo(bizPos) < 80f) SpawnStaff();
         }
 
