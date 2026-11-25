@@ -250,6 +250,7 @@ public class GtaVietLifeWorld : Script
                 if (rs.Stock <= 5 && rs.Stock > 0) Notify("~y~Quan #" + (ri + 1) + " sap het hang~s~ (con " + rs.Stock + " phan).");
             }
         }
+        try { UpdateRide(me, now); } catch (Exception ex) { Log("chuyen xe loi: " + ex.Message); }
         if (hasBiz && now > nextStaffSpawn)
         {
             nextStaffSpawn = now + 3000;
@@ -290,6 +291,7 @@ public class GtaVietLifeWorld : Script
         foreach (Cust c in customers) { DeleteProp(c.Cup); if (c.P != null && c.P.Exists()) c.P.Delete(); }
         foreach (StaffState st in staffStates) DeleteProp(st.Cup);
         foreach (Prop tc in tableCups) DeleteProp(tc);
+        EndRide(false);
         ClearBizProps();
         foreach (Shop sh in shops) if (sh.Blip != null && sh.Blip.Exists()) sh.Blip.Delete();
         if (destBlip != null && destBlip.Exists()) destBlip.Delete();
@@ -1843,6 +1845,237 @@ public class GtaVietLifeWorld : Script
         }
     }
 
+    // ------------------------------------------------------------ di chuyen: taxi + tai xe rieng
+    class Ride
+    {
+        public int Kind;        // 0 taxi, 1 tai xe mang xe cua Sep toi, 2 tai xe cho Sep di bang xe cua Sep
+        public int State;       // 0 cho nap model, 1 dang toi, 2 cho Sep len xe, 3 dang cho di, 4 da xong (cho Sep xuong)
+        public Vehicle Veh; public Ped Driver;
+        public bool OwnVeh;     // xe cua Sep: ket thuc thi giu lai xe
+        public Vector3 Start, Dest;
+        public int T;
+        public Model VehModel, PedModel;
+        public Vector3 SpawnPos; public float SpawnHead;
+    }
+    Ride ride;
+    Vehicle ownVeh;
+    int ownVehHash;
+    const int TaxiBase = 15;
+    const float TaxiPerM = 0.02f;
+    const int DriverFee = 50;
+    const int RecoverFee = 150;   // goi xe ve khi xe da mat/qua xa
+
+    bool HasWaypoint() { try { return Function.Call<bool>(Hash.IS_WAYPOINT_ACTIVE); } catch { return false; } }
+    Vector3 WaypointGround()
+    {
+        Vector3 w = World.WaypointPosition;
+        float z = World.GetGroundHeight(new Vector3(w.X, w.Y, 1000f));
+        w.Z = z > 1f ? z : Game.Player.Character.Position.Z;
+        return w;
+    }
+
+    Vector3 RoadNear(Vector3 around, float dist)
+    {
+        double a = rnd.NextDouble() * Math.PI * 2.0;
+        Vector3 raw = around + new Vector3((float)Math.Cos(a) * dist, (float)Math.Sin(a) * dist, 0f);
+        Vector3 r = World.GetNextPositionOnStreet(raw);
+        return r == Vector3.Zero ? raw : r;
+    }
+
+    void CallTaxi()
+    {
+        Ped me = Game.Player.Character;
+        if (ride != null) { Notify("Dang co mot chuyen xe roi. Huy truoc neu muon goi lai."); return; }
+        ride = new Ride();
+        ride.Kind = 0; ride.State = 0; ride.T = Game.GameTime;
+        ride.VehModel = new Model("taxi"); ride.PedModel = new Model("a_m_m_business_01");
+        ride.SpawnPos = RoadNear(me.Position, 120f);
+        ride.SpawnHead = FaceHeading(ride.SpawnPos, me.Position);
+        Notify("Da goi ~y~taxi~s~. Xe dang toi, phi $" + TaxiBase + " + $" + TaxiPerM.ToString("0.00", CultureInfo.InvariantCulture) + "/m.");
+    }
+
+    void CallDriver(bool giveRide)
+    {
+        Ped me = Game.Player.Character;
+        if (ride != null) { Notify("Dang co mot chuyen xe roi. Huy truoc neu muon goi lai."); return; }
+        if (ownVehHash == 0) { Notify("Sep chua co xe rieng. Ngoi tren xe roi chon 'Ghi nho xe nay la xe cua Sep'."); return; }
+        bool have = ownVeh != null && ownVeh.Exists() && ownVeh.IsAlive && ownVeh.Position.DistanceTo(me.Position) < 700f
+                    && Function.Call<bool>(Hash.IS_VEHICLE_SEAT_FREE, ownVeh, -1, false);
+        int fee = DriverFee + (have ? 0 : RecoverFee);
+        if (!Spend(fee)) return;
+        ride = new Ride();
+        ride.Kind = giveRide ? 2 : 1; ride.State = 0; ride.T = Game.GameTime; ride.OwnVeh = true;
+        ride.PedModel = new Model("s_m_y_valet_01");
+        if (have) ride.Veh = ownVeh;
+        else
+        {
+            ride.VehModel = new Model(ownVehHash);
+            ride.SpawnPos = RoadNear(me.Position, 110f);
+            ride.SpawnHead = FaceHeading(ride.SpawnPos, me.Position);
+        }
+        Notify("Tai xe dang " + (have ? "lay xe cua Sep" : "dua xe cua Sep ve tu bai giu xe") + " toi (-$" + fee + ").");
+    }
+
+    void RememberVehicle()
+    {
+        Ped me = Game.Player.Character;
+        Vehicle v = me.CurrentVehicle;
+        if (v == null || !v.Exists()) { Notify("Hay ngoi tren xe muon ghi nho."); return; }
+        if (ownVeh != null && ownVeh.Exists() && ownVeh != v) ownVeh.IsPersistent = false;
+        ownVeh = v; ownVeh.IsPersistent = true; ownVehHash = v.Model.Hash;
+        Notify("~g~Da ghi nho xe nay la xe cua Sep.~s~ Goi tai xe trong menu Di chuyen.");
+        Save();
+    }
+
+    void BoardNow()
+    {
+        if (ride == null || ride.Veh == null || !ride.Veh.Exists()) return;
+        Ped me = Game.Player.Character;
+        if (me.Position.DistanceTo(ride.Veh.Position) > 25f) { Notify("Xe con xa, cho xe toi gan da."); return; }
+        me.SetIntoVehicle(ride.Veh, VehicleSeat.RightRear);
+    }
+
+    void EndRide(bool driveAway)
+    {
+        if (ride == null) return;
+        Ride r = ride; ride = null;
+        try
+        {
+            if (r.Driver != null && r.Driver.Exists())
+            {
+                if (r.OwnVeh)
+                {
+                    if (r.Veh != null && r.Veh.Exists() && r.Driver.IsInVehicle(r.Veh)) Function.Call(Hash.TASK_LEAVE_VEHICLE, r.Driver, r.Veh, 0);
+                    r.Driver.MarkAsNoLongerNeeded();
+                }
+                else if (driveAway && r.Veh != null && r.Veh.Exists())
+                {
+                    Function.Call(Hash.TASK_VEHICLE_DRIVE_WANDER, r.Driver, r.Veh, 15f, 786603);
+                    r.Driver.MarkAsNoLongerNeeded(); r.Veh.MarkAsNoLongerNeeded();
+                }
+                else { r.Driver.Delete(); if (r.Veh != null && r.Veh.Exists()) r.Veh.Delete(); }
+            }
+            else if (!r.OwnVeh && r.Veh != null && r.Veh.Exists()) r.Veh.Delete();
+        }
+        catch (Exception ex) { Log("ket thuc chuyen xe loi: " + ex.Message); }
+    }
+
+    void DriveTo(Vector3 d, float speed)
+    {
+        Function.Call(Hash.TASK_VEHICLE_DRIVE_TO_COORD_LONGRANGE, ride.Driver, ride.Veh, d.X, d.Y, d.Z, speed, 786603, 12f);
+    }
+
+    void UpdateRide(Ped me, int now)
+    {
+        if (ride == null) return;
+        Ride r = ride;
+        if (r.State == 0)
+        {
+            if (now - r.T > 20000) { Notify("Khong goi duoc xe, thu lai sau."); if (r.OwnVeh) Game.Player.Money = Game.Player.Money + DriverFee; ride = null; return; }
+            if (!Loaded(r.PedModel)) return;
+            if (r.Veh == null)
+            {
+                if (!Loaded(r.VehModel)) return;
+                r.Veh = World.CreateVehicle(r.VehModel, r.SpawnPos, r.SpawnHead);
+                if (r.Veh == null || !r.Veh.Exists()) { Notify("Khong tao duoc xe."); ride = null; return; }
+                r.Veh.IsPersistent = true;
+                if (r.OwnVeh) { ownVeh = r.Veh; }
+            }
+            r.Driver = World.CreatePed(r.PedModel, r.Veh.Position + new Vector3(0f, 0f, 2f), r.Veh.Heading);
+            if (r.Driver == null || !r.Driver.Exists()) { Notify("Khong tao duoc tai xe."); EndRide(false); return; }
+            r.Driver.IsPersistent = true;
+            Function.Call(Hash.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS, r.Driver, true);
+            r.Driver.SetIntoVehicle(r.Veh, VehicleSeat.Driver);
+            DriveTo(me.Position, 22f);
+            r.State = 1; r.T = now;
+            return;
+        }
+        if (r.Veh == null || !r.Veh.Exists() || !r.Veh.IsAlive || r.Driver == null || !r.Driver.Exists() || !r.Driver.IsAlive)
+        { Notify("Chuyen xe bi huy (xe hoac tai xe gap su co)."); EndRide(false); return; }
+        if (r.State == 1)
+        {
+            float d = r.Veh.Position.DistanceTo(me.Position);
+            if ((now - r.T) % 8000 < 30) DriveTo(me.Position, 22f);   // cap nhat cho Sep dang dung
+            if (d < 18f && r.Veh.Speed < 2f)
+            {
+                if (r.Kind == 1)
+                {
+                    Notify("~g~Xe cua Sep da toi.~s~ Tai xe giao chia khoa roi di.");
+                    EndRide(false);
+                    return;
+                }
+                r.State = 2; r.T = now;
+                Notify((r.Kind == 0 ? "~y~Taxi~s~" : "~y~Tai xe~s~") + " da toi. Len xe (F, hoac menu Di chuyen > Len xe ngay) va dat diem den tren ban do.");
+            }
+            else if (now - r.T > 240000) { Notify("Xe ket duong qua lau, da huy."); EndRide(false); }
+            return;
+        }
+        if (r.State == 2)
+        {
+            if (me.IsInVehicle(r.Veh))
+            {
+                if (!HasWaypoint()) { if ((now - r.T) % 6000 < 30) GTA.UI.Screen.ShowSubtitle("Dat ~y~diem den~s~ tren ban do de xe chay", 3000); return; }
+                r.Dest = WaypointGround(); r.Start = r.Veh.Position;
+                DriveTo(r.Dest, r.Kind == 0 ? 24f : 20f);
+                r.State = 3; r.T = now;
+                Notify("Dang di toi diem den (" + (int)r.Start.DistanceTo2D(r.Dest) + " m).");
+            }
+            else if (now - r.T > 120000) { Notify("Xe doi lau qua da di."); EndRide(r.Kind == 0); }
+            return;
+        }
+        if (r.State == 3)
+        {
+            if (!me.IsInVehicle(r.Veh)) { FinishRide(r, me); EndRide(r.Kind == 0); return; }
+            if (HasWaypoint() && WaypointGround().DistanceTo2D(r.Dest) > 30f) { r.Dest = WaypointGround(); DriveTo(r.Dest, r.Kind == 0 ? 24f : 20f); Notify("Doi diem den."); }
+            if (r.Veh.Position.DistanceTo2D(r.Dest) < 30f && r.Veh.Speed < 2f)
+            {
+                FinishRide(r, me);
+                r.State = 4; r.T = now;
+                Notify("~g~Da toi noi.~s~ Sep xuong xe nhe.");
+            }
+            return;
+        }
+        if (r.State == 4)
+        {
+            if (!me.IsInVehicle(r.Veh) || now - r.T > 60000) EndRide(r.Kind == 0);
+        }
+    }
+
+    void FinishRide(Ride r, Ped me)
+    {
+        if (r.Kind != 0 || r.Start == Vector3.Zero) return;
+        float dist = r.Start.DistanceTo2D(r.Veh != null && r.Veh.Exists() ? r.Veh.Position : me.Position);
+        int fare = TaxiBase + (int)(dist * TaxiPerM);
+        if (Game.Player.Money >= fare) { Game.Player.Money = Game.Player.Money - fare; Notify("Tra tien taxi ~r~-$" + fare + "~s~ (" + (int)dist + " m)."); }
+        else { debt += fare; Notify("~r~Khong du tien taxi, ghi no $" + fare + ".~s~"); }
+        r.Start = Vector3.Zero;   // khong tinh tien hai lan
+    }
+
+    void ShowTransport()
+    {
+        Ped me = Game.Player.Character;
+        Begin("DI CHUYEN", delegate { ShowMain(); });
+        if (ride != null)
+        {
+            string st = ride.State <= 1 ? "xe dang toi" : ride.State == 2 ? "xe dang cho Sep" : ride.State == 3 ? "dang cho Sep di" : "da toi noi";
+            Info("Chuyen hien tai: " + (ride.Kind == 0 ? "Taxi" : "Tai xe rieng") + " - " + st);
+            if (ride.State == 2) Item("Len xe ngay  (ngoi ghe sau)", delegate { BoardNow(); CloseMenu(); });
+            Item("Huy chuyen xe", delegate { EndRide(ride != null && ride.Kind == 0); Notify("Da huy chuyen xe."); ShowTransport(); });
+        }
+        else
+        {
+            Item("Goi taxi  (phi $" + TaxiBase + " + $" + TaxiPerM.ToString("0.00", CultureInfo.InvariantCulture) + "/m, tra khi toi noi)", delegate { CallTaxi(); CloseMenu(); });
+            if (ownVehHash != 0)
+            {
+                Item("Nho tai xe mang xe cua Sep toi day  (-$" + DriverFee + ", xe mat/qua xa them $" + RecoverFee + ")", delegate { CallDriver(false); CloseMenu(); });
+                Item("Nho tai xe cho Sep di bang xe rieng  (-$" + DriverFee + ", dat diem den tren ban do)", delegate { CallDriver(true); CloseMenu(); });
+            }
+            else Info("Chua co xe rieng: ngoi tren xe roi chon muc ghi nho ben duoi");
+        }
+        if (me.IsInVehicle()) Item("Ghi nho xe dang ngoi la xe cua Sep", delegate { RememberVehicle(); ShowTransport(); });
+        Item("Quay lai", delegate { ShowMain(); });
+    }
+
     // ------------------------------------------------------------ menu
     void OpenMenu()
     {
@@ -1897,6 +2130,7 @@ public class GtaVietLifeWorld : Script
         Item("Ngu ngoai duong  (mien phi, 30% bi cuop)", delegate { CloseMenu(); SleepRough(); });
         Item("Cong viec...", delegate { ShowJob(); });
         Item("Kinh doanh...", delegate { ShowBiz(); });
+        Item("Di chuyen: goi taxi, tai xe rieng...", delegate { ShowTransport(); });
         Item("Dat nguoi gan nhat lam cu dan (co lich)", delegate { MakeResident(); });
         Item("Thong tin", delegate { ShowInfo(); });
         if (debt > 0) Item("Tra no  ($" + debt + ")", delegate { PayDebt(); ShowMain(); });
@@ -2381,6 +2615,7 @@ public class GtaVietLifeWorld : Script
             l.Add("ground=" + bizGround.ToString(ci));
             SyncOut();
             l.Add("active=" + activeShop);
+            l.Add("ownveh=" + ownVehHash);
             foreach (Shop sh in shops)
                 l.Add("shop=" + sh.Pos.X.ToString(ci) + "," + sh.Pos.Y.ToString(ci) + "," + sh.Pos.Z.ToString(ci) + "," + sh.Heading.ToString(ci) + "," + sh.Ground.ToString(ci) + "," + sh.Level + "," + sh.Stock + "," + sh.Staff + "," + sh.Cash + "," + sh.SoldToday + "," + sh.Mode + "," + sh.Rent + "," + sh.DaysLeft + "," + sh.Overdue + "," + sh.Paid + "," + (sh.Indoor ? 1 : 0));
             File.WriteAllLines(SaveFile, l.ToArray());
@@ -2422,6 +2657,7 @@ public class GtaVietLifeWorld : Script
                     case "level": bizLevel = int.Parse(v); break;
                     case "heading": bizHeading = float.Parse(v, ci); break;
                     case "ground": bizGround = float.Parse(v, ci); break;
+                    case "ownveh": ownVehHash = int.Parse(v); break;
                     case "shop":
                         {
                             string[] q = v.Split(',');
