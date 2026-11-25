@@ -46,7 +46,7 @@ class Memory:
         self.db.execute("DELETE FROM npc WHERE key LIKE 'tmp_%'")
         self.db.commit()
 
-    def get_or_create(self, key: str, gender: str, ped_type: int) -> dict:
+    def get_or_create(self, key: str, gender: str, ped_type: int, name: str = "") -> dict:
         with self.lock:
             row = self.db.execute(
                 "SELECT key,name,gender,job,trait,pitch,rate,affinity FROM npc WHERE key=?", (key,)).fetchone()
@@ -54,7 +54,7 @@ class Memory:
                 female = gender.lower().startswith("f")
                 npc = dict(
                     key=key,
-                    name=random.choice(NAMES_FEMALE if female else NAMES_MALE),
+                    name=name.strip() or random.choice(NAMES_FEMALE if female else NAMES_MALE),
                     gender="nữ" if female else "nam",
                     job=PED_TYPE_JOBS.get(ped_type) or random.choice(CIVIL_JOBS),
                     trait=random.choice(TRAITS),

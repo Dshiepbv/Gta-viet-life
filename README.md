@@ -29,7 +29,7 @@ NPC quay mặt, mấp máy miệng, làm theo hành động ◄── (đi theo 
 
 ## 3. Cài script vào game
 
-Chép `game\GtaVietLife.cs` và `game\GtaVietLife.ini` vào thư mục `scripts` trong thư mục game (tạo mới nếu chưa có).
+Chép `game\GtaVietLife.cs`, `game\GtaVietLife.ini` (và thư mục `game\GtaVietLifeIcons`) vào thư mục `scripts` trong thư mục game (tạo mới nếu chưa có).
 
 ## 4. Chơi
 
@@ -65,6 +65,18 @@ Chép `game/GtaVietLifeWorld.cs` vào `scripts` cùng file nói chuyện. Phím 
 đặt NPC gần nhất làm "cư dân" có lịch (ban ngày ở chỗ làm, tối về nhà), thông tin, trả nợ.
 Phạt khi bị truy nã rồi thoát, nợ có lãi, uy tín tăng/giảm. Trạng thái được gửi cho cầu nối (`/state`, `/event`)
 để NPC biết hoàn cảnh và có tin đồn trong khu.
+
+### Gói Đời sống 1
+- **Cư dân & hàng xóm** (menu `J` > Cư dân & hàng xóm): tối đa 8 người, có tên, lịch cố định
+  (6-7h quanh nhà, 7-11h làm, 11-13h ăn trưa gần chỗ làm, 13-17h làm, 17-19h đi dạo, tối ở nhà, 23-6h ngủ trong nhà).
+  Được lưu qua các lần chơi: Sếp đi xa thì họ "khuất", tới gần thì hiện lại đúng chỗ theo giờ. Khi nói chuyện (phím N),
+  cư dân dùng trí nhớ cố định (`res_<id>`), giữ đúng tên và biết mình đang làm gì (file `GtaVietLifeResidents.txt`).
+- **Nhịp phố theo giờ**: khuya vắng người/xe, giờ cao điểm 7-9h và 17-19h đông, trưa đông người đi ăn. Bật/tắt trong menu Cư dân.
+- **Vệ sinh cá nhân** (thanh thứ 4 trên HUD): giảm khoảng 50%/ngày game, làm ca hoặc ngủ đường giảm thêm. Dưới 35% NPC thấy Sếp lôi thôi, có mùi.
+  Chỉ tính khi đang chơi (tắt game không giảm).
+- **Dịch vụ** (menu > Dịch vụ): tắm (ở nhà miễn phí, nhà nghỉ $10), rửa xe (tiệm Strawberry $15, thợ tới tận nơi $40),
+  gọi cứu hộ sửa xe tại chỗ (giá theo độ hỏng), ngủ nhà nghỉ $60/đêm (tắm + ngủ 8 tiếng, không bị cướp).
+  Toạ độ tiệm rửa xe và nhà nghỉ là ước lượng, cần kiểm tra trong game.
 
 ## Mo hinh kinh doanh (GT / MT / B2C / B2B)
 

@@ -150,10 +150,11 @@ class Bridge:
                 self.overlay.show("player", "(không nghe rõ, Sếp nói lại nhé)", 2500)
                 return "none\n0\n"
             key = ctx.get("key") or "tmp_0"
-            npc = self.memory.get_or_create(key, ctx.get("gender", "male"), int(ctx.get("pedtype", "4") or 4))
+            npc = self.memory.get_or_create(key, ctx.get("gender", "male"), int(ctx.get("pedtype", "4") or 4),
+                                            ctx.get("name", ""))
             history = self.memory.history(key)
             self.life.update_state({"hour": ctx.get("hour", "")})
-            ctx["extra"] = self.life.context(npc)
+            ctx["extra"] = self.life.context(npc, ctx.get("res_activity", ""))
             result, text, by_audio = None, "", False
             if self.stt_mode == "groq":
                 try:

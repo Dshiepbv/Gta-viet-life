@@ -227,6 +227,8 @@ public class GtaVietLife : Script
         c["money"] = Game.Player.Money.ToString();
         c["following"] = followers.Contains(p.Handle) ? "1" : "0";
         c["weapon"] = me.Weapons.Current != null && me.Weapons.Current.Hash != WeaponHash.Unarmed ? "1" : "0";
+        string[] ri = ResidentInfo(p);
+        if (ri != null) { c["name"] = ri[1]; c["res_activity"] = ri[2]; }
         return c;
     }
 
@@ -428,7 +430,43 @@ public class GtaVietLife : Script
     string KeyFor(Ped p)
     {
         string k;
-        return namedKeys.TryGetValue(p.Handle, out k) ? k : "tmp_" + p.Handle;
+        if (namedKeys.TryGetValue(p.Handle, out k)) return k;
+        string[] ri = ResidentInfo(p);
+        return ri != null ? ri[0] : "tmp_" + p.Handle;
+    }
+
+    // Cu dan (dat trong menu Doi song) co khoa nho co dinh, ten va lich; GtaVietLifeWorld.cs ghi ra file nay
+    // dong: handle|khoa|ten|dang lam gi
+    readonly Dictionary<int, string[]> residentMap = new Dictionary<int, string[]>();
+    DateTime residentStamp = DateTime.MinValue;
+    int nextResidentRead;
+
+    string[] ResidentInfo(Ped p)
+    {
+        try
+        {
+            if (Game.GameTime >= nextResidentRead)
+            {
+                nextResidentRead = Game.GameTime + 2000;
+                const string f = "GtaVietLifeResidents.txt";
+                DateTime st = System.IO.File.Exists(f) ? System.IO.File.GetLastWriteTimeUtc(f) : DateTime.MinValue;
+                if (st != residentStamp)
+                {
+                    residentStamp = st;
+                    residentMap.Clear();
+                    if (st != DateTime.MinValue)
+                        foreach (string ln in System.IO.File.ReadAllLines(f, Encoding.UTF8))
+                        {
+                            string[] q = ln.Split('|');
+                            int h;
+                            if (q.Length >= 4 && int.TryParse(q[0], out h)) residentMap[h] = new[] { q[1], q[2], q[3] };
+                        }
+                }
+            }
+        }
+        catch (Exception ex) { Log("doc file cu dan loi: " + ex.Message); }
+        string[] r;
+        return residentMap.TryGetValue(p.Handle, out r) ? r : null;
     }
 
     void Remember(Ped p)
