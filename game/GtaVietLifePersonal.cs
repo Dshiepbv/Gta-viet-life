@@ -132,6 +132,8 @@ public class GtaVietLifePersonal : Script
         talkKey = Settings.GetValue("Keys", "Talk", talkKey);
 
         payKey = Settings.GetValue("Keys", "PayCompensation", payKey);
+        autoKeep = Settings.GetValue("Look", "AutoKeep", true);
+        ResetPreset();   // gia tri mac dinh; Load() ghi de neu da luu
         Load();
         MakeHallBlip();
         PublishPersonal();
@@ -179,6 +181,7 @@ public class GtaVietLifePersonal : Script
         if (pendingDelete != null && now > pendingDeleteAt) { if (pendingDelete.Exists() && !me.IsInVehicle()) pendingDelete.Delete(); pendingDelete = null; }
         PollBus();
         try { UpdateLegal(me, now); } catch (Exception ex) { Log("phap ly loi: " + ex.Message); }
+        try { KeepLook(me, now); } catch (Exception ex) { Log("giu nhan vat loi: " + ex.Message); }
         try { UpdateBody(me, now); } catch (Exception ex) { Log("the chat loi: " + ex.Message); }
         try { UpdatePet(me, now); } catch (Exception ex) { Log("thu cung loi: " + ex.Message); }
         if (now > nextPublish) { nextPublish = now + 5000; PublishPersonal(); }
@@ -1019,10 +1022,10 @@ public class GtaVietLifePersonal : Script
     {
         try
         {
-            if (me.Model.Hash != Game.GenerateHash("mp_m_freemode_01")) return;
-            float op = Math.Min(1f, beardDays / 10f);
-            if (op <= 0.05f) Function.Call(Hash.SET_PED_HEAD_OVERLAY, me, 1, 255, 0f);
-            else { Function.Call(Hash.SET_PED_HEAD_OVERLAY, me, 1, 10, op); Function.Call((Hash)0x497BF74A7B9CB952, me, 1, 1, 0, 0); }   // SET_PED_HEAD_OVERLAY_TINT
+            if (!IsFreemode(me)) return;
+            float op = Math.Min(beardMax, beardDays / 10f);
+            if (beardDays <= 0 || op <= 0.05f || beardStyle == 0) NatOverlay(me, 1, 255, 0f);
+            else { NatOverlay(me, 1, beardStyle, op); NatOverlayTint(me, 1, 1, hairColor, hairColor); }
         }
         catch { }
     }
@@ -1051,6 +1054,160 @@ public class GtaVietLifePersonal : Script
         Item("Ca hai  ($35)", delegate { Barber(true, true); ShowBody(); });
         Item("Quay lai", delegate { ShowMain(); });
     }
+
+    // ============================================================ NHÂN VẬT TUỲ BIẾN (mặt, tóc, râu): dùng mẫu freemode của GTA Online trong chơi đơn
+    const string FreemodeName = "mp_m_freemode_01";
+    bool customOn, autoKeep = true;
+    int prevModelHash;
+    int shapeA = 17, shapeB = 18, skinA = 17, skinB = 18;
+    float shapeMix = 0.5f, skinMix = 0.5f;
+    readonly float[] face = new float[20];
+    int hairStyle = 19, hairColor = 0, hairHi = 0, eyeColor = 5, browStyle = 0, beardStyle = 1;
+    float beardMax = 0.7f;
+    int nextLookCheck;
+    static readonly string[] FaceName = {
+        "Do rong mui", "Do cao dinh mui", "Do dai mui", "Do cao song mui", "Do ha dau mui", "Do lech song mui",
+        "Do cao long may", "Do sau long may", "Do cao xuong gò ma", "Do rong xuong go ma", "Do rong ma",
+        "Do mo mat (+ la hep)", "Do day moi", "Do rong ham", "Do dai ham", "Do ha cam", "Do dai cam", "Do rong cam", "Lum cam", "Do day co" };
+
+    static bool IsFreemode(Ped p) { return p != null && p.Exists() && p.Model.Hash == Game.GenerateHash(FreemodeName); }
+
+    // cac native goi bang ma hash de khong phu thuoc ten enum cua tung ban SHVDN
+    static void NatHeadBlend(Ped p, int sa, int sb, int ka, int kb, float sm, float km)
+    { Function.Call((Hash)0x9414E18B9434C2FE, p, sa, sb, 0, ka, kb, 0, sm, km, 0f, false); }
+    static void NatFace(Ped p, int i, float v) { Function.Call((Hash)0x71A5C1DBA060049E, p, i, v); }
+    static void NatHair(Ped p, int c, int h) { Function.Call((Hash)0x4CFFC65454C93A49, p, c, h); }
+    static void NatEye(Ped p, int c) { Function.Call((Hash)0x50B56988B170AFDF, p, c); }
+    static void NatOverlay(Ped p, int id, int idx, float op) { Function.Call((Hash)0x48F44967FA05CC1E, p, id, idx, op); }
+    static void NatOverlayTint(Ped p, int id, int type, int c1, int c2) { Function.Call((Hash)0x497BF74A7B9CB952, p, id, type, c1, c2); }
+    static void NatDefaultClothes(Ped p) { Function.Call((Hash)0x45EEE61580806D63, p); }
+
+    void ApplyLook(Ped me)
+    {
+        if (!IsFreemode(me)) return;
+        try
+        {
+            NatHeadBlend(me, shapeA, shapeB, skinA, skinB, shapeMix, skinMix);
+            for (int i = 0; i < face.Length; i++) NatFace(me, i, Math.Max(-1f, Math.Min(1f, face[i])));
+            Function.Call(Hash.SET_PED_COMPONENT_VARIATION, me, 2, hairStyle, 0, 0);
+            NatHair(me, hairColor, hairHi);
+            NatEye(me, eyeColor);
+            NatOverlay(me, 2, browStyle, 1f); NatOverlayTint(me, 2, 1, hairColor, hairColor);
+            ApplyBeard(me);
+        }
+        catch (Exception ex) { Log("ap dung mat loi: " + ex.Message); }
+    }
+
+    // mau dung san: dung theo anh Sep (toc den ruou bay, hai ben ngan, long may thang, rau mo quanh moi/cam)
+    void ResetPreset()
+    {
+        shapeA = 17; shapeB = 18; skinA = 17; skinB = 18; shapeMix = 0.5f; skinMix = 0.5f;
+        float[] f = { 0.2f, -0.2f, -0.2f, -0.3f, 0f, 0f, -0.1f, 0.1f, -0.1f, 0.2f, 0.1f, 0.5f, -0.1f, -0.2f, 0f, 0f, 0f, -0.3f, 0f, 0.1f };
+        Array.Copy(f, face, f.Length);
+        hairStyle = 19; hairColor = 0; hairHi = 0; eyeColor = 5; browStyle = 0; beardStyle = 1; beardMax = 0.7f;
+        if (beardDays < 4) beardDays = 4;
+    }
+
+    void BecomeCustom(bool preset)
+    {
+        Ped me = Game.Player.Character;
+        if (jailUntil > 0) { Notify("Dang o tu, khong doi nhan vat duoc."); return; }
+        if (me.IsInVehicle()) { Notify("Xuong xe roi moi doi nhan vat."); return; }
+        if (preset) ResetPreset();
+        if (!IsFreemode(me))
+        {
+            Model m = new Model(FreemodeName);
+            if (!m.IsInCdImage || !m.Request(5000)) { Notify("~r~Khong nap duoc mau nhan vat tuy bien~s~ (ban game/SHVDN nay khong ho tro?)."); return; }
+            if (!customOn) prevModelHash = me.Model.Hash;
+            Game.Player.ChangeModel(m);
+            m.MarkAsNoLongerNeeded();
+            me = Game.Player.Character;
+            NatDefaultClothes(me);
+        }
+        customOn = true;
+        ApplyLook(me);
+        Notify("~g~Da tao nhan vat theo anh Sep.~s~ Chinh them o menu Nhan vat cua Sep. Do mac: thay o tiem quan ao roi luu o 'Trang phuc'.");
+        Emit("body.look", "kind=custom");
+        PublishPersonal(); Save();
+    }
+
+    void BackToOriginal()
+    {
+        Ped me = Game.Player.Character;
+        if (me.IsInVehicle()) { Notify("Xuong xe roi moi doi nhan vat."); return; }
+        int h = prevModelHash != 0 ? prevModelHash : Game.GenerateHash("player_zero");
+        Model m = new Model(h);
+        if (!m.IsInCdImage || !m.Request(5000)) { Notify("Khong nap duoc nhan vat goc."); return; }
+        Game.Player.ChangeModel(m);
+        m.MarkAsNoLongerNeeded();
+        customOn = false;
+        Notify("Da ve nhan vat goc cua game.");
+        Save();
+    }
+
+    // chuyen nhan vat (Michael/Franklin/Trevor) hoac nhiem vu co the doi model: dua ve nhan vat tuy bien
+    void KeepLook(Ped me, int now)
+    {
+        if (!customOn || !autoKeep || now < nextLookCheck) return;
+        nextLookCheck = now + 4000;
+        if (IsFreemode(me) || !me.IsAlive || me.IsInVehicle() || jailUntil > 0) return;
+        if (Function.Call<bool>((Hash)0x991251AFC3981F84)) return;   // IS_CUTSCENE_ACTIVE
+        BecomeCustom(false);
+    }
+
+
+    void ShowLook()
+    {
+        Begin("NHAN VAT CUA SEP", delegate { ShowMain(); });
+        Info(customOn ? "Dang dung nhan vat tuy bien (mat, toc, rau chinh duoc)." : "Dang dung nhan vat goc cua game (Michael/Franklin/Trevor).");
+        Item("Tao nhan vat giong anh Sep (mau dung san)|doi sang nhan vat tuy bien: toc den hai ben ngan, long may thang, rau mo", delegate { CloseMenu(); BecomeCustom(true); });
+        if (customOn) Item("Chinh khuon mat (20 thanh)...", delegate { ShowFace(); });
+        if (customOn) Item("Chinh toc, may, mat, rau, khuon va nen da...", delegate { ShowHair(); });
+        if (customOn) Item("Dat lai mau dung san", delegate { ResetPreset(); ApplyLook(Game.Player.Character); Save(); ShowLook(); });
+        if (customOn) Item("Ve nhan vat goc cua game", delegate { CloseMenu(); BackToOriginal(); });
+        Info("Mau mat la dung tay theo anh (game khong nhap anh thang duoc). Chinh tung thanh cho giong hon: Enter de tang, het thang thi quay ve dau.");
+        Item("Quay lai", delegate { ShowMain(); });
+    }
+
+    void ReShow(Action show) { int keep = menuSel; show(); menuSel = keep; }
+
+    void ShowFace()
+    {
+        Begin("CHINH KHUON MAT  (Enter: +0.2, het thi quay lai -1)", delegate { ShowLook(); });
+        for (int i = 0; i < face.Length; i++)
+        {
+            int k = i;
+            Item(FaceName[k] + ":  " + face[k].ToString("0.0", CultureInfo.InvariantCulture), delegate
+            {
+                face[k] = (float)Math.Round(face[k] + 0.2f, 1);
+                if (face[k] > 1.01f) face[k] = -1f;
+                ApplyLook(Game.Player.Character); Save();
+                ReShow(ShowFace);
+            });
+        }
+        Item("Quay lai", delegate { ShowLook(); });
+    }
+
+    void ShowHair()
+    {
+        Begin("TOC, MAY, MAT, RAU  (Enter: doi gia tri tiep theo)", delegate { ShowLook(); });
+        Item("Kieu toc: " + hairStyle + " / 22", delegate { hairStyle = (hairStyle + 1) % 23; HairChanged(); });
+        Item("Mau toc: " + hairColor + " / 63  (0 = den)", delegate { hairColor = (hairColor + 1) % 64; HairChanged(); });
+        Item("Mau nhuom (highlight): " + hairHi + " / 63", delegate { hairHi = (hairHi + 1) % 64; HairChanged(); });
+        Item("Mau mat: " + eyeColor + " / 31  (5 = nau dam)", delegate { eyeColor = (eyeColor + 1) % 32; HairChanged(); });
+        Item("Kieu long may: " + browStyle + " / 33", delegate { browStyle = (browStyle + 1) % 34; HairChanged(); });
+        Item("Kieu rau: " + beardStyle + " / 28  (0 = nhan, 1 = mo)", delegate { beardStyle = (beardStyle + 1) % 29; HairChanged(); });
+        Item("Do dam rau toi da: " + beardMax.ToString("0.0", CultureInfo.InvariantCulture), delegate { beardMax = (float)Math.Round(beardMax + 0.1f, 1); if (beardMax > 1.01f) beardMax = 0.1f; HairChanged(); });
+        Item("Khuon mat cha (so): " + shapeA + " / 44", delegate { shapeA = (shapeA + 1) % 45; HairChanged(); });
+        Item("Khuon mat me (so): " + shapeB + " / 44", delegate { shapeB = (shapeB + 1) % 45; HairChanged(); });
+        Item("Pha khuon cha-me: " + shapeMix.ToString("0.0", CultureInfo.InvariantCulture) + "  (0 = cha, 1 = me)", delegate { shapeMix = (float)Math.Round(shapeMix + 0.1f, 1); if (shapeMix > 1.01f) shapeMix = 0f; HairChanged(); });
+        Item("Mau da cha (so): " + skinA + " / 44", delegate { skinA = (skinA + 1) % 45; HairChanged(); });
+        Item("Mau da me (so): " + skinB + " / 44", delegate { skinB = (skinB + 1) % 45; HairChanged(); });
+        Item("Pha mau da: " + skinMix.ToString("0.0", CultureInfo.InvariantCulture), delegate { skinMix = (float)Math.Round(skinMix + 0.1f, 1); if (skinMix > 1.01f) skinMix = 0f; HairChanged(); });
+        Item("Quay lai", delegate { ShowLook(); });
+    }
+
+    void HairChanged() { ApplyLook(Game.Player.Character); Save(); ReShow(ShowHair); }
 
     // ============================================================ TRỤ 4: QUAN HỆ, ĐIỆN THOẠI, THÚ CƯNG
     readonly System.Collections.Concurrent.ConcurrentQueue<Action> fromNet = new System.Collections.Concurrent.ConcurrentQueue<Action>();
@@ -1330,6 +1487,7 @@ public class GtaVietLifePersonal : Script
         Begin("CA NHAN  (" + menuKey + "/Backspace: dong)", null);
         Info("Ten: " + (playerName.Length > 0 ? playerName : "(chua dat)") + "   Que: " + (hometown.Length > 0 ? hometown : "(chua chon)") + "   Tien: $" + Game.Player.Money);
         Item("Ho so nhan vat...", delegate { ShowProfile(); });
+        Item("Nhan vat cua Sep: mat, toc, rau...  (" + (customOn ? "tuy bien" : "goc cua game") + ")", delegate { ShowLook(); });
         Item("Ky nang...  (" + SkillSummary() + ")", delegate { ShowSkills(); });
         Item("Tui do...  (" + BagCount() + "/" + BagCap + " mon)", delegate { ShowBag(); });
         Item("Trang phuc...  (" + (wearing >= 0 ? "dang mac: " + OutfitSlotName[wearing] : "chua luu bo nao") + ")", delegate { ShowOutfits(); });
@@ -1655,6 +1813,8 @@ public class GtaVietLifePersonal : Script
             l.Add("suit=" + suitAmount + "," + suitDue);
             l.Add("spouse=" + spouse);
             l.Add("pet=" + petModel + "," + petName.Replace(",", " "));
+            l.Add("custom=" + (customOn ? 1 : 0) + "," + prevModelHash + "," + shapeA + "," + shapeB + "," + skinA + "," + skinB + "," + shapeMix.ToString(ci) + "," + skinMix.ToString(ci) + "," + hairStyle + "," + hairColor + "," + hairHi + "," + eyeColor + "," + browStyle + "," + beardStyle + "," + beardMax.ToString(ci));
+            l.Add("face=" + string.Join(",", Array.ConvertAll(face, x => x.ToString(ci))));
             l.Add("in=" + inToday);
             l.Add("out=" + outToday);
             foreach (int[] h in moneyHist) l.Add("mhist=" + h[0] + "," + h[1] + "," + h[2]);
@@ -1698,6 +1858,14 @@ public class GtaVietLifePersonal : Script
                     else if (k == "arrestStars") arrestStars = int.Parse(v);
                     else if (k == "suit") { string[] q = v.Split(','); suitAmount = int.Parse(q[0]); suitDue = long.Parse(q[1]); }
                     else if (k == "spouse") spouse = v;
+                    else if (k == "custom")
+                    {
+                        string[] q = v.Split(',');
+                        customOn = q[0] == "1"; prevModelHash = int.Parse(q[1]); shapeA = int.Parse(q[2]); shapeB = int.Parse(q[3]); skinA = int.Parse(q[4]); skinB = int.Parse(q[5]);
+                        shapeMix = float.Parse(q[6], ci); skinMix = float.Parse(q[7], ci); hairStyle = int.Parse(q[8]); hairColor = int.Parse(q[9]); hairHi = int.Parse(q[10]);
+                        eyeColor = int.Parse(q[11]); browStyle = int.Parse(q[12]); beardStyle = int.Parse(q[13]); beardMax = float.Parse(q[14], ci);
+                    }
+                    else if (k == "face") { string[] q = v.Split(','); for (int fi = 0; fi < face.Length && fi < q.Length; fi++) face[fi] = float.Parse(q[fi], ci); }
                     else if (k == "pet") { string[] q = v.Split(','); petModel = int.Parse(q[0]); petName = q.Length > 1 ? q[1] : ""; }
                     else if (k == "in") inToday = int.Parse(v);
                     else if (k == "out") outToday = int.Parse(v);

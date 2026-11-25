@@ -109,7 +109,7 @@ Core giữ 300 dòng cuối, ghi `GtaVietLifeEvents.log` và gửi lô sự ki�
 | `legal.stop` | `result` (`ok`/`fine`/`impound`) | Cá nhân (cảnh sát kiểm tra giấy tờ) |
 | `legal.arrest` / `legal.jail` / `legal.release` | `stars` / `minutes` / — | Cá nhân |
 | `legal.crash` / `legal.court` | `amount`, `victim` | Cá nhân (va chạm xe NPC, toà xử) |
-| `body.haircut` / `body.weight` | `kind` / `kg` | Cá nhân |
+| `body.haircut` / `body.weight` / `body.look` | `kind` / `kg` / `kind=custom` | Cá nhân |
 | `social.affinity` | `key`, `name`, `value`, `level` | Cá nhân (khi đổi cấp quan hệ) |
 | `social.date` / `social.marry` / `social.breakup` | `key`, `name` | Cá nhân |
 | `social.gift` / `social.pet` / `social.sms` / `social.call` | `key`, `name`, ... | Cá nhân |
@@ -128,7 +128,7 @@ Core giữ 300 dòng cuối, ghi `GtaVietLifeEvents.log` và gửi lô sự ki�
 ## Lược đồ dữ liệu
 
 ### Nhân vật (game, `GtaVietLifePersonal.sav`)
-`name`, `hometown`, `age`, `skill0..4` (thể lực, lái xe, bắn súng, sức mạnh, giao tiếp: 0-100), `item=id,soLuong`, `backpack`, `outfit0..3`, `wearing`, `car=hash,mau1,mau2,bien,ten,giuXe`, `kg`, `muscle`, `hairDays`, `beardDays`, `lic=ID,A1,...`, `record`, `jailUntil`, `pending=...` (vụ kiện chờ xử), `pet=model,ten`.
+`name`, `hometown`, `age`, `skill0..4` (thể lực, lái xe, bắn súng, sức mạnh, giao tiếp: 0-100), `item=id,soLuong`, `backpack`, `outfit0..3`, `wearing`, `car=hash,mau1,mau2,bien,ten,giuXe`, `kg`, `muscle`, `hairDays`, `beardDays`, `custom=` (nhân vật tuỳ biến freemode: model cũ, cha/mẹ, tóc, mắt, râu), `face=` (20 thanh khuôn mặt), `lic=ID,A1,...`, `record`, `jailUntil`, `pending=...` (vụ kiện chờ xử), `pet=model,ten`.
 
 ### NPC (cầu nối, `memory.db` SQLite, bảng `npc`)
 | Cột | Ý nghĩa |
