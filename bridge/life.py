@@ -93,6 +93,15 @@ class Life:
         lines.append(f"Việc bạn đang làm lúc này: {activity(npc['job'], hour)}.")
         lines.append(f"Với người chơi, bạn coi họ là: {relation(npc['affinity'])}.")
         p = []
+        if st.get("player_name"):
+            who = f"tên {st['player_name']}"
+            if st.get("hometown"):
+                who += f", quê {st['hometown']}"
+            lines.append(f"Người chơi {who}. Gọi đúng tên khi đã quen.")
+        if st.get("outfit"):
+            p.append(f"đang mặc {st['outfit']}")
+        if st.get("skills"):
+            p.append(f"nổi tiếng {st['skills']}")
         if st.get("job"):
             p.append(f"đang làm {st['job']}")
         if st.get("business"):
