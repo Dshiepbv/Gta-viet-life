@@ -342,8 +342,7 @@ public class GtaVietLifeWorld : Script
         if (Game.Player.Money < BizPrice) { Notify("Khong du $" + BizPrice + " de mo quan."); return; }
         Game.Player.Money = Game.Player.Money - BizPrice;
         hasBiz = true;
-        bizPos = Game.Player.Character.Position + Game.Player.Character.ForwardVector * 3f;
-        bizHeading = Game.Player.Character.Heading + 180f;
+        PlaceBizOnFlatGround();
         bizLevel = 1;
         bizStock = 30;
         bizStaff = 0;
@@ -352,6 +351,63 @@ public class GtaVietLifeWorld : Script
         BuildBizProps();
         Notify("~g~Da mo quan!~s~ Tang 30 phan hang. Dung gan quan bam M de quan ly.");
         PostEvent("Có gã vừa mở một quán nhỏ ở " + SafeStreet(bizPos) + ".");
+    }
+
+    // Tim cho bang phang gan nguoi choi (quay + khu sau quay + khu ban ghe), tranh bac thang va vach cao do
+    void PlaceBizOnFlatGround()
+    {
+        Ped me = Game.Player.Character;
+        float baseZ = me.Position.Z;
+        float[] turns = { 0f, 90f, -90f, 180f };
+        float[] dists = { 4f, 6f, 8f, 11f };
+        float bestRange = 999f;
+        Vector3 bestPos = me.Position + me.ForwardVector * 4f;
+        float bestHead = me.Heading + 180f;
+        foreach (float dist in dists)
+        {
+            foreach (float turn in turns)
+            {
+                float hd = me.Heading + turn;
+                float r = hd * (float)Math.PI / 180f;
+                Vector3 dir = new Vector3(-(float)Math.Sin(r), (float)Math.Cos(r), 0f);
+                Vector3 rt = new Vector3(dir.Y, -dir.X, 0f);
+                Vector3 c = me.Position + dir * dist;
+                // mat quay huong ve nguoi choi: ban ghe o phia nguoi choi (-dir), nhan vien o phia sau quay (+dir)
+                float lo = 999f, hi = -999f;
+                Vector3[] pts = { c, c + rt * 1.8f, c - rt * 1.8f, c + dir * 1.2f, c + dir * 3f, c + dir * 1.2f + rt * 1.3f, c + dir * 1.2f - rt * 1.3f, c - dir * 3f, c - dir * 5.5f + rt * 2.5f, c - dir * 5.5f - rt * 2.5f, c - dir * 8f };
+                bool bad = false;
+                foreach (Vector3 q in pts)
+                {
+                    float z = World.GetGroundHeight(new Vector3(q.X, q.Y, baseZ + 0.5f));
+                    if (z <= -100f) { bad = true; break; }
+                    if (z < lo) lo = z;
+                    if (z > hi) hi = z;
+                }
+                if (bad) continue;
+                float range = hi - lo;
+                if (range < bestRange) { bestRange = range; bestPos = c; bestHead = hd + 180f; }
+                if (range < 0.25f) { bizPos = c; bizHeading = hd + 180f; return; }
+            }
+        }
+        bizPos = bestPos;
+        bizHeading = bestHead;
+        Log("khong tim duoc cho that phang, chon cho chenh " + bestRange.ToString("0.00") + " m");
+    }
+
+    void RelocateBiz()
+    {
+        if (!hasBiz) return;
+        int staff = bizStaff;
+        foreach (Ped p in staffPeds) if (p != null && p.Exists()) p.Delete();
+        staffPeds.Clear();
+        staffSlots.Clear();
+        staffStates.Clear();
+        staffTasks.Clear();
+        PlaceBizOnFlatGround();
+        CreateBizBlip();
+        BuildBizProps();
+        for (int i = 0; i < staff; i++) SpawnStaff();
+        Notify("Da doi quan sang cho phang gan Sep.");
     }
 
     void CreateBizBlip()
@@ -437,7 +493,7 @@ public class GtaVietLifeWorld : Script
             Vector3 fwd = new Vector3(-(float)Math.Sin(h), (float)Math.Cos(h), 0f);
             int k = staffPeds.Count;
             // nhan vien dung sau quay (k=0) hoac ben canh quay, quay mat ve phia khach
-            Vector3 pos0 = bizPos - fwd * 1.1f + right * (k == 0 ? 0f : (k % 2 == 1 ? 1f : -1f) * 0.9f * ((k + 1) / 2));
+            Vector3 pos0 = bizPos - fwd * 1.1f + right * (k == 0 ? 0f : (k % 2 == 1 ? 1f : -1f) * 1.3f * ((k + 1) / 2));
             float gz = (bizProps.Count > 0 && bizProps[0] != null && bizProps[0].Exists()) ? bizProps[0].Position.Z : GroundZ(pos0);
             Vector3 pos = new Vector3(pos0.X, pos0.Y, gz + 1.0f + staffZ);
             Ped p = World.CreatePed(mdl, pos);
@@ -493,6 +549,7 @@ public class GtaVietLifeWorld : Script
             Vector3 dest2 = QueueSpot();
             Function.Call(Hash.TASK_FOLLOW_NAV_MESH_TO_COORD, p, dest2.X, dest2.Y, dest2.Z, 1.0f, 25000, 1.5f, false, 0f);
             customers.Add(c);
+            Log("sinh khach, cach quan " + (int)sp.DistanceTo(bizPos) + " m, ghe " + c.Chair);
         }
         catch (Exception ex) { Log("SpawnCustomer loi: " + ex.Message); }
     }
@@ -551,9 +608,10 @@ public class GtaVietLifeWorld : Script
             if (c.Stage == 0)
             {
                 bool arrived = p.Position.DistanceTo(bizPos) < 3.2f;
+                if (!arrived && now - c.T > 30000 && p.Position.DistanceTo(bizPos) < 10f) arrived = true;
                 if (arrived || now - c.T > 30000)
                 {
-                    if (!arrived) { Release(c); customers.RemoveAt(i); continue; }
+                    if (!arrived) { Log("khach khong toi duoc quay (cach " + (int)p.Position.DistanceTo(bizPos) + " m), bo"); Release(c); customers.RemoveAt(i); continue; }
                     bool served = bizStaff > 0 || me.Position.DistanceTo(bizPos) < 8f;
                     if (!served)
                     {
@@ -583,8 +641,23 @@ public class GtaVietLifeWorld : Script
                     p.Task.ClearAll();
                     Function.Call(Hash.TASK_START_SCENARIO_AT_POSITION, p, "PROP_HUMAN_SEAT_CHAIR", ch.Position.X, ch.Position.Y, ch.Position.Z + seatZ, c.Chair < chairFace.Count ? chairFace[c.Chair] : ch.Heading, 40000, true, true);
                     if (bizStaff > 1) { StaffTask t = new StaffTask(); t.Type = 1; t.Chair = c.Chair; t.Target = c; staffTasks.Add(t); }
+                    else { c.Cup = MakeCup(); AttachCup(c.Cup, p); }
                 }
-                else { Release(c); customers.RemoveAt(i); }
+                else
+                {
+                    // mua mang di: nhan ly nuoc, dung uong mot luc roi di
+                    c.Stage = 3;
+                    c.T = now;
+                    c.Cup = MakeCup();
+                    AttachCup(c.Cup, p);
+                    p.Task.ClearAll();
+                    Function.Call(Hash.TASK_START_SCENARIO_IN_PLACE, p, "WORLD_HUMAN_DRINKING", 0, true);
+                }
+            }
+            else if (c.Stage == 3 && now - c.T > 6000)
+            {
+                Release(c);
+                customers.RemoveAt(i);
             }
             else if (c.Stage == 2 && now - c.T > (bizStaff > 1 ? 24000 : 14000))
             {
@@ -597,7 +670,7 @@ public class GtaVietLifeWorld : Script
     // Giu nhan vien o dung cho (sau khi noi chuyen xong script kia co the cho ho di lang thang)
     static float GroundZ(Vector3 v)
     {
-        float z = World.GetGroundHeight(new Vector3(v.X, v.Y, v.Z + 2f));
+        float z = World.GetGroundHeight(new Vector3(v.X, v.Y, v.Z + 0.5f));
         return z <= -100f ? v.Z - 1f : z;
     }
 
@@ -907,6 +980,7 @@ public class GtaVietLifeWorld : Script
                 if (Spend(StockPrice)) { bizStock += StockPack; }
                 ShowBiz();
             });
+            Item("Doi quan sang cho phang gan day (mien phi)", delegate { RelocateBiz(); ShowBiz(); });
             Item("Nang cap quan (them ban ghe)  (-$" + (2500 * bizLevel) + ")  cap " + bizLevel + "/4", delegate
             {
                 if (bizLevel >= 4) Notify("Quan da toi da.");
