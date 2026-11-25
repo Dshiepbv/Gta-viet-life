@@ -19,7 +19,6 @@ using System.Windows.Forms;
 using GTA;
 using GTA.Math;
 using GTA.Native;
-using GTA.UI;
 
 public class GtaVietLifeWorld : Script
 {
@@ -554,7 +553,6 @@ public class GtaVietLifeWorld : Script
             mdl.MarkAsNoLongerNeeded();
             if (p == null || !p.Exists()) return;
             p.Heading = bizHeading;
-            p.PlaceOnGround();                 // dat dung len mat dat that (khong tu tinh do cao)
             pos = p.Position;                  // vi tri dung that cua nhan vien
             Log("nhan vien #" + staffPeds.Count + " z=" + pos.Z.ToString("0.00") + " nen=" + GroundForBiz().ToString("0.00") + " bizPosZ=" + bizPos.Z.ToString("0.00"));
             p.IsPersistent = true;
@@ -1169,7 +1167,7 @@ public class GtaVietLifeWorld : Script
 
     void DrawText(string s, float x, float y, float scale, Color c)
     {
-        TextElement t = new TextElement(s, new PointF(x, y), scale, c);
+        GTA.UI.TextElement t = new GTA.UI.TextElement(s, new PointF(x, y), scale, c);
         t.Outline = true;
         t.Draw();
     }
@@ -1177,10 +1175,10 @@ public class GtaVietLifeWorld : Script
     void DrawBar(string label, float value, float x, float y, Color fill)
     {
         float w = 170f, h = 16f;
-        new ContainerElement(new PointF(x, y), new SizeF(w, h), Color.FromArgb(150, 0, 0, 0)).Draw();
+        new GTA.UI.ContainerElement(new PointF(x, y), new SizeF(w, h), Color.FromArgb(150, 0, 0, 0)).Draw();
         Color c = value < 15f ? Color.FromArgb(230, 230, 60, 60) : fill;
         float fw = (w - 4f) * Math.Max(0f, Math.Min(100f, value)) / 100f;
-        if (fw > 0f) new ContainerElement(new PointF(x + 2f, y + 2f), new SizeF(fw, h - 4f), c).Draw();
+        if (fw > 0f) new GTA.UI.ContainerElement(new PointF(x + 2f, y + 2f), new SizeF(fw, h - 4f), c).Draw();
         DrawText(label + " " + (int)value + "%", x + 6f, y - 3f, 0.34f, Color.White);
     }
 
@@ -1208,7 +1206,7 @@ public class GtaVietLifeWorld : Script
     {
         float x = 40f, y = 170f, w = 520f;
         float h = 38f + menuLabels.Count * 26f;
-        new ContainerElement(new PointF(x, y), new SizeF(w, h), Color.FromArgb(200, 10, 10, 10)).Draw();
+        new GTA.UI.ContainerElement(new PointF(x, y), new SizeF(w, h), Color.FromArgb(200, 10, 10, 10)).Draw();
         DrawText(menuTitle, x + 12f, y + 6f, 0.45f, Color.FromArgb(255, 255, 210, 80));
         for (int i = 0; i < menuLabels.Count; i++)
             DrawText((i + 1) + ". " + menuLabels[i], x + 12f, y + 38f + i * 26f, 0.38f, Color.White);
