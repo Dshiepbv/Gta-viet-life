@@ -281,7 +281,7 @@ public class GtaVietLifeDoiSong : Script
             if (gmin >= billDueMin)
             {
                 billDueMin = gmin + 7 * 1440;
-                int bill = 90 + rnd.Next(0, 61);
+                int bill = 40 + rnd.Next(0, 31);   // gia doi thuc 1$ ~ 5.000d (docs/ECONOMY.md)
                 bool paid = billOwed == 0 && AutoPay(bill);
                 Emit("life.bill", "amount=" + bill + ";paid=" + (paid ? 1 : 0));
                 if (paid) { Notify("Tien dien nuoc + internet tuan nay: ~r~-$" + bill + "~s~ (tu tru)."); }
@@ -504,11 +504,28 @@ public class GtaVietLifeDoiSong : Script
         try { Function.Call((Hash)0x1268615ACE24D504, off); } catch { }   // SET_ARTIFICIAL_LIGHTS_STATE (true = tat den)
     }
 
+    // ------------------------------------------------------------ gia theo khu (Kinh te: GVL.PriceZone, docs/ECONOMY.md muc 6)
+    const int MedPrice = 15, DrinkPrice = 4;
+    static float ZoneMul()
+    {
+        try
+        {
+            Func<float, float, float, float> f = Bus("GVL.PriceZone") as Func<float, float, float, float>;
+            if (f == null) return 1f;
+            Vector3 p = Game.Player.Character.Position;
+            float m = f(p.X, p.Y, p.Z);
+            return m > 0.1f && m < 10f ? m : 1f;
+        }
+        catch { return 1f; }
+    }
+    static int Zp(int basePrice) { return Zp(basePrice, ZoneMul()); }
+    static int Zp(int basePrice, float zm) { return Math.Max(1, (int)Math.Round(basePrice * zm)); }
+
     // ------------------------------------------------------------ y te
     static readonly Vector3[] Hospitals = { new Vector3(298.0f, -584.0f, 43.3f), new Vector3(1839.0f, 3672.0f, 34.3f), new Vector3(-247.0f, 6331.0f, 32.4f), new Vector3(-449.0f, -340.0f, 34.5f) };
     int NearHospital(Ped me) { for (int i = 0; i < Hospitals.Length; i++) if (me.Position.DistanceTo(Hospitals[i]) < 60f) return i; return -1; }
 
-    int TreatCost() { return (injured ? 400 : 0) + (Cold() ? 80 : 0) + (Poisoned() ? 120 : 0) + (stress > 80f ? 60 : 0); }
+    int TreatCost() { return (injured ? 150 : 0) + (Cold() ? 25 : 0) + (Poisoned() ? 40 : 0) + (stress > 80f ? 20 : 0); }
 
     void Hospital()
     {
@@ -540,10 +557,11 @@ public class GtaVietLifeDoiSong : Script
     void BuyMedicine()
     {
         if (!Cold() && !Poisoned()) { Notify("Sep dang khoe, khong can thuoc."); return; }
-        if (!Spend(35, "medical", "thuoc")) return;
+        int med = Zp(MedPrice);
+        if (!Spend(med, "medical", "thuoc")) return;
         if (Cold()) coldUntil = gmin + Math.Max(60, (coldUntil - gmin) / 3);
         if (Poisoned()) poisonUntil = gmin + Math.Max(30, (poisonUntil - gmin) / 3);
-        Notify("Shipper giao thuoc toi (-$35). Uong thuoc roi, se do nhanh.");
+        Notify("Shipper giao thuoc toi (-$" + med + "). Uong thuoc roi, se do nhanh.");
     }
 
     // ------------------------------------------------------------ tu lanh + di cho
@@ -567,15 +585,16 @@ public class GtaVietLifeDoiSong : Script
         Ped me = Game.Player.Character;
         bool store = NearStore(me);
         int fee = store ? 0 : 5;
+        float zm = ZoneMul();
         Begin("DI CHO  (tu lanh " + fridge.Count + "/" + FridgeCap + (store ? ", dang o cua hang" : ", dat ship +$5/mon") + ")", delegate { ShowHomeMenu(); });
         if (!store && !HasHome()) { Info("Chua co nha de cat do: thue nha truoc"); Item("Quay lai", delegate { ShowHomeMenu(); }); return; }
         foreach (Grocery g0 in Groceries)
         {
             Grocery g = g0;
-            Item(g.Name + "  ($" + (g.Price + fee) + ", de duoc " + g.Days + " ngay)", delegate
+            Item(g.Name + "  ($" + (Zp(g.Price, zm) + fee) + ", de duoc " + g.Days + " ngay)", delegate
             {
                 if (fridge.Count >= FridgeCap) { Notify("Tu lanh day roi."); return; }
-                if (!Spend(g.Price + fee, "shop", g.Name)) return;
+                if (!Spend(Zp(g.Price, zm) + fee, "shop", g.Name)) return;
                 fridge.Add(new Food(g.Name, g.H, g.T, g.E, gmin + g.Days * 1440));
                 Notify("Da mua ~g~" + g.Name + "~s~ cat vao tu lanh.");
                 ShowGrocery();
@@ -669,7 +688,7 @@ public class GtaVietLifeDoiSong : Script
             Leisure l = l0;
             float d = me.Position.DistanceTo2D(l.Pos);
             bool here = d < l.R;
-            string sub = (l.Price > 0 ? "$" + l.Price + ", " : "mien phi, ") + (l.Minutes / 60) + " tieng, -" + (int)l.Stress + " cang thang" + (here ? ", DANG O DAY" : ", cach " + (int)d + "m");
+            string sub = (l.Price > 0 ? "$" + Zp(l.Price) + ", " : "mien phi, ") + (l.Minutes / 60) + " tieng, -" + (int)l.Stress + " cang thang" + (here ? ", DANG O DAY" : ", cach " + (int)d + "m");
             Item(l.Name + "  (" + sub + ")", delegate { DoLeisure(l); });
         }
         Item("Quay lai", delegate { ShowMain(); });
@@ -687,7 +706,7 @@ public class GtaVietLifeDoiSong : Script
         }
         if (me.IsInVehicle()) { Notify("Xuong xe da."); return; }
         if (Game.Player.WantedLevel > 0) { Notify("Dang bi truy na, choi gi noi."); return; }
-        if (l.Price > 0 && !Spend(l.Price, "leisure", l.Name)) return;
+        if (l.Price > 0 && !Spend(Zp(l.Price), "leisure", l.Name)) return;
         CloseMenu();
         Fade(l.Minutes, delegate
         {
@@ -708,10 +727,11 @@ public class GtaVietLifeDoiSong : Script
 
     void DrinkMore()
     {
-        if (!Spend(10, "leisure", "bia")) return;
+        int dp = Zp(DrinkPrice);
+        if (!Spend(dp, "leisure", "bia")) return;
         drunk = Math.Min(100f, drunk + 25f);
         stress = Clamp(stress - 5f);
-        Notify(drunk > 60f ? "~y~Say khuot roi~s~, dung lai xe!" : "Them mot ly (-$10).");
+        Notify(drunk > 60f ? "~y~Say khuot roi~s~, dung lai xe!" : "Them mot ly (-$" + dp + ").");
     }
 
     // ------------------------------------------------------------ su kien ngau nhien quanh Sep
@@ -967,7 +987,7 @@ public class GtaVietLifeDoiSong : Script
         Item("Suc khoe & y te...", delegate { ShowHealth(); });
         if (mFridge || mBills) Item("Nha cua: dien nuoc, tu lanh, di cho...", delegate { ShowHomeMenu(); });
         if (mLeisure) Item("Giai tri: bar, rap phim, gym, bien, cau ca...", delegate { ShowLeisure(); });
-        if (mDrunk && drunk > 0f) Item("Lam them ly nua  ($10)", delegate { DrinkMore(); ShowMain(); });
+        if (mDrunk && drunk > 0f) Item("Lam them ly nua  ($" + Zp(DrinkPrice) + ")", delegate { DrinkMore(); ShowMain(); });
         if (evType == 2 && evA != null && evA.Exists() && Game.Player.Character.Position.DistanceTo(evA.Position) < 4f) Item("So cuu nguoi bi nan, goi cap cuu", delegate { CloseMenu(); HelpInjured(); });
         if (mNews) Item("Nghe ban tin radio", delegate { CloseMenu(); RequestNews(); });
         Item("Dong", delegate { CloseMenu(); });
@@ -984,7 +1004,7 @@ public class GtaVietLifeDoiSong : Script
         Info("Tinh trang: " + (st.Count > 0 ? string.Join(", ", st.ToArray()) : "khoe manh"));
         Info("Cang thang " + (int)stress + "%   Thuc lien tuc " + (awakeMin / 60) + " tieng   Do uot " + (int)wet + "%");
         Item("Vao benh vien kham/dieu tri  (" + (TreatCost() > 0 ? "$" + TreatCost() : "mien phi kham") + ", gan nhat se dan duong)", delegate { Hospital(); });
-        if (Cold() || Poisoned()) Item("Dat thuoc giao tan noi  ($35, khoi nhanh gap 3)", delegate { BuyMedicine(); ShowHealth(); });
+        if (Cold() || Poisoned()) Item("Dat thuoc giao tan noi  ($" + Zp(MedPrice) + ", khoi nhanh gap 3)", delegate { BuyMedicine(); ShowHealth(); });
         Item("Quay lai", delegate { ShowMain(); });
     }
 
