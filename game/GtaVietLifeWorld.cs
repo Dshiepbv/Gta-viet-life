@@ -84,6 +84,8 @@ public class GtaVietLifeWorld : Script
     readonly List<Prop> tableCups = new List<Prop>();
     float seatZ = 0.55f;
     float staffZ = 0f;
+    string standModel = "prop_hotdogstand_01";
+    float cupX = 0.06f, cupY = 0f, cupZ = 0f, cupTable = 0.9f;
     float bizGround;   // do cao mat dat that tai quan (do luc dat quan, truoc khi dung props)
     float standYaw = -90f;   // xoay quay de mat quay (bang menu, dung cu) huong ve phia khach; neu nguoc thi doi thanh 90
     class Cust
@@ -138,6 +140,11 @@ public class GtaVietLifeWorld : Script
         seatZ = Settings.GetValue("Business", "SeatZ", seatZ);
         staffZ = Settings.GetValue("Business", "StaffZ", staffZ);
         standYaw = Settings.GetValue("Business", "StandYaw", standYaw);
+        standModel = Settings.GetValue("Business", "StandModel", standModel);
+        cupX = Settings.GetValue("Business", "CupHandX", cupX);
+        cupY = Settings.GetValue("Business", "CupHandY", cupY);
+        cupZ = Settings.GetValue("Business", "CupHandZ", cupZ);
+        cupTable = Settings.GetValue("Business", "CupTableZ", cupTable);
 
         Load();
 
@@ -474,7 +481,8 @@ public class GtaVietLifeWorld : Script
         float h = bizHeading * (float)Math.PI / 180f;
         Vector3 right = new Vector3((float)Math.Cos(h), (float)Math.Sin(h), 0f);
         Vector3 fwd = new Vector3(-(float)Math.Sin(h), (float)Math.Cos(h), 0f);
-        Prop stand = AddProp("prop_hotdogstand_01", bizPos, bizHeading + standYaw);
+        Prop stand = AddProp(standModel, bizPos, bizHeading + standYaw);
+        if (stand == null && standModel != "prop_hotdogstand_01") { Log("model quay " + standModel + " khong dung duoc, dung quay hot dog"); stand = AddProp("prop_hotdogstand_01", bizPos, bizHeading + standYaw); }
         if (stand != null) Function.Call(Hash.SET_ENTITY_COLLISION, stand, false, false);   // quay chi de trang tri, nhan vien khong bi day len mat quay
         string[] parasols = { "prop_parasol_01", "prop_parasol_01", "prop_parasol_03", "prop_parasol_04" };
         int tables = Math.Min(4, bizLevel);   // cap 1: 1 ban, cap 2: 2 ban, cap 3: 3 ban, cap 4: 4 ban
@@ -539,7 +547,7 @@ public class GtaVietLifeWorld : Script
             Vector3 fwd = new Vector3(-(float)Math.Sin(h), (float)Math.Cos(h), 0f);
             int k = staffPeds.Count;
             // nhan vien dung sau quay (k=0) hoac ben canh quay, quay mat ve phia khach
-            Vector3 pos0 = bizPos - fwd * 0.3f + right * (k == 0 ? -0.5f : (k % 2 == 1 ? 1f : -1f) * 0.9f * ((k + 1) / 2) - 0.5f);   // dung phia trong quay
+            Vector3 pos0 = bizPos - fwd * 1.25f + right * (k == 0 ? 0f : (k % 2 == 1 ? 1f : -1f) * 0.9f * ((k + 1) / 2));   // nguoi ban dung sau quay (phia tay day), tren mat dat, khong chen vao than quay
             // bizPos.Z = do cao tam nguoi choi luc dat quan (cho phang) => dung luon cho nhan vien, khong lay Z cua quay (tam quay cao hon dat)
             Vector3 pos = new Vector3(pos0.X, pos0.Y, GroundForBiz() + 1.0f + staffZ);
             Ped p = World.CreatePed(mdl, pos);
@@ -763,8 +771,9 @@ public class GtaVietLifeWorld : Script
         toward.Z = 0f;
         toward.Normalize();
         Vector3 pos = cp + toward * 0.75f;
-        pos.Z = cp.Z + 0.78f;
+        pos.Z = cp.Z + cupTable;
         cup.Position = pos;
+        cup.Rotation = Vector3.Zero;
         Function.Call(Hash.FREEZE_ENTITY_POSITION, cup, true);
         tableCups[idx] = cup;
     }
@@ -773,7 +782,7 @@ public class GtaVietLifeWorld : Script
     {
         if (cup == null || !cup.Exists() || p == null || !p.Exists()) return;
         int bone = Function.Call<int>(Hash.GET_PED_BONE_INDEX, p, 28422); // tay phai
-        Function.Call(Hash.ATTACH_ENTITY_TO_ENTITY, cup, p, bone, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, true, true, false, false, 2, true);
+        Function.Call(Hash.ATTACH_ENTITY_TO_ENTITY, cup, p, bone, cupX, cupY, cupZ, 0.0f, 0.0f, 0.0f, true, true, false, false, 2, true);
     }
 
     static void DeleteProp(Prop p)
