@@ -38,8 +38,8 @@ public class GtaVietLifeWorld : Script
     const int FinePerStar = 150;
 
     string server = "http://127.0.0.1:5577";
-    Keys menuKey = Keys.F6;   // M la phim Interaction Menu cua game, tranh trung
-    Keys navUp = Keys.PageUp, navDown = Keys.PageDown, navOk = Keys.Return;   // mui ten bi trung phim dien thoai cua game
+    Keys menuKey = Keys.J;   // M la Interaction Menu cua game, F-key can Fn tren laptop
+    Keys navUp = Keys.OemOpenBrackets, navDown = Keys.OemCloseBrackets, navOk = Keys.Return;   // mui ten trung dien thoai, PageUp/F-key can Fn
     string MK { get { return menuKey.ToString(); } }
     Keys sitKey = Keys.E;
     int sitIdx = -1;
@@ -2146,7 +2146,7 @@ public class GtaVietLifeWorld : Script
             cy += rh;
         }
         if (total > maxRows) DrawText((first > 0 ? "^ " : "  ") + "(" + (menuSel + 1) + "/" + total + ")" + (last < total ? " v" : ""), x + w - 110f, y + 8f, 0.32f, Color.FromArgb(255, 180, 184, 196));
-        DrawText("PageUp/PageDown: chon  -  Enter hoac phim so: chay  -  Backspace: quay lai  -  " + MK + ": dong", x + pad, y + h - 26f, 0.29f, Color.FromArgb(255, 150, 156, 170));
+        DrawText("[ / ]: chon  -  Enter hoac phim so: chay  -  Backspace: quay lai  -  " + MK + ": dong", x + pad, y + h - 26f, 0.29f, Color.FromArgb(255, 150, 156, 170));
     }
 
     // ------------------------------------------------------------ cầu nối AI
