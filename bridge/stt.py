@@ -90,12 +90,13 @@ class STT:
         if audio.size < RATE * 0.4:
             print("[mic] bấm quá ngắn (dưới 0.4 giây), giữ N lâu hơn")
             return ""
-        if peak < 0.002:
-            print("[mic] gần như im lặng: sai micro hoặc micro bị tắt. Chạy list_mics.bat để chọn micro đúng")
+        if peak < 0.02:
+            print("[mic] TIẾNG QUÁ NHỎ (giọng nói bình thường phải đạt 0.1 trở lên). Sai micro hoặc micro Windows để âm lượng thấp. "
+                  "Chạy list_mics.bat, đặt \"mic_device\" trong config.json, và chỉnh Input volume trong Cài đặt âm thanh của Windows")
             return ""
         _save_wav(audio)
         audio = audio / peak * 0.9
-        segments, _ = self.model.transcribe(audio, language="vi", beam_size=5, temperature=0.0,
+        segments, _ = self.model.transcribe(audio, language="vi", beam_size=1, temperature=0.0,
                                             vad_filter=True,
                                             vad_parameters=dict(threshold=0.3, min_silence_duration_ms=400),
                                             no_speech_threshold=0.5, log_prob_threshold=-1.0,

@@ -37,8 +37,16 @@ class Voice:
                 pygame.mixer.music.unload()
             except (pygame.error, AttributeError):
                 pass
-            comm = edge_tts.Communicate(text, voice, rate=npc.get("rate", "+0%"), pitch=npc.get("pitch", "+0Hz"))
-            asyncio.run(comm.save(path))
+            for attempt in (1, 2, 3):
+                try:
+                    comm = edge_tts.Communicate(text, voice, rate=npc.get("rate", "+0%"), pitch=npc.get("pitch", "+0Hz"))
+                    asyncio.run(comm.save(path))
+                    break
+                except Exception as e:
+                    print(f"[tts] lần {attempt} lỗi: {e}")
+                    if attempt == 3:
+                        raise
+                    time.sleep(0.4)
             try:
                 length_ms = int(pygame.mixer.Sound(path).get_length() * 1000)
             except pygame.error:

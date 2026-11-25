@@ -67,9 +67,34 @@ def build_context(npc: dict, ctx: dict) -> str:
     return "\n".join(lines)
 
 
+def _get_json(url: str, timeout: float = 15.0) -> dict:
+    with urllib.request.urlopen(url, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
 class Brain:
     def __init__(self, cfg: dict):
         self.cfg = cfg
+        self.model = cfg.get("gemini_model", "gemini-2.5-flash")
+        self._resolved = False
+
+    def _resolve_model(self):
+        """Tên model trong config có thể đã bị Google đổi/ngừng (lỗi 404): tự chọn model flash mới nhất còn dùng được."""
+        self._resolved = True
+        try:
+            data = _get_json("https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=" + self.cfg["gemini_api_key"])
+        except Exception as e:
+            print(f"[llm] không liệt kê được model Gemini: {e}")
+            return
+        names = [m["name"].split("/", 1)[1] for m in data.get("models", [])
+                 if "generateContent" in m.get("supportedGenerationMethods", [])]
+        print("[llm] model Gemini dùng được:", ", ".join(names[:40]))
+        flash = [n for n in names if "flash" in n and "lite" not in n and "image" not in n
+                 and "tts" not in n and "live" not in n and "preview" not in n and "exp" not in n]
+        flash = sorted(flash, reverse=True) or [n for n in names if "flash" in n] or names
+        if flash:
+            self.model = flash[0]
+            print(f"[llm] dùng model: {self.model}")
 
     def chat(self, npc: dict, ctx: dict, history: list, player_text: str) -> dict:
         system = SYSTEM + "\n\n" + build_context(npc, ctx)
@@ -81,6 +106,15 @@ class Brain:
                     return self._gemini(system, history, player_text)
                 if name == "ollama" and self.cfg.get("ollama_enabled", True):
                     return self._ollama(system, history, player_text)
+            except urllib.error.HTTPError as e:
+                last_err = e
+                print(f"[llm] {name} lỗi: {e}")
+                if name == "gemini" and e.code == 404 and not self._resolved:
+                    self._resolve_model()
+                    try:
+                        return self._gemini(system, history, player_text)
+                    except Exception as e2:
+                        print(f"[llm] gemini vẫn lỗi: {e2}")
             except (urllib.error.URLError, TimeoutError, KeyError, IndexError, ValueError) as e:
                 last_err = e
                 print(f"[llm] {name} lỗi: {e}")
@@ -95,8 +129,7 @@ class Brain:
         if budget is not None:
             gen["thinkingConfig"] = {"thinkingBudget": budget}
         body = {"systemInstruction": {"parts": [{"text": system}]}, "contents": contents, "generationConfig": gen}
-        model = self.cfg.get("gemini_model", "gemini-2.5-flash")
-        url = (f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+        url = (f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
                f"?key={self.cfg['gemini_api_key']}")
         data = _post_json(url, body)
         text = "".join(p.get("text", "") for p in data["candidates"][0]["content"]["parts"])
