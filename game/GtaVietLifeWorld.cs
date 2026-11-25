@@ -42,6 +42,8 @@ public class GtaVietLifeWorld : Script
     Keys sitKey = Keys.E;
     int sitIdx = -1;
     int safeUntil;
+    Prop sitBench;
+    readonly List<Prop> benchProps = new List<Prop>();
     readonly Queue<Action> pendingActs = new Queue<Action>();   // viec can goi AddProp/CreatePed phai chay trong vong lap chinh, khong phai trong su kien phim
 
     // ------------------------------------------------------------ trạng thái đời sống
@@ -515,6 +517,8 @@ public class GtaVietLifeWorld : Script
         foreach (Prop p in bizProps) if (p != null && p.Exists()) p.Delete();
         bizProps.Clear();
         sitIdx = -1;
+        sitBench = null;
+        benchProps.Clear();
         chairProps.Clear();
         chairBusy.Clear();
         chairFace.Clear();
@@ -580,7 +584,8 @@ public class GtaVietLifeWorld : Script
         {
             AddProp("prop_patio_heater_01", bizPos + fwd * 3.0f + right * 0.0f, bizHeading);
             AddProp("prop_bin_01a", bizPos + right * 2.8f - fwd * 0.4f, bizHeading);
-            AddProp("prop_bench_01a", bizPos - right * 3.2f + fwd * 1.5f, bizHeading + 90f);
+            Prop bn = AddProp("prop_bench_01a", bizPos - right * 3.2f + fwd * 1.5f, bizHeading + 90f);
+            if (bn != null) { Function.Call(Hash.SET_ENTITY_COLLISION, bn, false, false); benchProps.Add(bn); }
         }
         // cap 4: ghe quay bar, hang cay xanh, them den suoi
         if (bizLevel >= 4)
@@ -609,12 +614,12 @@ public class GtaVietLifeWorld : Script
 
     // [right, fwd] so voi quay, cach xa quay >= 3 m de khong chong len nhau hay len cho nhan vien
     static readonly float[,] DecoSlots = {
-        { -4.4f, -1.2f }, { 4.4f, -1.2f }, { -4.4f, -3.0f }, { 4.4f, -3.0f }, { 0f, -4.4f },
-        { -2.3f, -4.2f }, { 2.3f, -4.2f }, { -5.8f, -2.2f }, { 5.8f, -2.2f }, { -5.8f, 0.2f } };
+        { -4.4f, -1.2f }, { 4.4f, -1.2f }, { -6.2f, -1.2f }, { 6.2f, -1.2f }, { -4.4f, -3.2f },
+        { 4.4f, -3.2f }, { -2.4f, -4.4f }, { 2.4f, -4.4f }, { -6.2f, -3.2f }, { 6.2f, -3.2f } };
     static readonly string[] DefaultDeco = {
-        "prop_watercooler",
-        "prop_plant_int_03a,prop_plant_int_03a,prop_bush_med_03",
-        "prop_plant_int_02a,prop_plant_int_02a,prop_bush_med_03,prop_bush_med_03,prop_patio_lounger1,prop_patio_lounger1" };
+        "prop_vend_coffe_01,prop_watercooler",
+        "prop_vend_soda_01,prop_vend_soda_02,prop_plant_int_03a,prop_plant_int_03a",
+        "prop_streetlight_01,prop_streetlight_01,prop_patio_lounger1,prop_patio_lounger1" };
 
     static readonly string[] TierName = { "Ca phe via he", "Quan nuoc mai che", "Ca phe pho", "Ca phe sang trong kieu Au" };
     static readonly string[] TierPerk = {
@@ -1389,21 +1394,42 @@ public class GtaVietLifeWorld : Script
         if (menuOpen) return;
         if (sitIdx >= 0)
         {
-            bool ok = sitIdx < chairProps.Count && chairProps[sitIdx] != null && chairProps[sitIdx].Exists();
+            bool ok = sitIdx == 9999 ? (sitBench != null && sitBench.Exists()) : (sitIdx < chairProps.Count && chairProps[sitIdx] != null && chairProps[sitIdx].Exists());
             float mx = Function.Call<float>(Hash.GET_CONTROL_NORMAL, 0, 30);
             float my = Function.Call<float>(Hash.GET_CONTROL_NORMAL, 0, 31);
             if (!ok || me.IsInVehicle() || Math.Abs(mx) > 0.6f || Math.Abs(my) > 0.6f) StandUp(me);
             else GTA.UI.Screen.ShowSubtitle("~y~" + sitKey + "~s~: dung day", 100);
             return;
         }
-        if (hasBiz && !me.IsInVehicle() && NearestFreeChair(me) >= 0)
+        if (hasBiz && !me.IsInVehicle() && (NearestFreeChair(me) >= 0 || NearestBench(me) != null))
             GTA.UI.Screen.ShowSubtitle("~y~" + sitKey + "~s~: ngoi vao ghe", 100);
+    }
+
+    Prop NearestBench(Ped me)
+    {
+        Prop best = null; float bd = 2.2f;
+        foreach (Prop b in benchProps)
+        {
+            if (b == null || !b.Exists()) continue;
+            float d = me.Position.DistanceTo2D(b.Position);
+            if (d < bd) { bd = d; best = b; }
+        }
+        return best;
     }
 
     void SitDown(Ped me)
     {
         int i = NearestFreeChair(me);
-        if (i < 0) return;
+        if (i < 0)
+        {
+            Prop b = NearestBench(me);
+            if (b == null) return;
+            sitBench = b;
+            sitIdx = 9999;
+            me.Task.ClearAllImmediately();
+            Function.Call(Hash.TASK_START_SCENARIO_AT_POSITION, me, "PROP_HUMAN_SEAT_BENCH", b.Position.X, b.Position.Y, b.Position.Z + 0.5f, b.Heading, -1, true, true);
+            return;
+        }
         Prop ch = chairProps[i];
         sitIdx = i;
         chairBusy[i] = true;
@@ -1424,6 +1450,7 @@ public class GtaVietLifeWorld : Script
     {
         if (sitIdx >= 0 && sitIdx < chairBusy.Count) chairBusy[sitIdx] = false;
         sitIdx = -1;
+        sitBench = null;
         me.Task.ClearAll();
         SnapNearGround(me);
         Function.Call(Hash.SET_ENTITY_INVINCIBLE, me, true);   // khong chet vi roi khi dung day
