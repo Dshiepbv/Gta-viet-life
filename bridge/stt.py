@@ -69,12 +69,19 @@ class STT:
         self.prompt = cfg.get("whisper_prompt", "Xin chào anh, cho em hỏi đường với. Dạ vâng, cảm ơn chị.")
 
     def transcribe(self, audio: np.ndarray) -> str:
-        if audio.size < RATE * 0.4:  # bấm quá nhanh, dưới 0.4 giây
+        dur = audio.size / RATE
+        peak = float(np.max(np.abs(audio))) if audio.size else 0.0
+        print(f"[mic] thu {dur:.1f}s, âm lượng đỉnh {peak:.4f}")
+        if audio.size < RATE * 0.4:
+            print("[mic] bấm quá ngắn (dưới 0.4 giây), giữ N lâu hơn")
             return ""
-        peak = float(np.max(np.abs(audio)))
-        if peak < 0.01:  # im lặng
+        if peak < 0.002:
+            print("[mic] gần như im lặng: sai micro hoặc micro bị tắt. Chạy list_mics.bat để chọn micro đúng")
             return ""
         audio = audio / peak * 0.9
-        segments, _ = self.model.transcribe(audio, language="vi", beam_size=1, vad_filter=True,
+        segments, _ = self.model.transcribe(audio, language="vi", beam_size=1, vad_filter=False,
                                             initial_prompt=self.prompt, condition_on_previous_text=False)
-        return " ".join(s.text.strip() for s in segments).strip()
+        text = " ".join(s.text.strip() for s in segments).strip()
+        if not text:
+            print("[mic] nghe được tiếng nhưng không nhận ra chữ nào")
+        return text
