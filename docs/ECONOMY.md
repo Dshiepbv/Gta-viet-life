@@ -61,6 +61,7 @@ Hệ số loại hình (PriceMul) và bước cấp quán (+27%/cấp) giữ ngu
 | Thuế khoán GT | $3/ngày | $8 |
 | Quản lý toà nhà | $20/ngày | $60 |
 | Tiền thuê BĐS/đơn vị/ngày (Base) | ×0,3 (căn hộ ~20, văn phòng ~45, phòng motel ~9, kho ~40) | 30–150 |
+| Hệ số sinh lời cho thuê dài hạn (`LongTermYield`) | ×3 nhân riêng vào kết quả `UnitRent()` (không áp vào `EstatePrice`, không áp cho thuê ngắn hạn) — để đầy khách dài hạn đạt ~25–35% lãi một quán MT max cấp cùng vốn | — |
 
 ### Sinh hoạt
 | Khoản | Mới | Cũ |
