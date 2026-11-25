@@ -31,18 +31,18 @@ public class GtaVietLifeStreet : Script
         public Vector3 Pos; public float Heading; public int Kind;
         public List<Prop> Props = new List<Prop>();
         public List<Ped> Peds = new List<Ped>();
-        public List<Vehicle> Bikes = new List<Vehicle>(); public Blip Mark;
+        public List<Vehicle> Bikes = new List<Vehicle>(); public Blip Mark; public Ped Vendor;
     }
     readonly List<Hub> hubs = new List<Hub>();
     readonly Random rnd = new Random();
 
     // loại cụm: tên, mô hình quầy, mô hình bàn, mô hình ghế, có khách ngồi, giờ hợp (từ, đến)
-    class Kind { public string Name, Stall, Table, Seat; public int H1, H2, Seats; }
+    class Kind { public string Name, Stall, Table, Seat, Menu; public int H1, H2, Seats; }   // Menu: "Ten mon:gia:no:khat;..."
     static readonly Kind[] Kinds = {
-        new Kind { Name = "banh mi / pho", Stall = "prop_hotdogstand_01", Table = "prop_table_03", Seat = "prop_bar_stool_01", H1 = 5,  H2 = 10, Seats = 3 },
-        new Kind { Name = "com tam",       Stall = "prop_hotdogstand_01", Table = "prop_table_03", Seat = "prop_bar_stool_01", H1 = 10, H2 = 15, Seats = 4 },
-        new Kind { Name = "ca phe coc",    Stall = "prop_hotdogstand_01", Table = "prop_table_03", Seat = "prop_bar_stool_01", H1 = 14, H2 = 20, Seats = 4 },
-        new Kind { Name = "tra da / nhau", Stall = "prop_hotdogstand_01", Table = "prop_table_03", Seat = "prop_bar_stool_01", H1 = 17, H2 = 24, Seats = 5 },
+        new Kind { Name = "banh mi / pho", Stall = "prop_hotdogstand_01", Table = "prop_table_03", Seat = "prop_bar_stool_01", Menu = "Banh mi:6:30:0;Pho bo:15:45:0;Ca phe sua:5:0:25", H1 = 5,  H2 = 10, Seats = 3 },
+        new Kind { Name = "com tam",       Stall = "prop_hotdogstand_01", Table = "prop_table_03", Seat = "prop_bar_stool_01", Menu = "Com tam:12:45:0;Ga ran:14:35:0;Tra da:2:0:20", H1 = 10, H2 = 15, Seats = 4 },
+        new Kind { Name = "ca phe coc",    Stall = "prop_hotdogstand_01", Table = "prop_table_03", Seat = "prop_bar_stool_01", Menu = "Ca phe sua:5:0:25;Tra da:2:0:20;Nuoc ep:6:0:30;Banh ngot:5:20:0", H1 = 14, H2 = 20, Seats = 4 },
+        new Kind { Name = "tra da / nhau", Stall = "prop_hotdogstand_01", Table = "prop_table_03", Seat = "prop_bar_stool_01", Menu = "Tra da:2:0:20;Bia hoi:4:0:15;Ga ran:14:35:0;Mi goi:2:20:0", H1 = 17, H2 = 24, Seats = 5 },
     };
     readonly string[] vendorModels = { "a_f_m_ktown_01", "a_m_m_ktown_01", "a_f_y_ktown_01" };
     readonly string[] guestModels = { "a_m_y_ktown_01", "a_f_y_ktown_01", "a_m_m_ktown_01", "a_f_m_ktown_01", "a_m_y_ktown_02", "a_f_y_ktown_02" };
@@ -103,7 +103,7 @@ public class GtaVietLifeStreet : Script
             for (int i = hubs.Count - 1; i >= 0; i--)
             {
                 Hub h = hubs[i];
-                if (h.Pos.DistanceTo(pp) > despawnDist && !InView(h.Pos)) { Clear(h); hubs.RemoveAt(i); nGone++; }
+                if (h.Pos.DistanceTo(pp) > despawnDist && !InView(h.Pos)) { Clear(h); hubs.RemoveAt(i); nGone++; Publish(); }
             }
             // sinh cụm mới (1 cụm/lần, khi thiếu)
             if (hubs.Count < maxHubs) TryMakeHub(me, hour);
@@ -115,6 +115,14 @@ public class GtaVietLifeStreet : Script
             }
         }
         catch (Exception ex) { lastErr = ex.Message; }
+    }
+
+    // cho script hội thoại biết ai là chủ quán và thực đơn (handle -> "Ten cum|menu")
+    void Publish()
+    {
+        var d = new Dictionary<int, string>();
+        foreach (Hub h in hubs) if (h.Vendor != null && h.Vendor.Exists()) d[h.Vendor.Handle] = Kinds[h.Kind].Name + "|" + Kinds[h.Kind].Menu;
+        AppDomain.CurrentDomain.SetData("GVL.Vendors", d);
     }
 
     void Clear(Hub h)
@@ -177,7 +185,7 @@ public class GtaVietLifeStreet : Script
         {
             vendor.IsPersistent = false; vendor.BlockPermanentEvents = true;
             vendor.Task.StartScenarioAtPosition("WORLD_HUMAN_STAND_IMPATIENT", vendor.Position, heading, 0, false, true);
-            hub.Peds.Add(vendor);
+            hub.Peds.Add(vendor); hub.Vendor = vendor;
         }
 
         // bàn ghế + khách, số khách tuỳ giờ (giờ ăn đông hơn)
@@ -224,6 +232,6 @@ public class GtaVietLifeStreet : Script
 
         try { hub.Mark = World.CreateBlip(pos); hub.Mark.Sprite = BlipSprite.Store; hub.Mark.Scale = 0.6f; hub.Mark.Color = BlipColor.Yellow; hub.Mark.Name = "Hang quan: " + kind.Name; hub.Mark.IsShortRange = true; } catch { }
         Log("lap cum '" + kind.Name + "' tai " + (int)pos.X + "," + (int)pos.Y + " | quay " + hub.Props.Count + " vat | " + hub.Peds.Count + " nguoi | " + hub.Bikes.Count + " xe may");
-        hubs.Add(hub); nMade++;
+        hubs.Add(hub); nMade++; Publish();
     }
 }
