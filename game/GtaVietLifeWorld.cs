@@ -84,6 +84,7 @@ public class GtaVietLifeWorld : Script
     readonly List<Prop> tableCups = new List<Prop>();
     float seatZ = 0.55f;
     float staffZ = 0f;
+    float standYaw = -90f;   // xoay quay de mat quay (bang menu, dung cu) huong ve phia khach; neu nguoc thi doi thanh 90
     class Cust
     {
         public Ped P;
@@ -135,6 +136,7 @@ public class GtaVietLifeWorld : Script
         menuKey = Settings.GetValue("Keys", "Menu", menuKey);
         seatZ = Settings.GetValue("Business", "SeatZ", seatZ);
         staffZ = Settings.GetValue("Business", "StaffZ", staffZ);
+        standYaw = Settings.GetValue("Business", "StandYaw", standYaw);
 
         Load();
 
@@ -468,7 +470,7 @@ public class GtaVietLifeWorld : Script
         float h = bizHeading * (float)Math.PI / 180f;
         Vector3 right = new Vector3((float)Math.Cos(h), (float)Math.Sin(h), 0f);
         Vector3 fwd = new Vector3(-(float)Math.Sin(h), (float)Math.Cos(h), 0f);
-        Prop stand = AddProp("prop_hotdogstand_01", bizPos, bizHeading);
+        Prop stand = AddProp("prop_hotdogstand_01", bizPos, bizHeading + standYaw);
         if (stand != null) Function.Call(Hash.SET_ENTITY_COLLISION, stand, false, false);   // quay chi de trang tri, nhan vien khong bi day len mat quay
         string[] parasols = { "prop_parasol_01", "prop_parasol_01", "prop_parasol_03", "prop_parasol_04" };
         int tables = Math.Min(4, bizLevel);   // cap 1: 1 ban, cap 2: 2 ban, cap 3: 3 ban, cap 4: 4 ban
@@ -533,7 +535,7 @@ public class GtaVietLifeWorld : Script
             Vector3 fwd = new Vector3(-(float)Math.Sin(h), (float)Math.Cos(h), 0f);
             int k = staffPeds.Count;
             // nhan vien dung sau quay (k=0) hoac ben canh quay, quay mat ve phia khach
-            Vector3 pos0 = bizPos - fwd * 1.6f + right * (k == 0 ? 0f : (k % 2 == 1 ? 1f : -1f) * 1.2f * ((k + 1) / 2));
+            Vector3 pos0 = bizPos - fwd * 0.3f + right * (k == 0 ? -0.5f : (k % 2 == 1 ? 1f : -1f) * 0.9f * ((k + 1) / 2) - 0.5f);   // dung phia trong quay
             // bizPos.Z = do cao tam nguoi choi luc dat quan (cho phang) => dung luon cho nhan vien, khong lay Z cua quay (tam quay cao hon dat)
             float gz = World.GetGroundHeight(new Vector3(pos0.X, pos0.Y, bizPos.Z + 0.5f));
             Vector3 pos = new Vector3(pos0.X, pos0.Y, (gz > -100f ? gz + 1.0f : bizPos.Z) + staffZ);
