@@ -9,7 +9,9 @@ import json
 import os
 import socket
 import sys
+import threading
 import time
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -41,6 +43,45 @@ def pin():
         except Exception:
             pass
     return p
+
+
+def cfg(k):
+    try:
+        with open(os.path.join(HERE, "config.json"), encoding="utf-8") as f:
+            return str(json.load(f).get(k, "") or "")
+    except Exception:
+        return ""
+
+
+def cloud_sync():
+    """Day snapshot len Google Apps Script va keo lenh tu dien thoai ve GtaVietLifeCmd.txt."""
+    url, key = cfg("cloud_url"), cfg("cloud_key")
+    if not url or not key:
+        return
+    print("Dong bo dam may: BAT (moi 30 giay)")
+    last = None
+    while True:
+        try:
+            m = os.path.getmtime(DASH) if os.path.exists(DASH) else None
+            if m is not None and m != last:
+                with open(DASH, encoding="utf-8") as f:
+                    snap = json.load(f)
+                body = json.dumps({"a": "push", "key": key, "snap": snap}).encode()
+                req = urllib.request.Request(url, body, {"Content-Type": "text/plain"})
+                r = json.loads(urllib.request.urlopen(req, timeout=20).read().decode())
+                if r.get("ok"):
+                    last = m
+                else:
+                    print("Day len that bai:", r.get("msg"))
+            r = json.loads(urllib.request.urlopen(f"{url}?a=pull&key={key}", timeout=20).read().decode())
+            cmds = r.get("cmds", []) if r.get("ok") else []
+            if cmds:
+                with open(CMD, "a", encoding="utf-8") as f:
+                    f.write("".join(c.strip() + "\n" for c in cmds))
+                print(f"Nhan {len(cmds)} lenh tu dien thoai")
+        except Exception as e:
+            print("Dong bo dam may loi:", e)
+        time.sleep(30)
 
 
 def pending():
@@ -120,7 +161,14 @@ def lan_ip():
 
 if __name__ == "__main__":
     print(f"Doc du lieu tu: {DASH}")
-    print(f"Mo tren dien thoai (cung Wi-Fi): http://{lan_ip()}:{PORT}")
+    print(f"Mo tren dien thoai (cung Wi-Fi o nha): http://{lan_ip()}:{PORT}")
+    try:
+        ts = [a[4][0] for a in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET) if a[4][0].startswith("100.")]
+        for ip in ts:
+            print(f"Mo tu BAT KY DAU (qua Tailscale): http://{ip}:{PORT}")
+    except Exception:
+        pass
+    threading.Thread(target=cloud_sync, daemon=True).start()
     try:
         ThreadingHTTPServer(("0.0.0.0", PORT), H).serve_forever()
     except KeyboardInterrupt:
