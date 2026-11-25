@@ -44,7 +44,9 @@ public class GtaVietLife : Script
 
     public GtaVietLife()
     {
-        server = Settings.GetValue("Bridge", "Url", server);
+        // Chỉ đọc cổng từ ini (giá trị có dấu ":" trong ini bị cắt mất)
+        int port = Settings.GetValue("Bridge", "Port", 5577);
+        server = "http://127.0.0.1:" + port;
         talkKey = Settings.GetValue("Keys", "Talk", talkKey);
         markKey = Settings.GetValue("Keys", "Remember", markKey);
         talkRadius = Settings.GetValue("Talk", "Radius", talkRadius);
