@@ -578,7 +578,7 @@ public class GtaVietLifeEconomy : Script
         v.PlaceOnGround();
         impounded.RemoveAt(i);
         Notify("~g~Da lay xe ra~s~ (-$" + fee + ").");
-        Emit("econ.release", "fee=" + fee);
+        Emit("econ.release", "fee=" + fee + ";plate=" + Clean(im.Plate.Trim()) + ";hash=" + im.Hash);
         Save();
     }
 
