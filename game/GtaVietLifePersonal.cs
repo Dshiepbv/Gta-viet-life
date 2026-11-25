@@ -25,6 +25,13 @@ using GTA.Native;
 
 public class GtaVietLifePersonal : Script
 {
+    // tien: nhan vat tuy bien khong co tien trong game => dung vi cua Core (GVL.CashGet/CashSet), xem docs/CORE.md
+    static int PlayerCash
+    {
+        get { Func<int> g = AppDomain.CurrentDomain.GetData("GVL.CashGet") as Func<int>; return g != null ? g() : Game.Player.Money; }
+        set { Action<int> s = AppDomain.CurrentDomain.GetData("GVL.CashSet") as Action<int>; if (s != null) s(value); else Game.Player.Money = value; }
+    }
+
     // ------------------------------------------------------------ cấu hình
     const string SaveFile = "GtaVietLifePersonal.sav";
     const int BagSmall = 10, BagBig = 25, BackpackPrice = 60;
@@ -181,6 +188,7 @@ public class GtaVietLifePersonal : Script
         if (pendingDelete != null && now > pendingDeleteAt) { if (pendingDelete.Exists() && !me.IsInVehicle()) pendingDelete.Delete(); pendingDelete = null; }
         PollBus();
         try { UpdateLegal(me, now); } catch (Exception ex) { Log("phap ly loi: " + ex.Message); }
+        try { CheckWallet(now); } catch (Exception ex) { Log("vi tien loi: " + ex.Message); }
         try { KeepLook(me, now); } catch (Exception ex) { Log("giu nhan vat loi: " + ex.Message); }
         try { UpdateBody(me, now); } catch (Exception ex) { Log("the chat loi: " + ex.Message); }
         try { UpdatePet(me, now); } catch (Exception ex) { Log("thu cung loi: " + ex.Message); }
@@ -297,7 +305,7 @@ public class GtaVietLifePersonal : Script
     // ------------------------------------------------------------ sổ thu chi (theo doi tien cua nhan vat dang choi)
     void TrackMoney(Ped me, int now)
     {
-        int money = Game.Player.Money;
+        int money = PlayerCash;
         int model = me.Model.Hash;
         if (lastMoney == int.MinValue || model != lastModel) { lastMoney = money; lastModel = model; return; }
         int d = money - lastMoney;
@@ -524,7 +532,7 @@ public class GtaVietLifePersonal : Script
         if (jailUntil > 0) { Notify("Dang o tu."); return; }
         if (calledCar != null && calledCar.Exists() && calledIdx == idx && calledCar.IsAlive && calledCar.Position.DistanceTo(me.Position) < 150f)
         { Notify("Xe dang o gan day (cham xanh)."); return; }
-        if (Game.Player.Money < CallCarFee && !(Bus("GVL.Bank") is int && (int)Bus("GVL.Bank") + Game.Player.Money >= CallCarFee)) { Notify("Khong du $" + CallCarFee + " phi giao xe."); return; }
+        if (PlayerCash < CallCarFee && !(Bus("GVL.Bank") is int && (int)Bus("GVL.Bank") + PlayerCash >= CallCarFee)) { Notify("Khong du $" + CallCarFee + " phi giao xe."); return; }
         Model m = new Model(r.Hash);
         if (!m.IsInCdImage || !m.IsVehicle) { Notify("Model xe khong con trong game."); return; }
         if (!m.Request(3000)) { Notify("Chua nap duoc xe, thu lai."); return; }
@@ -639,8 +647,8 @@ public class GtaVietLifePersonal : Script
         if (amount <= 0) return true;
         Func<int, string, string, bool> f = Bus("GVL.Pay") as Func<int, string, string, bool>;
         if (f != null) { try { return f(amount, cat, note); } catch { } }
-        if (Game.Player.Money < amount) return false;
-        Game.Player.Money = Game.Player.Money - amount;
+        if (PlayerCash < amount) return false;
+        PlayerCash = PlayerCash - amount;
         return true;
     }
 
@@ -1171,6 +1179,7 @@ public class GtaVietLifePersonal : Script
             Model m = new Model(FreemodeName);
             if (!m.IsInCdImage || !m.Request(5000)) { Notify("~r~Khong nap duoc mau nhan vat tuy bien~s~ (ban game/SHVDN nay khong ho tro?)."); return; }
             if (!customOn) prevModelHash = me.Model.Hash;
+            EnterWallet();
             Game.Player.ChangeModel(m);
             m.MarkAsNoLongerNeeded();
             me = Game.Player.Character;
@@ -1190,11 +1199,42 @@ public class GtaVietLifePersonal : Script
         int h = prevModelHash != 0 ? prevModelHash : Game.GenerateHash("player_zero");
         Model m = new Model(h);
         if (!m.IsInCdImage || !m.Request(5000)) { Notify("Khong nap duoc nhan vat goc."); return; }
+        int back = LeaveWallet();
         Game.Player.ChangeModel(m);
         m.MarkAsNoLongerNeeded();
+        if (back >= 0) Game.Player.Money = back;   // RAW_MONEY: nhan vat goc co tien that trong game
         customOn = false;
         Notify("Da ve nhan vat goc cua game.");
         Save();
+    }
+
+    // Nhan vat tuy bien (freemode) khong co tien trong game: Core giu vi rieng, tien mang theo tu nhan vat truoc
+    static bool CustomMoney() { object o = Bus("GVL.CustomMoney"); return o is bool && (bool)o; }
+
+    static void EnterWallet()
+    {
+        if (CustomMoney()) return;
+        Action<int> f = Bus("GVL.WalletEnter") as Action<int>;
+        if (f != null) f(Game.Player.Money);   // RAW_MONEY: dang la nhan vat goc, doc thang tu game
+    }
+
+    static int LeaveWallet()
+    {
+        Func<int> f = Bus("GVL.WalletLeave") as Func<int>;
+        return f != null ? f() : -1;
+    }
+
+    bool walletChecked;
+    // tai khoan cu (da o nhan vat tuy bien truoc khi co vi) hoac Core chua nap vi: cap von khoi dong mot lan
+    void CheckWallet(int now)
+    {
+        if (walletChecked || !customOn || now < 6000 || Bus("GVL.WalletEnter") == null) return;
+        walletChecked = true;
+        if (CustomMoney()) return;
+        Action<int> f = Bus("GVL.WalletEnter") as Action<int>;
+        f(3000);
+        Notify("~y~Quy ho tro khoi dong $3000~s~: nhan vat tuy bien da co vi rieng (truoc do tien bi mat do loi game).");
+        Emit("ledger.income", "amount=3000;cat=gift;note=quy ho tro khoi dong");
     }
 
     // chuyen nhan vat (Michael/Franklin/Trevor) hoac nhiem vu co the doi model: dua ve nhan vat tuy bien
@@ -1537,7 +1577,7 @@ public class GtaVietLifePersonal : Script
     void ShowMain()
     {
         Begin("CA NHAN  (" + menuKey + "/Backspace: dong)", null);
-        Info("Ten: " + (playerName.Length > 0 ? playerName : "(chua dat)") + "   Que: " + (hometown.Length > 0 ? hometown : "(chua chon)") + "   Tien: $" + Game.Player.Money);
+        Info("Ten: " + (playerName.Length > 0 ? playerName : "(chua dat)") + "   Que: " + (hometown.Length > 0 ? hometown : "(chua chon)") + "   Tien: $" + PlayerCash);
         Item("Ho so nhan vat...", delegate { ShowProfile(); });
         Item("Nhan vat cua Sep: mat, toc, rau...  (" + (customOn ? "tuy bien" : "goc cua game") + ")", delegate { ShowLook(); });
         Item("Ky nang...  (" + SkillSummary() + ")", delegate { ShowSkills(); });
