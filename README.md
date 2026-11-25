@@ -73,9 +73,19 @@ Phạt khi bị truy nã rồi thoát, nợ có lãi, uy tín tăng/giảm. Tr�
 - **Nhap hang tu nha phan phoi**: lo 1 / 5 / 10, chiet khau 0 / 7% / 12%, MT duoc them 5%.
 - **B2B**: menu Kinh doanh > "Ban si B2B": ky hop dong cung ung cho cua hang/quan khac, giao hang moi ngay tu kho mot quan, gia si thap hon gia le, thu tien sau 5-45 ngay, co rui ro vo no.
 
+- **Dich vu** (kho = vat tu, tinh theo luot; can mat bang thue; khong ban si B2B): Tiem rua xe, Sua xe - thay nhot (lai xe toi tiem cua minh duoc rua/sua mien phi, tru 1 luot vat tu), Tiem toc - goi dau, Giat ui. Mat bang that: tiem rua xe Strawberry / Little Seoul, LS Customs La Mesa, tiem toc Davis / Rockford Hills / Hawick.
+
+## Bat dong san (menu Kinh doanh > Bat dong san)
+
+- 19 toa nha that tren ban do (toa do gan dung): can ho (Eclipse Towers, Tinsel Towers, Del Perro Heights, Richards Majestic, Weazel Plaza, 4 Integrity Way, 3 Alta Street), nha pho (Grove Street, Mirror Park, Kenh Vespucci, Paleto Bay), van phong (Maze Bank Tower, Arcadius, Lombank West, Maze Bank West), nha nghi (Pink Cage Motel, Motor Motel Harmony), kho (cang Elysian, Cypress Flats).
+- Gia mua ~180 ngay tien thue day phong, theo khu. Den tan noi (trong 150 m) mua gia goc; mua tu xa qua moi gioi +3%.
+- **Dai han**: khach vao dan, o theo hop dong, moi ngay mot so khach het hop dong chuyen di, it khi bung tien. **Ngan han**: gia dem x1.7, so phong co khach ngau nhien moi dem, ton 18% don phong.
+- 3 muc gia (thap: lap day nhanh; cao: lau hon), quan ly toa nha $60/ngay (de cho thue hon, it bung tien), sua sang cap 2-3 (+15% gia thue moi cap), bao tri + thue nha dat ~0,11% gia tri/ngay, gia tri bien dong nhe moi ngay, ban lai nhan 92%.
+- Offline: dai han thu du, ngan han bang 60%.
+
 ## Chay 24/24 (offline)
 
-Moi 2 phut mod ghi dau thoi gian vao file luu. Khi mo game lai, mod tinh thoi gian da tat (1 ngay game = 48 phut thuc, toi da 14 ngay): quan co nhan vien van ban hang (cham hon luc choi: 60% so khach), van tra luong, thue, tien thue mat bang, giao hang B2B va thu cong no. Ket qua hien thanh mot thong bao tong ket, chi tiet nam trong GtaVietLifeWorld.log (dong "[offline]"). Neu thieu tien tra thue mat bang 3 ngay se mat mat bang nhu luc dang choi.
+Moi 2 phut mod ghi dau thoi gian vao file luu. Khi mo game lai, mod tinh thoi gian da tat (1 ngay game = 48 phut thuc, toi da 14 ngay): quan co nhan vien van ban hang (cham hon luc choi: 60% so khach), van tra luong, thue, tien thue mat bang, giao hang B2B, thu cong no, thu tien thue bat dong san; neu dang ky giao hang thi moi ngay chay 2-5 don (tru tien xang). Ket qua hien thanh mot thong bao tong ket, chi tiet nam trong GtaVietLifeWorld.log (dong "[offline]"). Neu thieu tien tra thue mat bang 3 ngay se mat mat bang nhu luc dang choi.
 
 ## Toa nha that
 
