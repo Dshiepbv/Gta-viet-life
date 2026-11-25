@@ -285,6 +285,7 @@ public class GtaVietLifeWorld : Script
 
         if (now > nextStatePost) { nextStatePost = now + 15000; PostState(); }
         if (now > nextSave) { nextSave = now + 30000; Save(); }
+        if (now > nextAutoBuy) { nextAutoBuy = now + 20000; AutoRestock(); }
 
         if (hasBiz && me.Position.DistanceTo(bizPos) < 60f)
             World.DrawMarker(MarkerType.VerticalCylinder, bizPos + new Vector3(0f, 0f, 0.1f), Vector3.Zero, Vector3.Zero, new Vector3(1.2f, 1.2f, 0.8f), Color.FromArgb(120, 60, 220, 90));
@@ -1464,6 +1465,28 @@ public class GtaVietLifeWorld : Script
         Item("Dat 10 lo  +" + (StockPack * 10) + " phan, chiet khau 12%  (-$" + PackCost(sh.Type, 10, true) + ")", delegate { RemoteBuy(idx, 10, false); ShowStockShop(idx); });
         Item("Dat diem den toi quan nay", delegate { Function.Call(Hash.SET_NEW_WAYPOINT, shops[idx].Pos.X, shops[idx].Pos.Y); Notify("Da dat diem den toi quan #" + (idx + 1) + "."); ShowStockShop(idx); });
         Item("Quay lai bang kho", delegate { ShowStockBoard(); });
+    }
+
+    // tu dong nhap hang khi kho sap het (bat/tat trong .ini: [Biz] AutoRestock); chi mua khi du tien, uu tien lo lon neu du gia
+    int nextAutoBuy;
+    void AutoRestock()
+    {
+        try
+        {
+            if (!Settings.GetValue("Biz", "AutoRestock", true) || shops.Count == 0) return;
+            int n = 0, total = 0;
+            for (int i = 0; i < shops.Count; i++)
+            {
+                if (shops[i].Stock > 20) continue;
+                int c5 = PackCost(shops[i].Type, 5, true), c1 = PackCost(shops[i].Type, 1, true);
+                int packs = Funds() > c5 * 3 ? 5 : 1;
+                int cost = packs == 5 ? c5 : c1;
+                if (Funds() < cost) continue;
+                if (RemoteBuy(i, packs, true)) { n++; total += cost; }
+            }
+            if (n > 0) Notify("~g~Tu dong nhap hang~s~ cho " + n + " quan (-$" + total + ").");
+        }
+        catch (Exception ex) { Log("tu nhap hang loi: " + ex.Message); }
     }
 
     // dat hang tu xa: tra tien + phi giao hang, hang cong thang vao kho quan do
