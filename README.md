@@ -65,3 +65,10 @@ Chép `game/GtaVietLifeWorld.cs` vào `scripts` cùng file nói chuyện. Phím 
 đặt NPC gần nhất làm "cư dân" có lịch (ban ngày ở chỗ làm, tối về nhà), thông tin, trả nợ.
 Phạt khi bị truy nã rồi thoát, nợ có lãi, uy tín tăng/giảm. Trạng thái được gửi cho cầu nối (`/state`, `/event`)
 để NPC biết hoàn cảnh và có tin đồn trong khu.
+
+## Mo hinh kinh doanh (GT / MT / B2C / B2B)
+
+- **Loai hinh** (chon khi mo quan): Quan nuoc via he, Tap hoa, Quan an (kenh GT, von nho); Cua hang tien loi, Sieu thi mini, Nha hang/ca phe chuoi (kenh MT, von lon, dong khach, nop VAT, can mat bang thue tu "Thue ki-ot").
+- **San pham**: danh muc F&B va FMCG co gia von / gia ban rieng; moi quan chi ban nhom mat hang cua loai hinh. Loi nhuan moi ngay = doanh thu - gia von - luong - thue - tien thue mat bang.
+- **Nhap hang tu nha phan phoi**: lo 1 / 5 / 10, chiet khau 0 / 7% / 12%, MT duoc them 5%.
+- **B2B**: menu Kinh doanh > "Ban si B2B": ky hop dong cung ung cho cua hang/quan khac, giao hang moi ngay tu kho mot quan, gia si thap hon gia le, thu tien sau 5-45 ngay, co rui ro vo no.
