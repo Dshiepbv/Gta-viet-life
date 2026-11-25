@@ -77,6 +77,8 @@ public class GtaVietLifeWorld : Script
     readonly List<StaffTask> staffTasks = new List<StaffTask>();
     readonly List<Prop> chairProps = new List<Prop>();
     readonly List<bool> chairBusy = new List<bool>();
+    readonly List<float> chairFace = new List<float>();
+    float seatZ = 0.55f;
     class Cust
     {
         public Ped P;
@@ -126,6 +128,7 @@ public class GtaVietLifeWorld : Script
         int port = Settings.GetValue("Bridge", "Port", 5577);
         server = "http://127.0.0.1:" + port;
         menuKey = Settings.GetValue("Keys", "Menu", menuKey);
+        seatZ = Settings.GetValue("Business", "SeatZ", seatZ);
 
         Load();
 
@@ -357,12 +360,19 @@ public class GtaVietLifeWorld : Script
         bizBlip.Name = "Quan cua Sep";
     }
 
+    static float FaceHeading(Vector3 from, Vector3 to)
+    {
+        Vector3 d = to - from;
+        return (float)(Math.Atan2(-d.X, d.Y) * 180.0 / Math.PI);
+    }
+
     void ClearBizProps()
     {
         foreach (Prop p in bizProps) if (p != null && p.Exists()) p.Delete();
         bizProps.Clear();
         chairProps.Clear();
         chairBusy.Clear();
+        chairFace.Clear();
     }
 
     void AddProp(string model, Vector3 pos, float heading)
@@ -397,9 +407,9 @@ public class GtaVietLifeWorld : Script
             Vector3 c = bizPos + fwd * (3f + l * 2.5f) + right * ((l % 2 == 0) ? -2.5f : 2.5f);
             AddProp("prop_table_03", c, bizHeading);
             AddProp("prop_chair_01a", c + right * 1.1f, bizHeading - 90f);
-            if (bizProps.Count > 0) { chairProps.Add(bizProps[bizProps.Count - 1]); chairBusy.Add(false); }
+            if (bizProps.Count > 0) { chairProps.Add(bizProps[bizProps.Count - 1]); chairBusy.Add(false); chairFace.Add(FaceHeading(c + right * 1.1f, c)); }
             AddProp("prop_chair_01a", c - right * 1.1f, bizHeading + 90f);
-            if (bizProps.Count > 0) { chairProps.Add(bizProps[bizProps.Count - 1]); chairBusy.Add(false); }
+            if (bizProps.Count > 0) { chairProps.Add(bizProps[bizProps.Count - 1]); chairBusy.Add(false); chairFace.Add(FaceHeading(c - right * 1.1f, c)); }
             AddProp("prop_parasol_01", c, bizHeading);
         }
     }
@@ -563,7 +573,7 @@ public class GtaVietLifeWorld : Script
                     c.Stage = 2;
                     c.T = now;
                     p.Task.ClearAll();
-                    Function.Call(Hash.TASK_START_SCENARIO_AT_POSITION, p, "PROP_HUMAN_SEAT_CHAIR", ch.Position.X, ch.Position.Y, ch.Position.Z, ch.Heading, 40000, true, true);
+                    Function.Call(Hash.TASK_START_SCENARIO_AT_POSITION, p, "PROP_HUMAN_SEAT_CHAIR", ch.Position.X, ch.Position.Y, ch.Position.Z + seatZ, c.Chair < chairFace.Count ? chairFace[c.Chair] : ch.Heading, 40000, true, true);
                     if (bizStaff > 1) { StaffTask t = new StaffTask(); t.Type = 1; t.Chair = c.Chair; t.Target = c; staffTasks.Add(t); }
                 }
                 else { Release(c); customers.RemoveAt(i); }
