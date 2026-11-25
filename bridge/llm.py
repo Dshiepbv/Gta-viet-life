@@ -125,15 +125,19 @@ def _parse(text: str) -> dict:
 
 def build_context(npc: dict, ctx: dict) -> str:
     aff = npc["affinity"]
-    mood = "rất quý" if aff >= 6 else "khá quý" if aff >= 2 else "ghét" if aff <= -6 else "khó chịu" if aff <= -2 else "bình thường"
+    mood = "rất quý" if aff >= 60 else "khá quý" if aff >= 20 else "ghét" if aff <= -40 else "khó chịu" if aff <= -15 else "bình thường"
     lines = [
         f"Bạn tên {npc['name']}, giới tính {npc['gender']}, nghề: {npc['job']}, tính cách: {npc['trait']}.",
-        f"Cảm nhận của bạn về người chơi: {mood} (điểm thân thiết {aff}/10).",
+        f"Cảm nhận của bạn về người chơi: {mood} (điểm thân thiết {aff}, thang -100 đến 100).",
         f"Đang ở: {ctx.get('street', '?')}, khu {ctx.get('zone', '?')}. Giờ: {ctx.get('hour', '?')}:{ctx.get('minute', '00')}. Thời tiết: {ctx.get('weather', '?')}.",
         f"Ngoại hình theo game: {ctx.get('model', '?')}.",
         f"Người chơi: {'đang ngồi trên xe' if ctx.get('in_vehicle') == '1' else 'đi bộ'}, mức truy nã {ctx.get('wanted', '0')}/5, có {ctx.get('money', '?')} đô.",
     ]
     lines.append(style_for(npc, ctx))
+    if ctx.get("phone") == "1":
+        lines.append("Hai người đang nói chuyện qua ĐIỆN THOẠI, không đứng cạnh nhau: nói như nghe máy, không có hành động đi theo/bỏ chạy/đánh nhau (action luôn là none).")
+    if ctx.get("sms") == "1":
+        lines.append("Đây là TIN NHẮN SMS: trả lời ngắn kiểu nhắn tin, có thể viết tắt nhẹ, không đánh dấu hành động (action luôn là none).")
     if ctx.get("following") == "1":
         lines.append("Bạn hiện đang đi theo người chơi.")
     if ctx.get("weapon") == "1":
