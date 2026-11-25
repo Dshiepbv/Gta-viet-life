@@ -536,7 +536,7 @@ public class GtaVietLifeWorld : Script
             if (!Function.Call<bool>(Hash.HAS_NAMED_PTFX_ASSET_LOADED, asset)) { buildMissing = true; return; }
             float z = baseP.Z + ReadF("Business", "FountainFxZ", 1.9f);
             float pitch = ReadF("Business", "FountainFxPitch", 90f);
-            float sc = ReadF("Business", "FountainFxScale", 0.5f);
+            float sc = ReadF("Business", "FountainFxScale", 0.15f);
             Function.Call(Hash.USE_PARTICLE_FX_ASSET, asset);
             int hd = Function.Call<int>(Hash.START_PARTICLE_FX_LOOPED_AT_COORD, fx, baseP.X, baseP.Y, z, pitch, 0f, 0f, sc, false, false, false, false);
             Log("nuoc phun " + asset + "/" + fx + " handle=" + hd);
