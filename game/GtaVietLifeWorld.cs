@@ -613,7 +613,7 @@ public class GtaVietLifeWorld : Script
         Vector3 right = new Vector3((float)Math.Cos(h), (float)Math.Sin(h), 0f);
         Vector3 fwd = new Vector3(-(float)Math.Sin(h), (float)Math.Cos(h), 0f);
         // quay doi theo cap: xe hot dog -> quay burger -> quay nuoc ep -> quay hot dog + may pha cafe & tu lanh bar (doi trong .ini: Stand1..4, StandYaw1..4)
-        string[] defStand = { standModel, "prop_burgerstand_01", "prop_juicestand", "prop_juicestand" };
+        string[] defStand = { standModel, standModel, standModel, standModel };   // prop_juicestand la qua cam khong lo, prop_burgerstand_01 chua kiem chung
         string stName = Settings.GetValue("Business", "Stand" + bizLevel, defStand[Math.Min(bizLevel, 4) - 1]);
         float stYaw = bizLevel == 1 ? standYaw : ReadF("Business", "StandYaw" + bizLevel, 0f);
         Prop stand = AddProp(stName, bizPos, bizHeading + stYaw);
@@ -641,7 +641,7 @@ public class GtaVietLifeWorld : Script
         {
             Vector3 c = bizPos + fwd * tpos[l - 1, 1] + right * tpos[l - 1, 0];
             tcs.Add(c);
-            Prop tb = AddProp(bizLevel >= 3 ? "prop_table_03b" : "prop_table_03", c, bizHeading);
+            Prop tb = AddProp(Settings.GetValue("Business", "Table" + bizLevel, bizLevel >= 3 ? "prop_table_03b" : "prop_table_03"), c, bizHeading);
             if (tb == null && bizLevel >= 3) tb = AddProp("prop_table_03", c, bizHeading);
             float top = GroundForBiz() + 0.74f;   // du phong neu khong do duoc
             if (tb != null)
@@ -651,7 +651,7 @@ public class GtaVietLifeWorld : Script
             }
             tcTop.Add(top);
             if (tb != null) Function.Call(Hash.SET_ENTITY_COLLISION, tb, false, false);   // ngoi vao ban khong bi vat ly hat len troi
-            string chairM = bizLevel >= 3 ? "prop_chair_01b" : "prop_chair_01a";
+            string chairM = Settings.GetValue("Business", "Chair" + bizLevel, bizLevel >= 3 ? "prop_chair_01b" : "prop_chair_01a");
             if (AddProp(chairM, c + right * ChairDist, bizHeading - 90f) == null && bizLevel >= 3) AddProp("prop_chair_01a", c + right * ChairDist, bizHeading - 90f);
             if (bizProps.Count > 0) { chairProps.Add(bizProps[bizProps.Count - 1]); chairBusy.Add(false); chairFace.Add(FaceHeading(c + right * ChairDist, c)); chairTable.Add(c); chairTableTop.Add(top); tableCups.Add(null); }
             if (AddProp(chairM, c - right * ChairDist, bizHeading + 90f) == null && bizLevel >= 3) AddProp("prop_chair_01a", c - right * ChairDist, bizHeading + 90f);
