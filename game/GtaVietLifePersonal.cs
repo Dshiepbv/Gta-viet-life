@@ -27,9 +27,9 @@ public class GtaVietLifePersonal : Script
 {
     // ------------------------------------------------------------ cấu hình
     const string SaveFile = "GtaVietLifePersonal.sav";
-    const int BagSmall = 10, BagBig = 25, BackpackPrice = 250;
+    const int BagSmall = 10, BagBig = 25, BackpackPrice = 60;
     const int ShipFee = 3;
-    const int CallCarFee = 50;
+    const int CallCarFee = 15;
     const int MaxGarage = 6;
 
     string server = "http://127.0.0.1:5577";
@@ -319,7 +319,21 @@ public class GtaVietLifePersonal : Script
     int BagCount() { int n = 0; foreach (int c in bag.Values) n += c; return n; }
     int Have(string id) { int c; return bag.TryGetValue(id, out c) ? c : 0; }
     static ItemDef Def(string id) { foreach (ItemDef d in Items) if (d.Id == id) return d; return null; }
-    int PriceOf(ItemDef d) { return Math.Max(1, (int)Math.Round(d.Price * (1f - Discount))); }
+    // he so gia theo khu noi Sep dang dung (Kinh te: GVL.PriceZone); khong co thi 1.0
+    float ZoneMul()
+    {
+        try
+        {
+            Func<float, float, float, float> f = Bus("GVL.PriceZone") as Func<float, float, float, float>;
+            if (f == null) return 1f;
+            Vector3 p = Game.Player.Character.Position;
+            float m = f(p.X, p.Y, p.Z);
+            return m > 0.1f && m < 10f ? m : 1f;
+        }
+        catch { return 1f; }
+    }
+
+    int PriceOf(ItemDef d) { return Math.Max(1, (int)Math.Round(d.Price * (1f - Discount) * ZoneMul())); }
 
     void Buy(ItemDef d, int qty)
     {
@@ -1041,10 +1055,12 @@ public class GtaVietLifePersonal : Script
 
     int NearBarber() { Vector3 p = Game.Player.Character.Position; for (int i = 0; i < Barbers.Length; i++) if (p.DistanceTo(Barbers[i]) < 30f) return i; return -1; }
 
+    int BarberCost(bool hair, bool beard) { return Math.Max(1, (int)Math.Round(((hair ? 25 : 0) + (beard ? 15 : 0) - (hair && beard ? 5 : 0)) * ZoneMul())); }
+
     void Barber(bool hair, bool beard)
     {
         if (NearBarber() < 0) { Notify("Den tiem cat toc (bieu tuong keo tren ban do) roi chon lai."); return; }
-        int cost = (hair ? 25 : 0) + (beard ? 15 : 0) - (hair && beard ? 5 : 0);
+        int cost = BarberCost(hair, beard);
         if (!Pay(cost, "barber", hair && beard ? "cat toc + cao rau" : hair ? "cat toc" : "cao rau")) { Notify("Khong du $" + cost + "."); return; }
         if (hair) hairDays = 0;
         if (beard) { beardDays = 0; ApplyBeard(Game.Player.Character); }
@@ -1085,9 +1101,9 @@ public class GtaVietLifePersonal : Script
         Item("Chong day / tap tai cho  (30 phut game)|co bap +, ton nang luong, doi, khat", delegate { pending.Enqueue(PushUps); CloseMenu(); });
         bool nb = NearBarber() >= 0;
         if (!nb) Info("Cat toc/cao rau: den tiem cat toc cua game (bieu tuong keo).");
-        Item("Cat toc  ($25)", delegate { Barber(true, false); ShowBody(); });
-        Item("Cao rau  ($15)", delegate { Barber(false, true); ShowBody(); });
-        Item("Ca hai  ($35)", delegate { Barber(true, true); ShowBody(); });
+        Item("Cat toc  ($" + BarberCost(true, false) + ")", delegate { Barber(true, false); ShowBody(); });
+        Item("Cao rau  ($" + BarberCost(false, true) + ")", delegate { Barber(false, true); ShowBody(); });
+        Item("Ca hai  ($" + BarberCost(true, true) + ")", delegate { Barber(true, true); ShowBody(); });
         Item("Quay lai", delegate { ShowMain(); });
     }
 

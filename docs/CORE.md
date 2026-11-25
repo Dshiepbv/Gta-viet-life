@@ -39,6 +39,7 @@ Mọi script SHVDN chạy chung một AppDomain, nên trao đổi qua `AppDomain
 | `GVL.HygAdd` / `GVL.RepAdd` | `float` / `int` | ai cũng cộng dồn | Đời sống đọc rồi xoá (cộng vệ sinh, uy tín) |
 | `GVL.PayOwner` | `string` | Core / Kinh tế | `core` hoặc `economy`: ai đang giữ cổng trả tiền |
 | `GVL.Bank` | `int` | Kinh tế | Số dư tài khoản ngân hàng |
+| `GVL.PriceZone` | `Func<float,float,float,float>` | Kinh tế | Hệ số giá theo khu `(x,y,z)`; không có thì coi là 1.0. Cá nhân nhân vào giá đồ túi và cắt tóc theo chỗ Sếp đứng |
 | `GVL.AddDebt` | `Action<int,string,string>` | Kinh tế | Ghi nợ `(soTien, nhom, ghiChu)` khi không trả nổi phạt/án phí. Cá nhân gọi, không tự ghi tiền án thay nợ nếu khoá này có |
 | `GVL.ImpoundCar` | `Action<int,int,int,string>` | Kinh tế | Giao xe vào bãi Davis `(hashModel, mau1, mau2, bienSo)`. Cá nhân gọi khi CSGT giữ xe; lấy xe ở menu L (phí `GVL.Fee.Impound` + `GVL.Fee.ImpoundDay`/ngày). Thiếu khoá này thì Cá nhân tự giữ xe 1 ngày, lấy lại $200 ở menu Giấy tờ |
 | `GVL.Debt` | `int` | Kinh tế | Tổng nợ đang ghi |
