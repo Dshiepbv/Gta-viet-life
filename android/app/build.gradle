@@ -1,0 +1,14 @@
+plugins { id 'com.android.application' }
+def runNo = (System.getenv('RUN_NUMBER') ?: '1') as int
+android {
+    namespace 'vn.hiep.gtadash'
+    compileSdk 34
+    defaultConfig {
+        applicationId 'vn.hiep.gtadash'
+        minSdk 24
+        targetSdk 34
+        versionCode = runNo
+        versionName = "1.${runNo}"
+    }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+}

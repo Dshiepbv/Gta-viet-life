@@ -1,0 +1,35 @@
+{
+  "port": 5577,
+  "game_dir": "E:\\GTA-Viet_Life\\GTAV",
+  "dash_pin": "",
+
+  "provider": "gemini",
+  "gemini_api_key": "",
+  "gemini_model": "gemini-3.8-flash",
+  "gemini_thinking_budget": 0,
+
+  "groq_api_key": "",
+  "groq_model": "llama-3.3-70b-versatile",
+
+  "ollama_enabled": true,
+  "ollama_url": "http://127.0.0.1:11434",
+  "ollama_model": "qwen2.5:7b",
+  "ollama_gpu_layers": 0,
+
+  "stt_mode": "gemini",
+
+  "whisper_model": "large-v3-turbo",
+  "whisper_compute": "int8_float16",
+  "whisper_cpu_model": "small",
+  "mic_device": null,
+
+  "tts_volume": 1.0,
+  "gemini_tts": true,
+  "gemini_tts_model": "",
+
+  "overlay": true,
+  "overlay_font_size": 22,
+  "overlay_bottom_px": 90,
+
+  "memory_db": "memory.db"
+}
