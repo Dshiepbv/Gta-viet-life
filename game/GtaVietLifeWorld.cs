@@ -1275,7 +1275,7 @@ public class GtaVietLifeWorld : Script
                 if (arrived || now - c.T > 30000)
                 {
                     if (!arrived) { Log("khach khong toi duoc quay (cach " + (int)p.Position.DistanceTo(bizPos) + " m), bo"); Release(c); customers.RemoveAt(i); continue; }
-                    bool served = bizStaff > 0 || me.Position.DistanceTo(bizPos) < 8f;
+                    bool served = true;   // quan tu van hanh, khong can chu dung do
                     if (!served)
                     {
                         if (now - c.T > 45000) { Notify("Khach bo di vi khong ai phuc vu. Thue nhan vien hoac dung gan quan."); Release(c); customers.RemoveAt(i); }
