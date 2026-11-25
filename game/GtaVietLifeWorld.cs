@@ -110,6 +110,7 @@ public class GtaVietLifeWorld : Script
     readonly List<Vector3> chairTable = new List<Vector3>();
     readonly List<Prop> tableCups = new List<Prop>();
     float seatZ = 0.55f;
+    float ChairDist = 1.55f;   // ghe cach tam ban (ban dai nen ghe ra xa hon cho thoang)
     float staffZ = 0f;
     float staffBack = 1.45f;
     int staffAngle = 0;   // 0..3: nhan vien dung phia nao cua quay (F9 de xoay cho dung)
@@ -168,6 +169,7 @@ public class GtaVietLifeWorld : Script
         menuKey = Settings.GetValue("Keys", "Menu", menuKey);
         sitKey = Settings.GetValue("Keys", "Sit", sitKey);
         seatZ = ReadF("Business", "SeatZ", seatZ);
+        ChairDist = ReadF("Business", "ChairDist", ChairDist);
         staffZ = ReadF("Business", "StaffZ", staffZ);
         staffBack = ReadF("Business", "StaffBack", staffBack);
         standYaw = ReadF("Business", "StandYaw", standYaw);
@@ -566,10 +568,10 @@ public class GtaVietLifeWorld : Script
             Vector3 c = bizPos + fwd * (3.5f + row * 3.0f) + right * (2.4f * side);
             Prop tb = AddProp("prop_table_03", c, bizHeading);
             if (tb != null) Function.Call(Hash.SET_ENTITY_COLLISION, tb, false, false);   // ngoi vao ban khong bi vat ly hat len troi
-            AddProp("prop_chair_01a", c + right * 1.1f, bizHeading - 90f);
-            if (bizProps.Count > 0) { chairProps.Add(bizProps[bizProps.Count - 1]); chairBusy.Add(false); chairFace.Add(FaceHeading(c + right * 1.1f, c)); chairTable.Add(c); tableCups.Add(null); }
-            AddProp("prop_chair_01a", c - right * 1.1f, bizHeading + 90f);
-            if (bizProps.Count > 0) { chairProps.Add(bizProps[bizProps.Count - 1]); chairBusy.Add(false); chairFace.Add(FaceHeading(c - right * 1.1f, c)); chairTable.Add(c); tableCups.Add(null); }
+            AddProp("prop_chair_01a", c + right * ChairDist, bizHeading - 90f);
+            if (bizProps.Count > 0) { chairProps.Add(bizProps[bizProps.Count - 1]); chairBusy.Add(false); chairFace.Add(FaceHeading(c + right * ChairDist, c)); chairTable.Add(c); tableCups.Add(null); }
+            AddProp("prop_chair_01a", c - right * ChairDist, bizHeading + 90f);
+            if (bizProps.Count > 0) { chairProps.Add(bizProps[bizProps.Count - 1]); chairBusy.Add(false); chairFace.Add(FaceHeading(c - right * ChairDist, c)); chairTable.Add(c); tableCups.Add(null); }
             AddProp(parasols[Math.Min(l, 4) - 1], c, bizHeading);
         }
         foreach (Prop chp in chairProps) if (chp != null && chp.Exists()) Function.Call(Hash.SET_ENTITY_COLLISION, chp, false, false);   // nguoi ngoi vao ghe co va cham => bi hat len troi
