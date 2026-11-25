@@ -83,6 +83,18 @@ Phạt khi bị truy nã rồi thoát, nợ có lãi, uy tín tăng/giảm. Tr�
 - 3 muc gia (thap: lap day nhanh; cao: lau hon), quan ly toa nha $60/ngay (de cho thue hon, it bung tien), sua sang cap 2-3 (+15% gia thue moi cap), bao tri + thue nha dat ~0,11% gia tri/ngay, gia tri bien dong nhe moi ngay, ban lai nhan 92%.
 - Offline: dai han thu du, ngan han bang 60%.
 
+## Kinh te: ngan hang, vay, xe (GtaVietLifeEconomy.cs, phim L)
+
+Chep `game/GtaVietLifeEconomy.cs` va `game/GtaVietLifeEconomy.ini` vao `scripts`. File doc lap, tat tung phan trong ini (`[Modules] Bank/Fuel/Wear/Impound`).
+- **Ngan hang**: tai khoan tach khoi tien mat. Gui/rut o cay ATM (dung sat cay, rut mat $2) hoac chi nhanh (cham xanh la, mien phi). Lai tiet kiem 0,03%/ngay game. Tra o quay (xang, cuu ho, bai xe) dung tien mat truoc, thieu thi tu quet the.
+- **So cai**: moi khoan thu chi cua file nay va cac khoan phat / le phi tu file Ca nhan (qua `GVL.Pay`/`GVL.Earn` cua loi) deu ghi so, xem trong menu. Khoan phai tra ma khong du tien thanh no ngan hang, lai 2%/ngay, tu tru khi tai khoan co tien.
+- **Vay** (tai chi nhanh): tin chap theo diem tin dung (300-850), 4 ky; the chap bat dong san toi da 60% gia tri, 8 ky. Tra gop moi 7 ngay game, tu tru tai khoan. Tre 1 ky -35 diem va phat 5%, 3 ky thi bi siet: tai khoan, tien mat, roi phat mai BDS the chap (80% gia), con lai thanh no xau, cam vay 30 ngay. Co tien an thi khong vay duoc.
+- **Xang**: moi xe co binh rieng theo loai (xe may 12 L ... xe tai 150 L), chay nhanh ton hon, het xang chet may. Do xang khi dung canh cot bom (bam L). Binh du phong 10 L, goi cuu ho do xang $120.
+- **Nhot va may**: nhot het sau ~140 km game, het nhot thi may hong dan. May yeu thi thinh thoang chet may; hong han thi goi xe keo ve gara gan nhat. Thay nhot / sua may o cac gara LS Customs.
+- **Do sai**: xe do giua long duong trong thanh pho, Sep di xa qua 3 phut thi bi cau ve bai giu xe Davis (cham do). Lay lai $250 + $25/ngay.
+- Bu offline: lai tiet kiem va tra gop van chay luc tat may (toi da 14 ngay game).
+- Toa do chi nhanh ngan hang, gara, bai giu xe la gan dung; ATM va cot bom duoc nhan bang mau vat the trong game.
+
 ## Chay 24/24 (offline)
 
 Moi 2 phut mod ghi dau thoi gian vao file luu. Khi mo game lai, mod tinh thoi gian da tat (1 ngay game = 48 phut thuc, toi da 14 ngay): quan co nhan vien van ban hang (cham hon luc choi: 60% so khach), van tra luong, thue, tien thue mat bang, giao hang B2B, thu cong no, thu tien thue bat dong san; neu dang ky giao hang thi moi ngay chay 2-5 don (tru tien xang). Ket qua hien thanh mot thong bao tong ket, chi tiet nam trong GtaVietLifeWorld.log (dong "[offline]"). Neu thieu tien tra thue mat bang 3 ngay se mat mat bang nhu luc dang choi.

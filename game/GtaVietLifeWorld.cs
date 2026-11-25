@@ -215,6 +215,7 @@ public class GtaVietLifeWorld : Script
         int now = Game.GameTime;
 
         TickEnterHome(me, now);
+        if (now > nextEconBus) { nextEconBus = now + 2000; EconBus(); }
         if (!caughtUp) { ApplyPhoneCmds(); CatchUpOffline(); }
         else if (now > nextCmdCheck) { nextCmdCheck = now + 10000; ApplyPhoneCmds(); }
         if (now > nextSeenSave) { nextSeenSave = now + 120000; Save(); }
@@ -926,6 +927,36 @@ public class GtaVietLifeWorld : Script
             Item("Thoi, giu lai", delegate { ShowOwned(i); });
         });
         Item("Quay lai", delegate { ShowEstates(); });
+    }
+
+    // cau noi voi file Kinh te (GtaVietLifeEconomy.cs): cong bo tong gia tri BDS de the chap, nhan lenh phat mai khi bi siet no
+    int nextEconBus;
+    void EconBus()
+    {
+        try
+        {
+            AppDomain d = AppDomain.CurrentDomain;
+            int total = 0; foreach (Owned o in owned) total += o.Value;
+            d.SetData("GVL.Assets", total);
+            object sz = d.GetData("GVL.Seize");
+            if (!(sz is int) || (int)sz <= 0) return;
+            int need = (int)sz;
+            d.SetData("GVL.Seize", 0);
+            string sold = "";
+            while (need > 0 && owned.Count > 0)
+            {
+                int bi = 0; for (int i = 1; i < owned.Count; i++) if (owned[i].Value > owned[bi].Value) bi = i;
+                Owned o = owned[bi];
+                int got = (int)(o.Value * 0.8f);   // phat mai re hon ban thuong
+                need -= got;
+                if (need < 0) Game.Player.Money = Game.Player.Money - need;   // phan du tra lai chu
+                if (o.Blip != null && o.Blip.Exists()) o.Blip.Delete();
+                owned.RemoveAt(bi);
+                sold += (sold.Length > 0 ? ", " : "") + Estates[o.E].Name;
+            }
+            if (sold.Length > 0) { Notify("~r~Ngan hang phat mai tai san the chap:~s~ " + sold + "."); Log("phat mai: " + sold); Save(); }
+        }
+        catch (Exception ex) { Log("econ bus loi: " + ex.Message); }
     }
 
     // dich vu xe cua chinh Sep: lai xe toi tiem rua xe / sua xe cua minh thi duoc lam mien phi
