@@ -96,6 +96,18 @@ Mọi chỉ số chỉ chạy khi đang chơi (tắt game thì không ốm thêm
   `life.leisure` / `life.gym` (minutes, place), `life.event` (kind = snatch/help/fire/blackout).
 - Toạ độ bar, rạp, gym, biển, cửa hàng 24/7, bệnh viện là ước lượng, cần kiểm tra trong game.
 
+## Cá nhân (GtaVietLifePersonal.cs)
+Chép `game/GtaVietLifePersonal.cs` (và `GtaVietLifePersonal.ini` nếu muốn đổi phím) vào `scripts`. Phím `I` mở menu Cá nhân, `O` ăn/uống nhanh từ túi.
+
+- **Hồ sơ**: đặt tên, chọn quê. Tên, quê, bộ đồ đang mặc và kỹ năng giỏi được gửi cho cầu nối để NPC gọi đúng tên và nhận xét đúng.
+- **Kỹ năng 0-100** tự tăng khi chơi: Thể lực (chạy, bơi, đạp xe → đói/khát/mệt chậm hơn tới 30%), Lái xe, Bắn súng, Sức mạnh (ghi vào chỉ số gốc của Michael/Franklin/Trevor, chỉ nâng không hạ), Giao tiếp (giữ N nói với người gần → mua đồ rẻ hơn tới 15%).
+- **Túi đồ**: bánh mì, cơm hộp, phở, nước suối, trà đá, cà phê sữa đá, nước tăng lực, băng cứu thương. Mua ship tận nơi (+$3/đơn). Túi 10 món, ba lô $250 lên 25 món.
+- **Trang phục**: lưu 4 bộ (Đi làm, Đi chơi, Thể thao, Lịch sự) từ đồ đang mặc, đổi nhanh.
+- **Garage xe riêng**: ghi tối đa 6 xe (giữ màu, biển số), gọi xe tới chỗ Sếp ($50), chấm xanh trên bản đồ.
+- **Sổ thu chi**: thu/chi trong ngày và 7 ngày gần nhất của nhân vật đang chơi.
+- Đói/khát/năng lượng chỉ giảm khi đang chơi, không tính lúc game tắt.
+- Hai file nói với nhau qua AppDomain data `GVL.*` (cùng một AppDomain SHVDN). Thiếu file Đời sống thì đồ ăn trong túi không cộng được no/khát.
+
 ## Mo hinh kinh doanh (GT / MT / B2C / B2B)
 
 - **Loai hinh** (chon khi mo quan): Quan nuoc via he, Tap hoa, Quan an (kenh GT, von nho); Cua hang tien loi, Sieu thi mini, Nha hang/ca phe chuoi (kenh MT, von lon, dong khach, nop VAT, can mat bang thue tu "Thue ki-ot").
@@ -103,9 +115,31 @@ Mọi chỉ số chỉ chạy khi đang chơi (tắt game thì không ốm thêm
 - **Nhap hang tu nha phan phoi**: lo 1 / 5 / 10, chiet khau 0 / 7% / 12%, MT duoc them 5%.
 - **B2B**: menu Kinh doanh > "Ban si B2B": ky hop dong cung ung cho cua hang/quan khac, giao hang moi ngay tu kho mot quan, gia si thap hon gia le, thu tien sau 5-45 ngay, co rui ro vo no.
 
+- **Dich vu** (kho = vat tu, tinh theo luot; can mat bang thue; khong ban si B2B): Tiem rua xe, Sua xe - thay nhot (lai xe toi tiem cua minh duoc rua/sua mien phi, tru 1 luot vat tu), Tiem toc - goi dau, Giat ui. Mat bang that: tiem rua xe Strawberry / Little Seoul, LS Customs La Mesa, tiem toc Davis / Rockford Hills / Hawick.
+
+## Bat dong san (menu Kinh doanh > Bat dong san)
+
+- 19 toa nha that tren ban do (toa do gan dung): can ho (Eclipse Towers, Tinsel Towers, Del Perro Heights, Richards Majestic, Weazel Plaza, 4 Integrity Way, 3 Alta Street), nha pho (Grove Street, Mirror Park, Kenh Vespucci, Paleto Bay), van phong (Maze Bank Tower, Arcadius, Lombank West, Maze Bank West), nha nghi (Pink Cage Motel, Motor Motel Harmony), kho (cang Elysian, Cypress Flats).
+- Gia mua ~180 ngay tien thue day phong, theo khu. Den tan noi (trong 150 m) mua gia goc; mua tu xa qua moi gioi +3%.
+- **Dai han**: khach vao dan, o theo hop dong, moi ngay mot so khach het hop dong chuyen di, it khi bung tien. **Ngan han**: gia dem x1.7, so phong co khach ngau nhien moi dem, ton 18% don phong.
+- 3 muc gia (thap: lap day nhanh; cao: lau hon), quan ly toa nha $60/ngay (de cho thue hon, it bung tien), sua sang cap 2-3 (+15% gia thue moi cap), bao tri + thue nha dat ~0,11% gia tri/ngay, gia tri bien dong nhe moi ngay, ban lai nhan 92%.
+- Offline: dai han thu du, ngan han bang 60%.
+
+## Kinh te: ngan hang, vay, xe (GtaVietLifeEconomy.cs, phim L)
+
+Chep `game/GtaVietLifeEconomy.cs` va `game/GtaVietLifeEconomy.ini` vao `scripts`. File doc lap, tat tung phan trong ini (`[Modules] Bank/Fuel/Wear/Impound`).
+- **Ngan hang**: tai khoan tach khoi tien mat. Gui/rut o cay ATM (dung sat cay, rut mat $2) hoac chi nhanh (cham xanh la, mien phi). Lai tiet kiem 0,03%/ngay game. Tra o quay (xang, cuu ho, bai xe) dung tien mat truoc, thieu thi tu quet the.
+- **So cai**: moi khoan thu chi cua file nay va cac khoan phat / le phi tu file Ca nhan (qua `GVL.Pay`/`GVL.Earn` cua loi) deu ghi so, xem trong menu. Khoan phai tra ma khong du tien thanh no ngan hang, lai 2%/ngay, tu tru khi tai khoan co tien.
+- **Vay** (tai chi nhanh): tin chap theo diem tin dung (300-850), 4 ky; the chap bat dong san toi da 60% gia tri, 8 ky. Tra gop moi 7 ngay game, tu tru tai khoan. Tre 1 ky -35 diem va phat 5%, 3 ky thi bi siet: tai khoan, tien mat, roi phat mai BDS the chap (80% gia), con lai thanh no xau, cam vay 30 ngay. Co tien an thi khong vay duoc.
+- **Xang**: moi xe co binh rieng theo loai (xe may 12 L ... xe tai 150 L), chay nhanh ton hon, het xang chet may. Do xang khi dung canh cot bom (bam L). Binh du phong 10 L, goi cuu ho do xang $120.
+- **Nhot va may**: nhot het sau ~140 km game, het nhot thi may hong dan. May yeu thi thinh thoang chet may; hong han thi goi xe keo ve gara gan nhat. Thay nhot / sua may o cac gara LS Customs.
+- **Do sai**: xe do giua long duong trong thanh pho, Sep di xa qua 3 phut thi bi cau ve bai giu xe Davis (cham do). Lay lai $250 + $25/ngay.
+- Bu offline: lai tiet kiem va tra gop van chay luc tat may (toi da 14 ngay game).
+- Toa do chi nhanh ngan hang, gara, bai giu xe la gan dung; ATM va cot bom duoc nhan bang mau vat the trong game.
+
 ## Chay 24/24 (offline)
 
-Moi 2 phut mod ghi dau thoi gian vao file luu. Khi mo game lai, mod tinh thoi gian da tat (1 ngay game = 48 phut thuc, toi da 14 ngay): quan co nhan vien van ban hang (cham hon luc choi: 60% so khach), van tra luong, thue, tien thue mat bang, giao hang B2B va thu cong no. Ket qua hien thanh mot thong bao tong ket, chi tiet nam trong GtaVietLifeWorld.log (dong "[offline]"). Neu thieu tien tra thue mat bang 3 ngay se mat mat bang nhu luc dang choi.
+Moi 2 phut mod ghi dau thoi gian vao file luu. Khi mo game lai, mod tinh thoi gian da tat (1 ngay game = 48 phut thuc, toi da 14 ngay): quan co nhan vien van ban hang (cham hon luc choi: 60% so khach), van tra luong, thue, tien thue mat bang, giao hang B2B, thu cong no, thu tien thue bat dong san; neu dang ky giao hang thi moi ngay chay 2-5 don (tru tien xang). Ket qua hien thanh mot thong bao tong ket, chi tiet nam trong GtaVietLifeWorld.log (dong "[offline]"). Neu thieu tien tra thue mat bang 3 ngay se mat mat bang nhu luc dang choi.
 
 ## Toa nha that
 
@@ -121,3 +155,13 @@ Muc "Tim mat bang" co them cac cua hang that cua game goc (24/7, LTD, Los Santos
 
 ### APK cho dien thoai Android
 GitHub tu build `GtaDashboard-N.apk` (muc Releases, tag `dash-N`). Cai xong mo len, nhap `http://IP-may-tinh:5588` mot lan. Doi dia chi: giu nut Back. Man hinh luon sang. APK ky debug nen cai thang, can cho phep "cai tu nguon khong ro".
+
+### Xem khi o ngoai (4G, di lam)
+Cai Tailscale (mien phi) tren PC va dien thoai, dang nhap cung mot tai khoan. `start_dashboard.bat` se in them dong "qua Tailscale" voi dia chi dang `http://100.x.x.x:5588` — nhap dia chi do vao APK. Nen dat `dash_pin`. PC phai bat va chay `start_dashboard.bat`; luon cho phep cong 5588 trong tuong lua Windows.
+
+## Xem 24/24 ca khi PC tat (Google Apps Script — dung tai khoan Google cua Sep)
+1. Vao https://script.google.com > New project > dan noi dung `apps_script/Code.gs`. Doi `PIN` (ma tren dien thoai) va `KEY` (khoa cua PC).
+2. Deploy > New deployment > loai Web app > Execute as: Me, Who has access: Anyone > Deploy. Cap quyen khi duoc hoi. Copy link `.../exec`.
+3. Tren PC, trong `bridge/config.json` them `"cloud_url": "<link exec>"` va `"cloud_key": "<KEY>"`. Chay `start_dashboard.bat` (chi can bat khi vua choi xong / vua mo game; no tu day so lieu len va keo lenh ve).
+4. Mo APK, dan link `.../exec` vao o dia chi, nhap PIN. Xem va giao dich duoc tu bat ky dau, PC tat van duoc.
+Khi PC tat: so lieu la UOC TINH tu so lieu cuoi, lenh xep hang cho; bat PC + `start_dashboard.bat` thi lenh duoc keo ve, mo game thi ap dung.

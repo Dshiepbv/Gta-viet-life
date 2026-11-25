@@ -1,7 +1,7 @@
 name: Build Dashboard APK
 on:
   push:
-    paths: ['android/**', '.github/workflows/android-dashboard.yml']
+    paths: ['android/**', 'bridge/dashboard.html', '.github/workflows/android-dashboard.yml']
   workflow_dispatch:
 permissions:
   contents: write
@@ -14,6 +14,8 @@ jobs:
         with: { distribution: temurin, java-version: '17' }
       - uses: gradle/actions/setup-gradle@v4
         with: { gradle-version: '8.9' }
+      - name: Copy dashboard page into app assets
+        run: mkdir -p android/app/src/main/assets && cp bridge/dashboard.html android/app/src/main/assets/dashboard.html
       - name: Build
         working-directory: android
         env: { RUN_NUMBER: '${{ github.run_number }}' }

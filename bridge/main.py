@@ -82,6 +82,8 @@ class Bridge:
         self.memory = Memory(os.path.join(HERE, cfg.get("memory_db", "memory.db")))
         from life import Life
         self.life = Life()
+        from social import Social
+        self.social = Social(self)
         self.busy = threading.Lock()
 
     def _get_stt(self):
@@ -220,8 +222,15 @@ class Bridge:
             t2 = time.time()
             self.memory.add(key, "player", text)
             self.memory.add(key, "npc", result["reply"])
-            if result["affinity_delta"]:
-                self.memory.change_affinity(key, result["affinity_delta"])
+            try:
+                if result["affinity_delta"]:
+                    new_aff = self.memory.change_affinity(key, result["affinity_delta"])
+                    self.social.level_change(npc, npc["affinity"], new_aff)
+                self.social.after_talk(key)
+            except Exception as e:
+                print(f"[social] lỗi: {e}")
+            if ctx.get("phone") == "1":
+                result["action"] = "none"
             self.overlay.show("npc", f"{npc['name']}: {result['reply']}", 8000)
             ms = 400 + 75 * len(result["reply"])  # ước lượng thời lượng để NPC mấp máy miệng
 
@@ -255,6 +264,17 @@ def make_handler(bridge: Bridge):
             self.wfile.write(data)
 
         def do_GET(self):
+            try:
+                if self.path == "/contacts":
+                    return self._send(bridge.social.contacts())
+                if self.path == "/feed":
+                    return self._send(bridge.social.feed_text())
+                if self.path.startswith("/npc?"):
+                    q = parse_qs(self.path.split("?", 1)[1])
+                    return self._send(bridge.social.npc((q.get("key") or [""])[0]))
+            except Exception as e:
+                print(f"[http] lỗi {self.path}: {e}")
+                return self._send("", 500)
             self._send("ok" if self.path == "/ping" else "not found", 200 if self.path == "/ping" else 404)
 
         def do_POST(self):
@@ -273,6 +293,12 @@ def make_handler(bridge: Bridge):
                     self._send("ok")
                 elif self.path == "/stop":
                     self._send(bridge.stop(ctx))
+                elif self.path == "/gvl_event":
+                    self._send(bridge.social.gvl_event(ctx))
+                elif self.path == "/sms":
+                    self._send(bridge.social.sms(ctx))
+                elif self.path == "/relation":
+                    self._send(bridge.social.relation(ctx))
                 elif self.path == "/banter":
                     self._send(bridge.banter(ctx))
                 elif self.path == "/news":

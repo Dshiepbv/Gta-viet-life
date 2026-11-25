@@ -5,6 +5,8 @@
 // Phím mặc định:
 //   Giữ N : nói chuyện với người gần nhất (trong 5 m), thả ra để gửi.
 //   K     : "ghi nhớ" người gần nhất (NPC có tên, nhớ cuộc trò chuyện lâu dài, có chấm xanh trên bản đồ).
+//           Người đã ghi nhớ được lưu ở GtaVietLifeNamed.sav và xuất hiện lại gần chỗ cũ khi Sếp quay lại.
+//   Đang gọi điện (menu Cá nhân > Điện thoại): giữ N là nói vào điện thoại, không cần ai đứng cạnh.
 //
 // Chữ hiện trong game viết không dấu vì font GTA không có dấu tiếng Việt;
 // phụ đề có dấu do cầu nối hiển thị trên màn hình.
@@ -59,6 +61,7 @@ public class GtaVietLife : Script
         Aborted += OnAborted;
 
         Function.Call(Hash.REQUEST_ANIM_DICT, "mp_facial");
+        LoadNamed();
         Task.Run(() =>
         {
             try { Get("/ping"); Notify("~g~GTA Viet Life~s~: da ket noi cau noi AI."); }
@@ -109,6 +112,7 @@ public class GtaVietLife : Script
         }
 
         UpdateBanter(now);
+        try { UpdateNamed(now); } catch (Exception ex) { Log("named loi: " + ex.Message); }
 
         // Nói xong thì để NPC đi tiếp việc của mình
         if (releasePed != null && now > releaseAt)
@@ -124,6 +128,7 @@ public class GtaVietLife : Script
 
     void OnAborted(object sender, EventArgs e)
     {
+        SaveNamed();
         foreach (var b in namedBlips.Values) if (b != null && b.Exists()) b.Delete();
     }
 
@@ -134,6 +139,13 @@ public class GtaVietLife : Script
         if (e.KeyCode == talkKey)
         {
             if (recording || waiting) return; // phím giữ sẽ lặp KeyDown
+            string call = PhoneCall();
+            if (call.Length > 0)
+            {
+                phoneKey = call; target = null; recording = true;
+                Task.Run(() => { try { Post("/start", null); } catch (Exception ex) { Log("/start loi: " + ex); Notify("~r~Cau noi AI loi:~s~ " + Short(ex)); } });
+                return;
+            }
             Ped p = FindNearestPed();
             if (p == null) { Notify("Khong co ai o gan de noi chuyen."); return; }
             target = p;
@@ -154,6 +166,22 @@ public class GtaVietLife : Script
     {
         if (e.KeyCode != talkKey || !recording) return;
         recording = false;
+        if (phoneKey.Length > 0)
+        {
+            string key = phoneKey; phoneKey = "";
+            waiting = true;
+            var pc = new NameValueCollection();
+            pc["key"] = key; pc["gender"] = "male"; pc["pedtype"] = "4"; pc["phone"] = "1";
+            pc["hour"] = World.CurrentTimeOfDay.Hours.ToString(); pc["minute"] = World.CurrentTimeOfDay.Minutes.ToString("00");
+            pc["weather"] = World.Weather.ToString(); pc["wanted"] = Game.Player.WantedLevel.ToString(); pc["money"] = Game.Player.Money.ToString();
+            pc["street"] = "(đang nói qua điện thoại)"; pc["zone"] = "?";
+            Task.Run(() =>
+            {
+                try { Post("/stop", pc); } catch (Exception ex) { Log("/stop phone loi: " + ex.Message); }
+                mainThread.Enqueue(() => { waiting = false; });
+            });
+            return;
+        }
         Ped p = target;
         if (p == null || !p.Exists()) { Task.Run(() => { try { Post("/stop", new NameValueCollection()); } catch { } }); return; }
 
@@ -472,12 +500,113 @@ public class GtaVietLife : Script
     void Remember(Ped p)
     {
         if (namedKeys.ContainsKey(p.Handle)) return;
-        namedKeys[p.Handle] = "npc_" + DateTime.Now.Ticks;
+        string nk = "npc_" + DateTime.Now.Ticks;
+        namedKeys[p.Handle] = nk;
+        named[nk] = new NamedRec { Key = nk, Model = p.Model.Hash, Pos = p.Position, Heading = p.Heading, P = p };
+        SaveNamed();
         p.IsPersistent = true;
         Blip b = p.AddBlip();
         b.Color = BlipColor.Blue;
         b.Scale = 0.7f;
         namedBlips[p.Handle] = b;
+    }
+
+    // ----------------------------------------------------------------- NPC da ghi nho: luu lai, xuat hien lai gan cho cu
+    class NamedRec { public string Key; public int Model; public Vector3 Pos; public float Heading; public Ped P; }
+    readonly Dictionary<string, NamedRec> named = new Dictionary<string, NamedRec>();
+    string phoneKey = "";
+    int nextNamedCheck, nextNamedSave;
+    const string NamedFile = "GtaVietLifeNamed.sav";
+
+    static string PhoneCall()
+    {
+        try { return AppDomain.CurrentDomain.GetData("GVL.PhoneCall") as string ?? ""; } catch { return ""; }
+    }
+
+    void LoadNamed()
+    {
+        try
+        {
+            if (!System.IO.File.Exists(NamedFile)) return;
+            var ci = System.Globalization.CultureInfo.InvariantCulture;
+            foreach (string line in System.IO.File.ReadAllLines(NamedFile))
+            {
+                string[] q = line.Split(',');
+                if (q.Length < 6) continue;
+                named[q[0]] = new NamedRec { Key = q[0], Model = int.Parse(q[1]), Pos = new Vector3(float.Parse(q[2], ci), float.Parse(q[3], ci), float.Parse(q[4], ci)), Heading = float.Parse(q[5], ci) };
+            }
+        }
+        catch (Exception ex) { Log("load named loi: " + ex.Message); }
+    }
+
+    void SaveNamed()
+    {
+        try
+        {
+            var ci = System.Globalization.CultureInfo.InvariantCulture;
+            var l = new List<string>();
+            foreach (NamedRec r in named.Values)
+                l.Add(r.Key + "," + r.Model + "," + r.Pos.X.ToString(ci) + "," + r.Pos.Y.ToString(ci) + "," + r.Pos.Z.ToString(ci) + "," + r.Heading.ToString(ci));
+            System.IO.File.WriteAllLines(NamedFile, l.ToArray());
+        }
+        catch (Exception ex) { Log("save named loi: " + ex.Message); }
+    }
+
+    void UpdateNamed(int now)
+    {
+        if (now < nextNamedCheck) return;
+        nextNamedCheck = now + 1500;
+        Ped me = Game.Player.Character;
+        string nearKey = ""; float nearD = 5f;
+        int live = 0;
+        List<string> dead = new List<string>();
+        foreach (NamedRec r in named.Values)
+        {
+            if (r.P != null && r.P.Exists())
+            {
+                if (!r.P.IsAlive) { dead.Add(r.Key); continue; }
+                live++;
+                r.Pos = r.P.Position; r.Heading = r.P.Heading;
+                float d = r.P.Position.DistanceTo(me.Position);
+                if (d < nearD) { nearD = d; nearKey = r.Key; }
+                if (d > 250f && !followers.Contains(r.P.Handle)) { DropNamedPed(r); }
+                continue;
+            }
+            r.P = null;
+            if (live >= 12 || me.Position.DistanceTo(r.Pos) > 120f) continue;
+            Model m = new Model(r.Model);
+            if (!m.IsInCdImage || !m.Request(1500)) continue;
+            Ped p = World.CreatePed(m, r.Pos);
+            m.MarkAsNoLongerNeeded();
+            if (p == null || !p.Exists()) continue;
+            p.Heading = r.Heading;
+            p.IsPersistent = true;
+            r.P = p;
+            namedKeys[p.Handle] = r.Key;
+            Blip b = p.AddBlip(); b.Color = BlipColor.Blue; b.Scale = 0.7f;
+            namedBlips[p.Handle] = b;
+            p.Task.WanderAround();
+            live++;
+        }
+        foreach (string k in dead)
+        {
+            NamedRec r = named[k];
+            if (r.P != null && r.P.Exists()) { DropNamedPed(r); }
+            named.Remove(k);
+            Notify("~r~Mot nguoi quen cua Sep vua qua doi.~s~");
+        }
+        try { AppDomain.CurrentDomain.SetData("GVL.NearestNamed", new string[] { nearKey, "" }); } catch { }
+        if (now > nextNamedSave || dead.Count > 0) { nextNamedSave = now + 30000; SaveNamed(); }
+    }
+
+    void DropNamedPed(NamedRec r)
+    {
+        Blip b;
+        if (namedBlips.TryGetValue(r.P.Handle, out b)) { if (b != null && b.Exists()) b.Delete(); namedBlips.Remove(r.P.Handle); }
+        namedKeys.Remove(r.P.Handle);
+        r.P.IsPersistent = false;
+        r.P.MarkAsNoLongerNeeded();
+        r.P = null;
     }
 
     void ReleaseLater(Ped p, int ms)

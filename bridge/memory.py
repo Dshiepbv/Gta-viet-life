@@ -42,14 +42,37 @@ class Memory:
                 id INTEGER PRIMARY KEY AUTOINCREMENT, key TEXT, role TEXT, text TEXT, ts REAL);
             CREATE INDEX IF NOT EXISTS msg_key ON msg(key);
         """)
+        self._migrate()
         self.db.execute("DELETE FROM msg WHERE key LIKE 'tmp_%'")
         self.db.execute("DELETE FROM npc WHERE key LIKE 'tmp_%'")
         self.db.commit()
 
+    def _migrate(self):
+        """v1: thiện cảm -100..100 (cũ -10..10, nhân 10), thêm cột quan hệ/tóm tắt/điện thoại."""
+        cols = {r[1] for r in self.db.execute("PRAGMA table_info(npc)").fetchall()}
+        for name, decl in (("status", "TEXT DEFAULT ''"), ("summary", "TEXT DEFAULT ''"),
+                           ("msgs", "INTEGER DEFAULT 0"), ("last_talk", "REAL DEFAULT 0"),
+                           ("phone", "INTEGER DEFAULT 0")):
+            if name not in cols:
+                self.db.execute(f"ALTER TABLE npc ADD COLUMN {name} {decl}")
+        ver = self.db.execute("PRAGMA user_version").fetchone()[0]
+        if ver < 1:
+            self.db.execute("UPDATE npc SET affinity = affinity * 10")
+            self.db.execute("UPDATE npc SET msgs = (SELECT COUNT(*) FROM msg WHERE msg.key = npc.key)")
+            self.db.execute("PRAGMA user_version = 1")
+        self.db.commit()
+
+    COLS = ["key", "name", "gender", "job", "trait", "pitch", "rate", "affinity", "status", "summary", "msgs", "phone"]
+
+    def get(self, key: str):
+        with self.lock:
+            row = self.db.execute("SELECT " + ",".join(self.COLS) + " FROM npc WHERE key=?", (key,)).fetchone()
+        return dict(zip(self.COLS, row)) if row else None
+
     def get_or_create(self, key: str, gender: str, ped_type: int, name: str = "") -> dict:
         with self.lock:
             row = self.db.execute(
-                "SELECT key,name,gender,job,trait,pitch,rate,affinity FROM npc WHERE key=?", (key,)).fetchone()
+                "SELECT " + ",".join(self.COLS) + " FROM npc WHERE key=?", (key,)).fetchone()
             if row is None:
                 female = gender.lower().startswith("f")
                 npc = dict(
@@ -60,7 +83,7 @@ class Memory:
                     trait=random.choice(TRAITS),
                     pitch=random.choice(PITCHES),
                     rate=random.choice(RATES),
-                    affinity=0,
+                    affinity=0, status="", summary="", msgs=0, phone=0,
                 )
                 self.db.execute(
                     "INSERT INTO npc(key,name,gender,job,trait,pitch,rate,affinity,created) VALUES(?,?,?,?,?,?,?,?,?)",
@@ -68,8 +91,7 @@ class Memory:
                      npc["pitch"], npc["rate"], 0, time.time()))
                 self.db.commit()
                 return npc
-            cols = ["key", "name", "gender", "job", "trait", "pitch", "rate", "affinity"]
-            return dict(zip(cols, row))
+            return dict(zip(self.COLS, row))
 
     def history(self, key: str, limit: int = 12) -> list:
         with self.lock:
@@ -84,10 +106,40 @@ class Memory:
     def add(self, key: str, role: str, text: str):
         with self.lock:
             self.db.execute("INSERT INTO msg(key,role,text,ts) VALUES(?,?,?,?)", (key, role, text, time.time()))
+            if role == "player":
+                self.db.execute("UPDATE npc SET msgs=msgs+1, last_talk=? WHERE key=?", (time.time(), key))
             self.db.commit()
 
-    def change_affinity(self, key: str, delta: int):
+    def change_affinity(self, key: str, delta: int, scale: int = 5) -> int:
+        """delta của LLM là -2..2, nhân scale ra điểm thiện cảm -100..100. Trả về giá trị mới."""
         with self.lock:
             self.db.execute(
-                "UPDATE npc SET affinity=MAX(-10, MIN(10, affinity+?)) WHERE key=?", (int(delta), key))
+                "UPDATE npc SET affinity=MAX(-100, MIN(100, affinity+?)) WHERE key=?", (int(delta) * scale, key))
+            if key.startswith("npc_"):
+                self.db.execute("UPDATE npc SET phone=1 WHERE key=? AND affinity>=10", (key,))
             self.db.commit()
+            row = self.db.execute("SELECT affinity FROM npc WHERE key=?", (key,)).fetchone()
+        return row[0] if row else 0
+
+    def set_fields(self, key: str, **kw):
+        if not kw:
+            return
+        with self.lock:
+            self.db.execute("UPDATE npc SET " + ",".join(f"{k}=?" for k in kw) + " WHERE key=?",
+                            list(kw.values()) + [key])
+            self.db.commit()
+
+    def contacts(self) -> list:
+        """NPC đã ghi nhớ (K) hoặc có số điện thoại, thân nhất trước."""
+        with self.lock:
+            rows = self.db.execute(
+                "SELECT " + ",".join(self.COLS) + " FROM npc WHERE key LIKE 'npc_%' OR phone=1 "
+                "ORDER BY affinity DESC LIMIT 30").fetchall()
+        return [dict(zip(self.COLS, r)) for r in rows]
+
+    def recent_text(self, key: str, limit: int = 20) -> list:
+        with self.lock:
+            rows = self.db.execute(
+                "SELECT role,text FROM msg WHERE key=? ORDER BY id DESC LIMIT ?", (key, limit)).fetchall()
+        rows.reverse()
+        return rows
