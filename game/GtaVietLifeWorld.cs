@@ -461,10 +461,6 @@ public class GtaVietLifeWorld : Script
         Vector3 right = new Vector3((float)Math.Cos(h), (float)Math.Sin(h), 0f);
         Vector3 fwd = new Vector3(-(float)Math.Sin(h), (float)Math.Cos(h), 0f);
         AddProp("prop_hotdogstand_01", bizPos, bizHeading);
-        // thung hang xep gon canh quay (2 thung chong len nhau)
-        Prop box1 = AddProp("prop_cs_cardbox_01", bizPos + right * 1.5f - fwd * 0.8f, bizHeading);
-        if (box1 != null)
-            AddProp("prop_cs_cardbox_01", box1.Position + new Vector3(0f, 0f, 0.4f), bizHeading + 8f, false);
         string[] parasols = { "prop_parasol_01", "prop_parasol_01", "prop_parasol_03", "prop_parasol_04" };
         int tables = Math.Min(4, bizLevel);   // cap 1: 1 ban, cap 2: 2 ban, cap 3: 3 ban, cap 4: 4 ban
         for (int l = 1; l <= tables; l++)
