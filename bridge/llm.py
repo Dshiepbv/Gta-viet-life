@@ -25,8 +25,16 @@ Chỉ trả về JSON đúng dạng: {"reply": "...", "action": "none", "affinit
 def _post_json(url: str, body: dict, timeout: float = 20.0) -> dict:
     req = urllib.request.Request(url, data=json.dumps(body).encode("utf-8"),
                                  headers={"Content-Type": "application/json"}, method="POST")
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        try:
+            detail = e.read().decode("utf-8", "replace")[:300].replace("\n", " ")
+        except Exception:
+            detail = ""
+        print(f"[llm]   chi tiết lỗi {e.code}: {detail}")
+        raise
 
 
 def _parse(text: str) -> dict:
@@ -73,51 +81,45 @@ def _get_json(url: str, timeout: float = 15.0) -> dict:
 
 
 class Brain:
+    PREFERRED = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-3.5-flash", "gemini-3-flash-preview",
+                 "gemini-2.5-flash-lite", "gemini-flash-lite-latest", "gemini-3.1-flash-lite"]
+
     def __init__(self, cfg: dict):
         self.cfg = cfg
-        self.model = cfg.get("gemini_model", "gemini-2.5-flash")
-        self._resolved = False
-
-    def _resolve_model(self):
-        """Tên model trong config có thể đã bị Google đổi/ngừng (lỗi 404): tự chọn model flash mới nhất còn dùng được."""
-        self._resolved = True
-        try:
-            data = _get_json("https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=" + self.cfg["gemini_api_key"])
-        except Exception as e:
-            print(f"[llm] không liệt kê được model Gemini: {e}")
-            return
-        names = [m["name"].split("/", 1)[1] for m in data.get("models", [])
-                 if "generateContent" in m.get("supportedGenerationMethods", [])]
-        print("[llm] model Gemini dùng được:", ", ".join(names[:40]))
-        flash = [n for n in names if "flash" in n and "lite" not in n and "image" not in n
-                 and "tts" not in n and "live" not in n and "preview" not in n and "exp" not in n]
-        flash = sorted(flash, reverse=True) or [n for n in names if "flash" in n] or names
-        if flash:
-            self.model = flash[0]
-            print(f"[llm] dùng model: {self.model}")
+        first = cfg.get("gemini_model", "gemini-2.5-flash")
+        self.candidates = [first] + [m for m in self.PREFERRED if m != first]
+        self.model = first
+        self.dead = set()
 
     def chat(self, npc: dict, ctx: dict, history: list, player_text: str) -> dict:
         system = SYSTEM + "\n\n" + build_context(npc, ctx)
         order = ["gemini", "ollama"] if self.cfg.get("provider", "gemini") == "gemini" else ["ollama", "gemini"]
         last_err = None
         for name in order:
-            try:
-                if name == "gemini" and self.cfg.get("gemini_api_key"):
-                    return self._gemini(system, history, player_text)
-                if name == "ollama" and self.cfg.get("ollama_enabled", True):
-                    return self._ollama(system, history, player_text)
-            except urllib.error.HTTPError as e:
-                last_err = e
-                print(f"[llm] {name} lỗi: {e}")
-                if name == "gemini" and e.code == 404 and not self._resolved:
-                    self._resolve_model()
+            if name == "gemini" and self.cfg.get("gemini_api_key"):
+                # thử model đang dùng trước, lỗi thì lần lượt thử các model khác
+                tried = [self.model] + [m for m in self.candidates if m != self.model and m not in self.dead]
+                for m in tried:
                     try:
-                        return self._gemini(system, history, player_text)
-                    except Exception as e2:
-                        print(f"[llm] gemini vẫn lỗi: {e2}")
-            except (urllib.error.URLError, TimeoutError, KeyError, IndexError, ValueError) as e:
-                last_err = e
-                print(f"[llm] {name} lỗi: {e}")
+                        self.model = m
+                        result = self._gemini(system, history, player_text)
+                        return result
+                    except urllib.error.HTTPError as e:
+                        last_err = e
+                        print(f"[llm] gemini model {m} lỗi {e.code}")
+                        if e.code in (404, 400):
+                            self.dead.add(m)
+                        continue
+                    except (urllib.error.URLError, TimeoutError, KeyError, IndexError, ValueError) as e:
+                        last_err = e
+                        print(f"[llm] gemini model {m} lỗi: {e}")
+                        break
+            elif name == "ollama" and self.cfg.get("ollama_enabled", True):
+                try:
+                    return self._ollama(system, history, player_text)
+                except (urllib.error.URLError, TimeoutError, KeyError, IndexError, ValueError) as e:
+                    last_err = e
+                    print(f"[llm] ollama lỗi: {e}")
         print(f"[llm] không có bộ não nào trả lời được: {last_err}")
         return {"reply": "Xin lỗi, tôi đang vội.", "action": "none", "affinity_delta": 0}
 

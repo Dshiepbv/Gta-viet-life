@@ -74,12 +74,18 @@ class STT:
         _add_cuda_dlls()
         from faster_whisper import WhisperModel
         model = cfg.get("whisper_model", "large-v3-turbo")
-        try:
-            self.model = WhisperModel(model, device="cuda", compute_type=cfg.get("whisper_compute", "int8_float16"))
-            print(f"[stt] {model} chạy trên GPU")
-        except Exception as e:  # thiếu CUDA/cuDNN → chạy CPU
-            print(f"[stt] Không chạy được GPU ({e}). Chuyển sang CPU, sẽ chậm hơn.")
-            self.model = WhisperModel(cfg.get("whisper_cpu_model", "small"), device="cpu", compute_type="int8")
+        device = cfg.get("whisper_device", "cuda")
+        if device == "cpu":
+            cpu_model = cfg.get("whisper_cpu_model", "small")
+            self.model = WhisperModel(cpu_model, device="cpu", compute_type="int8", cpu_threads=int(cfg.get("whisper_cpu_threads", 8)))
+            print(f"[stt] {cpu_model} chạy trên CPU")
+        else:
+            try:
+                self.model = WhisperModel(model, device="cuda", compute_type=cfg.get("whisper_compute", "int8_float16"))
+                print(f"[stt] {model} chạy trên GPU")
+            except Exception as e:  # thiếu CUDA/cuDNN → chạy CPU
+                print(f"[stt] Không chạy được GPU ({e}). Chuyển sang CPU, sẽ chậm hơn.")
+                self.model = WhisperModel(cfg.get("whisper_cpu_model", "small"), device="cpu", compute_type="int8")
         # Không đặt prompt mặc định: khi tiếng thu kém, Whisper hay chép lại đúng prompt thành "câu nói"
         self.prompt = cfg.get("whisper_prompt") or None
 
