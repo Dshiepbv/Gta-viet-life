@@ -40,6 +40,8 @@ public class GtaVietLifeWorld : Script
     string server = "http://127.0.0.1:5577";
     Keys menuKey = Keys.J;   // M la Interaction Menu cua game, F-key can Fn tren laptop
     Keys navUp = Keys.Oemcomma, navDown = Keys.OemPeriod, navOk = Keys.Return;   // mui ten trung dien thoai, [ ] la phim reload cua SHVDN
+    Keys stockKey = Keys.U;   // bat/tat bang kho tren man hinh
+    bool showStock = true;
     string MK { get { return menuKey.ToString(); } }
     Keys sitKey = Keys.E;
     int sitIdx = -1;
@@ -172,6 +174,7 @@ public class GtaVietLifeWorld : Script
         int port = Settings.GetValue("Bridge", "Port", 5577);
         server = "http://127.0.0.1:" + port;
         menuKey = Settings.GetValue("Keys", "Menu", menuKey);
+        stockKey = Settings.GetValue("Keys", "Stock", stockKey);
         navUp = Settings.GetValue("Keys", "Up", navUp);
         navDown = Settings.GetValue("Keys", "Down", navDown);
         navOk = Settings.GetValue("Keys", "Ok", navOk);
@@ -2109,6 +2112,7 @@ public class GtaVietLifeWorld : Script
             Notify("Cho dung cua nhan vien: huong " + (staffAngle + 1) + "/4 (F9 de xoay tiep)");
             Save();
         }
+        if (e.KeyCode == stockKey && !menuOpen) { showStock = !showStock; Notify(showStock ? "Bang kho: ~g~bat~s~" : "Bang kho: ~y~tat~s~"); }
         if (e.KeyCode == sitKey && !menuOpen)
         {
             Ped pl = Game.Player.Character;
@@ -2174,15 +2178,76 @@ public class GtaVietLifeWorld : Script
         DrawText(label + " " + (int)value + "%", x + 6f, y - 3f, 0.34f, Color.White);
     }
 
+    // bieu tuong PNG trong thu muc GtaVietLifeIcons canh script (neu thieu thi khong ve icon)
+    readonly Dictionary<string, GTA.UI.CustomSprite> icons = new Dictionary<string, GTA.UI.CustomSprite>();
+    void DrawIcon(string name, float x, float y, float size)
+    {
+        try
+        {
+            GTA.UI.CustomSprite sp;
+            if (!icons.TryGetValue(name, out sp))
+            {
+                string f = Path.Combine(Path.Combine(Path.GetDirectoryName(Filename), "GtaVietLifeIcons"), name + ".png");
+                sp = File.Exists(f) ? new GTA.UI.CustomSprite(f, new SizeF(size, size), new PointF(x, y)) : null;
+                icons[name] = sp;
+            }
+            if (sp == null) return;
+            sp.Size = new SizeF(size, size);
+            sp.Position = new PointF(x, y);
+            sp.Draw();
+        }
+        catch { }
+    }
+
+    void DrawStat(string icon, string fallback, float value, float x, float y, Color fill)
+    {
+        DrawIcon(icon, x, y - 3f, 22f);
+        float w = 150f, h = 16f, bx = x + 28f;
+        new GTA.UI.ContainerElement(new PointF(bx, y), new SizeF(w, h), Color.FromArgb(150, 0, 0, 0)).Draw();
+        Color c = value < 15f ? Color.FromArgb(230, 230, 60, 60) : fill;
+        float fw = (w - 4f) * Math.Max(0f, Math.Min(100f, value)) / 100f;
+        if (fw > 0f) new GTA.UI.ContainerElement(new PointF(bx + 2f, y + 2f), new SizeF(fw, h - 4f), c).Draw();
+        DrawText((int)value + "%", bx + w + 6f, y - 3f, 0.34f, value < 15f ? Color.FromArgb(255, 255, 110, 110) : Color.White);
+    }
+
+    // bang kho tat ca quan: bieu tuong + thanh ton kho (do <=10, vang <=30, xanh con lai) + so luong
+    void DrawStockPanel(float x, float y)
+    {
+        if (shops.Count == 0) return;
+        SyncOut();
+        float rowH = 20f;
+        float w = 250f, h = 26f + shops.Count * rowH;
+        new GTA.UI.ContainerElement(new PointF(x, y), new SizeF(w, h), Color.FromArgb(140, 0, 0, 0)).Draw();
+        DrawIcon("stock", x + 4f, y + 2f, 20f);
+        DrawText("KHO CAC QUAN  (" + stockKey + ": an)", x + 30f, y + 1f, 0.32f, Color.FromArgb(255, 255, 210, 80));
+        for (int i = 0; i < shops.Count; i++)
+        {
+            Shop sh = shops[i];
+            float ry = y + 26f + i * rowH;
+            bool act = i == activeShop;
+            DrawText("#" + (i + 1), x + 6f, ry - 2f, 0.32f, act ? Color.FromArgb(255, 255, 210, 80) : Color.White);
+            float bx = x + 34f, bw = 130f;
+            new GTA.UI.ContainerElement(new PointF(bx, ry), new SizeF(bw, 12f), Color.FromArgb(150, 0, 0, 0)).Draw();
+            Color c = sh.Stock <= 10 ? Color.FromArgb(235, 235, 70, 70) : sh.Stock <= 30 ? Color.FromArgb(235, 235, 200, 60) : Color.FromArgb(235, 90, 200, 90);
+            float fw = (bw - 4f) * Math.Max(0f, Math.Min(1f, sh.Stock / 100f));
+            if (fw > 0f) new GTA.UI.ContainerElement(new PointF(bx + 2f, ry + 2f), new SizeF(fw, 8f), c).Draw();
+            DrawText(sh.Stock <= 0 ? "HET" : sh.Stock.ToString(), bx + bw + 6f, ry - 3f, 0.32f, sh.Stock <= 10 ? Color.FromArgb(255, 255, 110, 110) : Color.White);
+            DrawText(sh.Staff <= 0 ? "!nv" : "", bx + bw + 46f, ry - 3f, 0.30f, Color.FromArgb(255, 255, 170, 80));
+        }
+    }
+
     void DrawHud()
     {
         float x = 18f, y = 18f;
-        DrawText("$" + Game.Player.Money, x, y - 4f, 0.5f, Color.FromArgb(255, 120, 230, 120));
+        DrawIcon("money", x, y - 2f, 24f);
+        DrawText("$" + Game.Player.Money, x + 28f, y - 4f, 0.5f, Color.FromArgb(255, 120, 230, 120));
         y += 28f;
-        DrawBar("An", hunger, x, y, Color.FromArgb(220, 235, 150, 40));
-        DrawBar("Uong", thirst, x, y + 22f, Color.FromArgb(220, 60, 160, 235));
-        DrawBar("Nang luong", energy, x, y + 44f, Color.FromArgb(220, 235, 210, 60));
-        if (hasBiz) DrawText("Kho quan: " + bizStock + " phan" + (bizStock == 0 ? "  (HET HANG - nhap hang de co khach)" : ""), x, y + 66f, 0.32f, bizStock == 0 ? Color.FromArgb(255, 255, 90, 90) : Color.White);
+        DrawStat("food", "An", hunger, x, y, Color.FromArgb(220, 235, 150, 40));
+        DrawStat("drink", "Uong", thirst, x, y + 22f, Color.FromArgb(220, 60, 160, 235));
+        DrawStat("energy", "Nang luong", energy, x, y + 44f, Color.FromArgb(220, 235, 210, 60));
+        float below = y + 66f;
+        if (showStock && shops.Count > 0) { DrawStockPanel(x, below); below += 30f + shops.Count * 20f; }
+        y = below - 66f;   // phan chu phia duoi tinh theo vi tri moi
         string extra = "";
         if (jobGiaoHang) extra += "Giao hang";
         if (delivering)
@@ -2191,7 +2256,7 @@ public class GtaVietLifeWorld : Script
             extra += " | con " + (int)Game.Player.Character.Position.DistanceTo2D(dest) + "m, " + (left > 0 ? left + "s" : "TRE");
         }
         if (debt > 0) extra += (extra.Length > 0 ? " | " : "") + "No $" + debt;
-        if (extra.Length > 0) DrawText(extra, x, y + (hasBiz ? 86f : 66f), 0.32f, Color.White);
+        if (extra.Length > 0) DrawText(extra, x, y + 66f, 0.32f, Color.White);
     }
 
     // tach nhan thanh dong chinh + dong phu: "Ten  (chi tiet)" -> Ten / chi tiet
