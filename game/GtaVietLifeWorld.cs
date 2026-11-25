@@ -524,8 +524,31 @@ public class GtaVietLifeWorld : Script
         return (float)(Math.Atan2(-d.X, d.Y) * 180.0 / Math.PI);
     }
 
+    readonly List<int> fxHandles = new List<int>();
+    // nuoc phun: hieu ung hat (particle) vong lap dat tai dinh dai phun nuoc. Doi trong .ini: FountainFxAsset / FountainFx / FountainFxZ / FountainFxPitch / FountainFxScale
+    void StartFountainWater(Vector3 baseP)
+    {
+        try
+        {
+            string asset = Settings.GetValue("Business", "FountainFxAsset", "core");
+            string fx = Settings.GetValue("Business", "FountainFx", "water_cannon_jet");
+            Function.Call(Hash.REQUEST_NAMED_PTFX_ASSET, asset);
+            if (!Function.Call<bool>(Hash.HAS_NAMED_PTFX_ASSET_LOADED, asset)) { buildMissing = true; return; }
+            float z = baseP.Z + ReadF("Business", "FountainFxZ", 1.9f);
+            float pitch = ReadF("Business", "FountainFxPitch", 90f);
+            float sc = ReadF("Business", "FountainFxScale", 0.5f);
+            Function.Call(Hash.USE_PARTICLE_FX_ASSET, asset);
+            int hd = Function.Call<int>(Hash.START_PARTICLE_FX_LOOPED_AT_COORD, fx, baseP.X, baseP.Y, z, pitch, 0f, 0f, sc, false, false, false, false);
+            Log("nuoc phun " + asset + "/" + fx + " handle=" + hd);
+            if (hd != 0) fxHandles.Add(hd);
+        }
+        catch (Exception ex) { Log("nuoc phun loi: " + ex.Message); }
+    }
+
     void ClearBizProps()
     {
+        foreach (int hd in fxHandles) { try { Function.Call(Hash.STOP_PARTICLE_FX_LOOPED, hd, false); } catch { } }
+        fxHandles.Clear();
         foreach (Prop p in bizProps) if (p != null && p.Exists()) p.Delete();
         bizProps.Clear();
         sitIdx = -1;
@@ -690,7 +713,9 @@ public class GtaVietLifeWorld : Script
         if (bizLevel >= 4)
         {
             for (int k = -3; k <= 3; k++) AddProp("prop_bush_neat_01", bizPos - fwd * 7.4f + right * (k * 2.0f), bizHeading + 90f);
-            AddProp("prop_fountain2", bizPos - fwd * 5.0f, bizHeading);
+            Vector3 fp = bizPos - fwd * 5.0f;
+            Prop fnt = AddProp("prop_fountain2", fp, bizHeading);
+            if (fnt != null) StartFountainWater(new Vector3(fp.X, fp.Y, fnt.Position.Z));
             for (int ti = 0; ti < tcs.Count; ti++)
             {
                 AddProp("prop_cs_champ_flute", new Vector3(tcs[ti].X - 0.2f, tcs[ti].Y - 0.1f, tcTop[ti] + 0.01f), bizHeading, false);
