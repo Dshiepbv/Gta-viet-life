@@ -4,7 +4,7 @@
 //   đọc  GVL.Needs (float[3] đói/khát/năng lượng), GVL.Hygiene (float), GVL.Home (int[] {coNha, dangTrongNha}), GVL.Slept (int, tăng mỗi lần ngủ)
 //   ghi  GVL.NeedsAdd (float[3], cộng dồn), GVL.HygAdd (float), GVL.RepAdd (int), GVL.LifeOn (bool), GVL.FridgeReq (World đặt true khi Sếp mở tủ lạnh)
 //   công bố GVL.Life (string[] trạng thái) cho file khác muốn biết Sếp đang ốm/say/căng thẳng.
-// Phím L: menu Đời sống 2. Mọi thứ chỉ chạy khi đang chơi: tắt game thì không ốm thêm, không tăng căng thẳng, đồ ăn không hỏng.
+// Phím Y: menu Đời sống 2. Mọi thứ chỉ chạy khi đang chơi: tắt game thì không ốm thêm, không tăng căng thẳng, đồ ăn không hỏng.
 // Chữ trong game viết không dấu (font GTA không có dấu).
 
 using System;
@@ -25,7 +25,7 @@ public class GtaVietLifeDoiSong : Script
 {
     const string SaveFile = "GtaVietLifeDoiSong.sav";
     string server = "http://127.0.0.1:5577";
-    Keys menuKey = Keys.L;
+    Keys menuKey = Keys.Y;   // L la menu Kinh te, J Doi song, I Ca nhan
     Keys navUp = Keys.Oemcomma, navDown = Keys.OemPeriod, navOk = Keys.Return;
 
     // bat/tat tung module trong GtaVietLifeDoiSong.ini, muc [Modules]

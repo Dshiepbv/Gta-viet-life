@@ -79,7 +79,7 @@ Phạt khi bị truy nã rồi thoát, nợ có lãi, uy tín tăng/giảm. Tr�
   Toạ độ tiệm rửa xe và nhà nghỉ là ước lượng, cần kiểm tra trong game.
 
 ### Đời sống 2 (GtaVietLifeDoiSong.cs)
-Chép `game/GtaVietLifeDoiSong.cs` và `GtaVietLifeDoiSong.ini` vào `scripts`. Phím `L` mở menu. Mỗi phần bật/tắt được trong ini mục `[Modules]`.
+Chép `game/GtaVietLifeDoiSong.cs` và `GtaVietLifeDoiSong.ini` vào `scripts`. Phím `Y` mở menu (L là menu Kinh tế). Mỗi phần bật/tắt được trong ini mục `[Modules]`.
 Mọi chỉ số chỉ chạy khi đang chơi (tắt game thì không ốm thêm, đồ ăn không hỏng, hoá đơn không tới hạn).
 - **Căng thẳng 0-100**: tăng khi bị truy nã, máu thấp, đói khát, thức lâu, bẩn, ốm. Giảm khi ngủ, ở nhà, cuối tuần, giải trí. Trên 90% thì nhanh kiệt sức, màn hình rung. NPC thấy Sếp cộc, dễ cáu.
 - **Thời tiết**: dầm mưa hoặc đi xe máy dưới mưa thì người ướt dần, ướt lâu dễ bị cảm. Nắng gắt buổi trưa thì khát nhanh.
@@ -90,7 +90,7 @@ Mọi chỉ số chỉ chạy khi đang chơi (tắt game thì không ốm thêm
 - **Nhà cửa**: hoá đơn điện nước + internet mỗi 7 ngày game, tự trừ nếu đủ tiền. Nợ quá 3 ngày thì bị cắt điện: trong nhà tắt đèn, tủ lạnh hỏng nhanh gấp 3.
   Tủ lạnh có hạn dùng từng món. Đi chợ ở cửa hàng 24/7 hoặc đặt ship (+$5/món). Bấm E ở tủ lạnh thì tự nấu món sắp hết hạn.
 - **Giải trí**: bar, rạp phim, gym (phát `life.gym` để file Cá nhân tăng cơ bắp), biển, công viên, câu cá (có thể câu được cá bỏ tủ lạnh).
-- **Sự kiện ngẫu nhiên** (6-12 phút một lần): cướp giật (đuổi, xô ngã tên cướp được thưởng, tăng uy tín), người ngã quỵ (lại gần bấm `L` để sơ cứu), cháy, mất điện cả khu ban đêm.
+- **Sự kiện ngẫu nhiên** (6-12 phút một lần): cướp giật (đuổi, xô ngã tên cướp được thưởng, tăng uy tín), người ngã quỵ (lại gần bấm `Y` để sơ cứu), cháy, mất điện cả khu ban đêm.
 - **Bản tin radio** lúc 7h và 18h (hoặc chọn trong menu): cầu nối `POST /news` nhờ AI tổng hợp sự kiện gần đây thành bản tin có giọng đọc.
 - Sự kiện phát lên bus: `life.sick` (kind), `life.injury`, `life.hospital` (amount), `life.bill` (amount, paid), `life.powercut`, `life.eat` (src, food, spoiled),
   `life.leisure` / `life.gym` (minutes, place), `life.event` (kind = snatch/help/fire/blackout).

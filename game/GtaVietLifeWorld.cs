@@ -2969,6 +2969,18 @@ public class GtaVietLifeWorld : Script
         catch { }
     }
 
+    // tra tien qua cong chung GVL.Pay (Core/Kinh te ghi so); khong co thi tru tien mat nhu cu
+    bool PayVia(int amount, string cat, string note)
+    {
+        Func<int, string, string, bool> f = null;
+        try { f = AppDomain.CurrentDomain.GetData("GVL.Pay") as Func<int, string, string, bool>; } catch { }
+        if (f == null) return Spend(amount);
+        bool ok = false;
+        try { ok = f(amount, cat, note); } catch { }
+        if (!ok) Notify("Khong du tien ($" + amount + ").");
+        return ok;
+    }
+
     static bool LifeFridgeOn() { try { object o = AppDomain.CurrentDomain.GetData("GVL.LifeOn"); return o is bool && (bool)o; } catch { return false; } }
 
     // ---- ve sinh ca nhan: giam dan theo gio game (chi khi dang choi), tam o nha/nha nghi. NPC thay Sep ban thi noi.
@@ -2982,7 +2994,7 @@ public class GtaVietLifeWorld : Script
         bool atHome = hasHome && (insideHome || me.Position.DistanceTo(home) < 30f);
         bool atMotel = NearMotel(me) >= 0;
         if (!atHome && !atMotel) { Notify("Chi tam duoc o nha minh hoac nha nghi."); return; }
-        if (!atHome && !Spend(ShowerMotelPrice)) return;
+        if (!atHome && !PayVia(ShowerMotelPrice, "leisure", "tam nha nghi")) return;
         fadeAction = 5;
         GTA.UI.Screen.FadeOut(600);
         sleepAt = Game.GameTime + 900;
@@ -3018,7 +3030,7 @@ public class GtaVietLifeWorld : Script
         bool atShop = false;
         foreach (Vector3 c in CarWashSpots) if (v.Position.DistanceTo(c) < 25f) atShop = true;
         int price = atShop ? CarWashPrice : CarWashMobile;
-        if (!Spend(price)) return;
+        if (!PayVia(price, "car", "rua xe")) return;
         svcVeh = v;
         fadeAction = 6;
         GTA.UI.Screen.FadeOut(600);
@@ -3040,7 +3052,7 @@ public class GtaVietLifeWorld : Script
         Vehicle v = ServiceVehicle(me);
         if (v == null) { Notify("Ngoi tren xe (hoac dung canh xe 10 m) roi goi cuu ho."); return; }
         int cost = RepairCost(v);
-        if (!Spend(cost)) return;
+        if (!PayVia(cost, "car", "sua xe tai cho")) return;
         svcVeh = v;
         fadeAction = 7;
         GTA.UI.Screen.FadeOut(600);
@@ -3060,7 +3072,7 @@ public class GtaVietLifeWorld : Script
         }
         if (me.IsInVehicle()) { Notify("Xuong xe da."); return; }
         if (Game.Player.WantedLevel > 0) { Notify("Dang bi truy na, nha nghi khong cho thue."); return; }
-        if (!Spend(MotelPrice)) return;
+        if (!PayVia(MotelPrice, "leisure", "nha nghi")) return;
         CloseMenu();
         fadeAction = 4;
         GTA.UI.Screen.FadeOut(800);
