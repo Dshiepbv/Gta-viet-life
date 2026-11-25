@@ -812,7 +812,14 @@ public class GtaVietLifeWorld : Script
                     Function.Call(Hash.TASK_FOLLOW_NAV_MESH_TO_COORD, p, spot.X, spot.Y, spot.Z, 1.0f, 15000, 1.0f, false, 0f);
                     continue;
                 }
-                if (p.IsPositionFrozen) continue;
+                if (p.IsPositionFrozen)
+                {
+                    // dang dung yen: neu lo lung tren cao thi ha xuong mat dat
+                    float g = World.GetGroundHeight(new Vector3(p.Position.X, p.Position.Y, p.Position.Z + 0.3f));
+                    if (g > -100f && Math.Abs(p.Position.Z - (g + 1.0f)) > 0.35f)
+                        p.Position = new Vector3(p.Position.X, p.Position.Y, g + 1.0f + staffZ);
+                    continue;
+                }
                 // ve cho dung
                 if (p.Position.DistanceTo(staffSlots[i]) > 1.5f) p.Position = staffSlots[i];
                 p.Heading = bizHeading;
