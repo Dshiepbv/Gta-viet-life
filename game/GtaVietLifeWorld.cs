@@ -38,7 +38,8 @@ public class GtaVietLifeWorld : Script
     const int FinePerStar = 150;
 
     string server = "http://127.0.0.1:5577";
-    Keys menuKey = Keys.M;
+    Keys menuKey = Keys.F6;   // M la phim Interaction Menu cua game, tranh trung
+    string MK { get { return menuKey.ToString(); } }
     Keys sitKey = Keys.E;
     int sitIdx = -1;
     int safeUntil;
@@ -188,7 +189,7 @@ public class GtaVietLifeWorld : Script
         Tick += OnTick;
         KeyDown += OnKeyDown;
         Aborted += OnAborted;
-        Notify("~g~GTA Viet Life: Doi song~s~ da bat. Bam ~y~M~s~ de mo menu.");
+        Notify("~g~GTA Viet Life: Doi song~s~ da bat. Bam ~y~" + MK + "~s~ de mo menu.");
         foreach (Shop sh in shops) MakeShopBlip(sh);
         if (hasBiz) { BuildBizProps(); }
         for (int i = 0; i < Math.Min(bizStaff, MaxVisibleStaff); i++) SpawnStaff();
@@ -297,7 +298,7 @@ public class GtaVietLifeWorld : Script
         {
             nextWarn = now + 60000;
             string what = hunger < 15f ? "doi" : thirst < 15f ? "khat" : "kiet suc, can ngu";
-            Notify("~r~Sep dang " + what + "!~s~ Bam M de an/uong/ngu.");
+            Notify("~r~Sep dang " + what + "!~s~ Bam " + MK + " de an/uong/ngu.");
         }
     }
 
@@ -612,7 +613,7 @@ public class GtaVietLifeWorld : Script
         SyncOut();
         MakeShopBlip(sh);
         BuildBizProps();
-        Notify("~g~Da mo quan #" + shops.Count + "~s~ (" + ModeName[mode] + (indoor ? ", trong nha" : "") + ") o " + ZoneName(bizPos) + ". Tang 30 phan hang. Dung gan quan bam M de quan ly.");
+        Notify("~g~Da mo quan #" + shops.Count + "~s~ (" + ModeName[mode] + (indoor ? ", trong nha" : "") + ") o " + ZoneName(bizPos) + ". Tang 30 phan hang. Dung gan quan bam " + MK + " de quan ly.");
         PostEvent("Có gã vừa mở một quán nhỏ ở " + SafeStreet(bizPos) + ".");
     }
 
@@ -636,7 +637,7 @@ public class GtaVietLifeWorld : Script
     {
         Begin("TIM MAT BANG KINH DOANH", delegate { ShowOpenMenu(); });
         Vector3 pp = Game.Player.Character.Position;
-        Info("Chon mot khu de dat diem den tren ban do, den noi roi mo quan (menu M > Kinh doanh)");
+        Info("Chon mot khu de dat diem den tren ban do, den noi roi mo quan (menu " + MK + " > Kinh doanh)");
         for (int i = 0; i < Listings.Length; i++)
         {
             string nm = (string)Listings[i][0];
@@ -1259,7 +1260,7 @@ public class GtaVietLifeWorld : Script
                 int qty = Math.Min(bizStock, c.Qty);
                 if (qty <= 0) { Release(c); customers.RemoveAt(i); continue; }
                 bizStock -= qty;
-                if (bizStock == 0) Notify("~r~Het hang!~s~ Den quan bam M > Kinh doanh > Nhap hang de tiep tuc ban.");
+                if (bizStock == 0) Notify("~r~Het hang!~s~ Den quan bam " + MK + " > Kinh doanh > Nhap hang de tiep tuc ban.");
                 else if (bizStock <= 5) Notify("~y~Kho sap het~s~ (con " + bizStock + " phan).");
                 soldToday += qty;
                 int pay = qty * Price();
@@ -1594,7 +1595,7 @@ public class GtaVietLifeWorld : Script
         rentPerDay = h.Rent;
         homeName = h.Name;
         homeEnergy = h.Energy;
-        Notify("~g~Da thue " + h.Name + "~s~. Coc 3 ngay $" + deposit + ", thue $" + h.Rent + "/ngay. Den gan nha bam M de ngu.");
+        Notify("~g~Da thue " + h.Name + "~s~. Coc 3 ngay $" + deposit + ", thue $" + h.Rent + "/ngay. Den gan nha bam " + MK + " de ngu.");
         PostEvent("Có gã vừa thuê " + h.Name + ".");
         Save();
     }
@@ -1785,7 +1786,7 @@ public class GtaVietLifeWorld : Script
 
     void ShowMain()
     {
-        Begin("DOI SONG  (M/Backspace: dong)", null);
+        Begin("DOI SONG  (" + MK + "/Backspace: dong)", null);
         Item("An com  (-$" + FoodPrice + ")", delegate { Eat(); });
         Item("Uong nuoc  (-$" + DrinkPrice + ")", delegate { Drink(); });
         if (hasHome) Item("Ngu o nha  (tua 8 gio)", delegate { CloseMenu(); Sleep(); });
@@ -2141,7 +2142,7 @@ public class GtaVietLifeWorld : Script
             cy += rh;
         }
         if (total > maxRows) DrawText((first > 0 ? "^ " : "  ") + "(" + (menuSel + 1) + "/" + total + ")" + (last < total ? " v" : ""), x + w - 110f, y + 8f, 0.32f, Color.FromArgb(255, 180, 184, 196));
-        DrawText("Mui ten Len/Xuong chon  -  Enter hoac so: chay  -  Backspace: quay lai  -  M: dong", x + pad, y + h - 26f, 0.29f, Color.FromArgb(255, 150, 156, 170));
+        DrawText("Mui ten Len/Xuong chon  -  Enter hoac so: chay  -  Backspace: quay lai  -  " + MK + ": dong", x + pad, y + h - 26f, 0.29f, Color.FromArgb(255, 150, 156, 170));
     }
 
     // ------------------------------------------------------------ cầu nối AI
