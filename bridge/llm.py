@@ -15,6 +15,8 @@ Quy tắc:
 - Giữ đúng tên, nghề nghiệp, tính cách, tâm trạng và độ thân thiết đã cho. Nhớ những gì hai bên đã nói trước đó.
 - Phản ứng theo hoàn cảnh: giờ giấc, thời tiết, nơi đang đứng, người chơi đang bị truy nã hay không.
 - Không bao giờ nhắc tới việc mình là AI, là game hay là nhân vật ảo.
+- GIỌNG ĐIỆU: nói đúng "phong cách nói" được giao (vùng miền, tuổi, xưng hô, câu cửa miệng) và đúng nghề/tính cách; mỗi người một kiểu, không ai nói giống ai. Người trẻ dùng tiếng lóng nhẹ, người lớn tuổi chững chạc, cảnh sát cộc lốc công vụ, người bán hàng niềm nở mời chào, dân giang hồ nói cộc, người sang thì lịch sự.
+- ĐÚNG NGỮ CẢNH: giọng thay đổi theo thiện cảm, giờ giấc (khuya thì uể oải/đề phòng), thời tiết (mưa thì than), người chơi cầm vũ khí/bị truy nã (sợ hoặc dè chừng), đang làm việc gì thì nói theo việc đó. Đừng chào hỏi máy móc.
 - Không đọc ký hiệu, emoji, ngoặc đơn mô tả hành động; chỉ lời nói.
 - Chọn một hành động cho bản thân:
   "follow": đồng ý đi theo người chơi (làm vệ sĩ, đi chơi cùng) khi được nhờ và bạn đồng ý.
@@ -23,7 +25,8 @@ Quy tắc:
   "fight": lao vào đánh khi bị xúc phạm nặng và bạn nóng tính.
   "none": các trường hợp còn lại.
 - "affinity_delta" từ -2 đến 2: thiện cảm của bạn với người chơi thay đổi thế nào sau câu này.
-Chỉ trả về JSON đúng dạng: {"reply": "...", "action": "none", "affinity_delta": 0}"""
+- "tone": cảm xúc câu nói, chọn một: "binh_thuong", "vui", "cau", "so", "buon", "thi_tham", "hao_hung".
+Chỉ trả về JSON đúng dạng: {"reply": "...", "action": "none", "affinity_delta": 0, "tone": "binh_thuong"}"""
 
 
 def _post_json(url: str, body: dict, timeout: float = 20.0) -> dict:
@@ -39,6 +42,53 @@ def _post_json(url: str, body: dict, timeout: float = 20.0) -> dict:
             detail = ""
         print(f"[llm]   chi tiết lỗi {e.code}: {detail}")
         raise
+
+
+TONES = ("binh_thuong", "vui", "cau", "so", "buon", "thi_tham", "hao_hung")
+
+REGIONS = [
+    ("miền Bắc (Hà Nội)", "xưng tôi/em/anh/chị, dùng 'nhỉ', 'đấy', 'thế', 'ạ', 'vâng', 'chứ lị'"),
+    ("miền Nam (Sài Gòn)", "dùng 'nè', 'nghen', 'hen', 'dị', 'hông', 'má', 'tui', 'bữa nay', 'trời ơi'"),
+    ("miền Trung", "dùng 'mô', 'tê', 'răng', 'rứa', 'chừ', 'ni', 'nớ', giọng thân tình chất phác"),
+    ("miền Nam (Sài Gòn)", "nói thẳng, hay 'ê', 'mày tao' với người thân, 'chời', 'quá trời'"),
+]
+AGES = [("trẻ 20 tuổi", "tiếng lóng nhẹ như 'xịn', 'căng', 'ổn áp', 'chill', hơi nhanh nhảu"),
+        ("khoảng 30 tuổi", "tự nhiên đời thường"),
+        ("trung niên 45 tuổi", "chững chạc, hay khuyên bảo, gọi người chơi là 'cậu/chú em/cô em'"),
+        ("lớn tuổi 60 tuổi", "chậm rãi, hay kể chuyện xưa, gọi người chơi là 'con/cháu'")]
+CATCH = ["hay mở đầu bằng 'À này'", "hay thở dài 'Haizz'", "hay cười 'hì hì' cuối câu", "ít khi nói thừa",
+         "hay chêm 'thật đấy'", "hay hỏi lại 'phải không?'", "hay than giá cả đắt đỏ", "hay nhắc 'hồi xưa'"]
+
+
+def style_for(npc: dict, ctx: dict) -> str:
+    import hashlib
+    h = int(hashlib.md5(str(npc.get("key", npc.get("name", ""))).encode("utf-8")).hexdigest(), 16)
+    region, words = REGIONS[h % len(REGIONS)]
+    age, agew = AGES[(h >> 4) % len(AGES)]
+    catch = CATCH[(h >> 8) % len(CATCH)]
+    out = [f"Phong cách nói của bạn: giọng {region}; {words}. Tuổi: {age}, {agew}. Thói quen: {catch}."]
+    hint = []
+    try:
+        hr = int(ctx.get("hour", "12"))
+    except ValueError:
+        hr = 12
+    if hr >= 23 or hr < 5:
+        hint.append("đang khuya, giọng uể oải hoặc đề phòng")
+    elif hr < 9:
+        hint.append("buổi sáng sớm")
+    w = str(ctx.get("weather", "")).lower()
+    if any(k in w for k in ("rain", "thunder", "mưa", "drizzle", "clearing")):
+        hint.append("trời đang mưa, hơi cáu hoặc than vãn")
+    if ctx.get("weapon") == "1":
+        hint.append("người chơi đang cầm vũ khí: dè chừng hoặc sợ")
+    try:
+        if int(ctx.get("wanted", "0")) >= 2:
+            hint.append("người chơi đang bị truy nã: cảnh giác, sợ liên lụy (trừ khi bạn là dân giang hồ)")
+    except ValueError:
+        pass
+    if hint:
+        out.append("Bối cảnh ảnh hưởng giọng: " + "; ".join(hint) + ".")
+    return "\n".join(out)
 
 
 def _parse(text: str) -> dict:
@@ -59,7 +109,10 @@ def _parse(text: str) -> dict:
         delta = max(-2, min(2, int(data.get("affinity_delta", 0))))
     except (ValueError, TypeError):
         delta = 0
-    return {"reply": reply, "action": action, "affinity_delta": delta, "heard": str(data.get("heard", "")).strip()}
+    tone = str(data.get("tone", "binh_thuong")).strip().lower()
+    if tone not in TONES:
+        tone = "binh_thuong"
+    return {"reply": reply, "action": action, "affinity_delta": delta, "tone": tone, "heard": str(data.get("heard", "")).strip()}
 
 
 def build_context(npc: dict, ctx: dict) -> str:
@@ -72,6 +125,7 @@ def build_context(npc: dict, ctx: dict) -> str:
         f"Ngoại hình theo game: {ctx.get('model', '?')}.",
         f"Người chơi: {'đang ngồi trên xe' if ctx.get('in_vehicle') == '1' else 'đi bộ'}, mức truy nã {ctx.get('wanted', '0')}/5, có {ctx.get('money', '?')} đô.",
     ]
+    lines.append(style_for(npc, ctx))
     if ctx.get("following") == "1":
         lines.append("Bạn hiện đang đi theo người chơi.")
     if ctx.get("weapon") == "1":

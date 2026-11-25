@@ -157,7 +157,7 @@ class Bridge:
 
             def speak():
                 try:
-                    self.voice.speak(result["reply"], npc)
+                    self.voice.speak(result["reply"], dict(npc, _tone=result.get("tone", "")))
                 except Exception as e:  # mất mạng → không có giọng, vẫn có phụ đề
                     print(f"[tts] lỗi: {e}")
                 print(f"[{npc['name']}] giọng sẵn sàng sau {time.time() - t2:.1f}s")

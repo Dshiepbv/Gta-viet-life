@@ -12,6 +12,19 @@ import pygame
 VOICE_MALE = "vi-VN-NamMinhNeural"
 VOICE_FEMALE = "vi-VN-HoaiMyNeural"
 
+# tone -> (đổi tốc độ %, đổi cao độ Hz)
+TONE_ADJ = {"vui": (8, 6), "cau": (10, -4), "so": (14, 12), "buon": (-12, -8),
+            "thi_tham": (-8, -10), "hao_hung": (14, 8)}
+
+
+def _shift(val: str, d: int, unit: str) -> str:
+    try:
+        n = int(val.replace(unit, "").replace("+", ""))
+    except ValueError:
+        n = 0
+    n = max(-40, min(40, n + d))
+    return f"{n:+d}{unit}"
+
 
 class Voice:
     def __init__(self, cfg: dict):
@@ -40,7 +53,11 @@ class Voice:
         skip_edge = time.time() < self.edge_skip_until  # Edge đang lỗi liên tục: dùng thẳng giọng Google cho nhanh
         for use_params in (() if skip_edge else ((True, False) if self.use_params else (False,))):
             try:
-                kw = dict(rate=npc.get("rate", "+0%"), pitch=npc.get("pitch", "+0Hz")) if use_params else {}
+                kw = {}
+                if use_params:
+                    r, p = npc.get("rate", "+0%"), npc.get("pitch", "+0Hz")
+                    dr, dp = TONE_ADJ.get(npc.get("_tone", ""), (0, 0))
+                    kw = dict(rate=_shift(r, dr, "%"), pitch=_shift(p, dp, "Hz"))
                 asyncio.run(edge_tts.Communicate(text, voice, **kw).save(path))
                 self.edge_fails = 0
                 return True
