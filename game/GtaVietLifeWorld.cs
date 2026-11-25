@@ -71,6 +71,7 @@ public class GtaVietLifeWorld : Script
         public int Chair = -1;
         public Cust Target;
         public Prop Cup;
+        public int NextPatrol;
     }
     class StaffTask { public int Type; public int Chair; public Cust Target; }
     readonly List<StaffState> staffStates = new List<StaffState>();
@@ -78,6 +79,8 @@ public class GtaVietLifeWorld : Script
     readonly List<Prop> chairProps = new List<Prop>();
     readonly List<bool> chairBusy = new List<bool>();
     readonly List<float> chairFace = new List<float>();
+    readonly List<Vector3> chairTable = new List<Vector3>();
+    readonly List<Prop> tableCups = new List<Prop>();
     float seatZ = 0.55f;
     float staffZ = 0f;
     class Cust
@@ -174,6 +177,7 @@ public class GtaVietLifeWorld : Script
         foreach (Ped p in staffPeds) if (p != null && p.Exists()) p.Delete();
         foreach (Cust c in customers) { DeleteProp(c.Cup); if (c.P != null && c.P.Exists()) c.P.Delete(); }
         foreach (StaffState st in staffStates) DeleteProp(st.Cup);
+        foreach (Prop tc in tableCups) DeleteProp(tc);
         ClearBizProps();
         if (bizBlip != null && bizBlip.Exists()) bizBlip.Delete();
         if (destBlip != null && destBlip.Exists()) destBlip.Delete();
@@ -431,6 +435,9 @@ public class GtaVietLifeWorld : Script
         chairProps.Clear();
         chairBusy.Clear();
         chairFace.Clear();
+        chairTable.Clear();
+        foreach (Prop tc in tableCups) DeleteProp(tc);
+        tableCups.Clear();
     }
 
     Prop AddProp(string model, Vector3 pos, float heading) { return AddProp(model, pos, heading, true); }
@@ -470,9 +477,9 @@ public class GtaVietLifeWorld : Script
             Vector3 c = bizPos + fwd * (3.5f + row * 3.0f) + right * (2.4f * side);
             AddProp("prop_table_03", c, bizHeading);
             AddProp("prop_chair_01a", c + right * 1.1f, bizHeading - 90f);
-            if (bizProps.Count > 0) { chairProps.Add(bizProps[bizProps.Count - 1]); chairBusy.Add(false); chairFace.Add(FaceHeading(c + right * 1.1f, c)); }
+            if (bizProps.Count > 0) { chairProps.Add(bizProps[bizProps.Count - 1]); chairBusy.Add(false); chairFace.Add(FaceHeading(c + right * 1.1f, c)); chairTable.Add(c); tableCups.Add(null); }
             AddProp("prop_chair_01a", c - right * 1.1f, bizHeading + 90f);
-            if (bizProps.Count > 0) { chairProps.Add(bizProps[bizProps.Count - 1]); chairBusy.Add(false); chairFace.Add(FaceHeading(c - right * 1.1f, c)); }
+            if (bizProps.Count > 0) { chairProps.Add(bizProps[bizProps.Count - 1]); chairBusy.Add(false); chairFace.Add(FaceHeading(c - right * 1.1f, c)); chairTable.Add(c); tableCups.Add(null); }
             AddProp(parasols[Math.Min(l, 4) - 1], c, bizHeading);
         }
         // cap 2: chau cay hai ben quay
@@ -524,9 +531,9 @@ public class GtaVietLifeWorld : Script
             Vector3 fwd = new Vector3(-(float)Math.Sin(h), (float)Math.Cos(h), 0f);
             int k = staffPeds.Count;
             // nhan vien dung sau quay (k=0) hoac ben canh quay, quay mat ve phia khach
-            Vector3 pos0 = bizPos - fwd * 1.1f + right * (k == 0 ? 0f : (k % 2 == 1 ? 1f : -1f) * 1.3f * ((k + 1) / 2));
-            float gz = (bizProps.Count > 0 && bizProps[0] != null && bizProps[0].Exists()) ? bizProps[0].Position.Z : GroundZ(pos0);
-            Vector3 pos = new Vector3(pos0.X, pos0.Y, gz + 1.0f + staffZ);
+            Vector3 pos0 = bizPos - fwd * 1.6f + right * (k == 0 ? 0f : (k % 2 == 1 ? 1f : -1f) * 1.2f * ((k + 1) / 2));
+            // bizPos.Z = do cao tam nguoi choi luc dat quan (cho phang) => dung luon cho nhan vien, khong lay Z cua quay (tam quay cao hon dat)
+            Vector3 pos = new Vector3(pos0.X, pos0.Y, bizPos.Z + staffZ);
             Ped p = World.CreatePed(mdl, pos);
             mdl.MarkAsNoLongerNeeded();
             if (p == null || !p.Exists()) return;
@@ -538,7 +545,9 @@ public class GtaVietLifeWorld : Script
             p.IsPositionFrozen = true;
             staffPeds.Add(p);
             staffSlots.Add(pos);
-            staffStates.Add(new StaffState());
+            StaffState nst = new StaffState();
+            nst.NextPatrol = Game.GameTime + 4000 + rnd.Next(0, 6000);
+            staffStates.Add(nst);
         }
         catch (Exception ex) { Log("SpawnStaff loi: " + ex.Message); }
     }
@@ -625,10 +634,10 @@ public class GtaVietLifeWorld : Script
         if (!hasBiz) return;
         bool near = me.Position.DistanceTo(bizPos) < 120f;
         // sinh khach moi
-        if (near && bizStock > 0 && now > nextCustomer && customers.Count < 5)
+        if (near && bizStock > 0 && now > nextCustomer && customers.Count < 6)
         {
-            int gap = 40000 - bizStaff * 5000 - bizLevel * 4000 + rnd.Next(0, 8000);
-            nextCustomer = now + Math.Max(9000, gap);
+            int gap = 26000 - bizStaff * 3000 - bizLevel * 2500 + rnd.Next(0, 6000);
+            nextCustomer = now + Math.Max(7000, gap);
             SpawnCustomer(me);
         }
         for (int i = customers.Count - 1; i >= 0; i--)
@@ -672,15 +681,13 @@ public class GtaVietLifeWorld : Script
                     p.Task.ClearAll();
                     Function.Call(Hash.TASK_START_SCENARIO_AT_POSITION, p, "PROP_HUMAN_SEAT_CHAIR", ch.Position.X, ch.Position.Y, ch.Position.Z + seatZ, c.Chair < chairFace.Count ? chairFace[c.Chair] : ch.Heading, 40000, true, true);
                     if (bizStaff > 1) { StaffTask t = new StaffTask(); t.Type = 1; t.Chair = c.Chair; t.Target = c; staffTasks.Add(t); }
-                    else { c.Cup = MakeCup(); AttachCup(c.Cup, p); }
+                    else PutCupOnTable(c.Chair, MakeCup());
                 }
                 else
                 {
                     // mua mang di: nhan ly nuoc, dung uong mot luc roi di
                     c.Stage = 3;
                     c.T = now;
-                    c.Cup = MakeCup();
-                    AttachCup(c.Cup, p);
                     p.Task.ClearAll();
                     Function.Call(Hash.TASK_START_SCENARIO_IN_PLACE, p, "WORLD_HUMAN_DRINKING", 0, true);
                 }
@@ -705,17 +712,48 @@ public class GtaVietLifeWorld : Script
         return z <= -100f ? v.Z - 1f : z;
     }
 
+    static readonly string[] CupModels = { "prop_plastic_cup_02", "p_ing_coffeecup_01", "prop_cup_saucer_01", "prop_food_cups01", "prop_cs_paper_cups01" };
+    string cupModel;
+
     Prop MakeCup()
     {
         try
         {
-            Model m = new Model("prop_plastic_cup_02");
-            if (!m.IsValid || !m.Request(800)) return null;
+            if (cupModel == null)
+            {
+                foreach (string name in CupModels)
+                {
+                    Model t = new Model(name);
+                    if (t.IsValid && t.Request(800)) { cupModel = name; Log("dung model ly: " + name); break; }
+                }
+                if (cupModel == null) { Log("khong co model ly nao dung duoc"); cupModel = ""; }
+            }
+            if (cupModel.Length == 0) return null;
+            Model m = new Model(cupModel);
+            if (!m.Request(800)) return null;
             Prop cup = World.CreateProp(m, Game.Player.Character.Position + new Vector3(0f, 0f, 3f), false, false);
             m.MarkAsNoLongerNeeded();
             return cup;
         }
         catch { return null; }
+    }
+
+    // Dat ly len ban truoc cho ngoi so idx
+    void PutCupOnTable(int idx, Prop cup)
+    {
+        if (cup == null || !cup.Exists()) return;
+        if (idx < 0 || idx >= chairProps.Count || chairProps[idx] == null || !chairProps[idx].Exists()) { DeleteProp(cup); return; }
+        DeleteProp(tableCups[idx]);
+        Function.Call(Hash.DETACH_ENTITY, cup, true, true);
+        Vector3 cp = chairProps[idx].Position;
+        Vector3 toward = chairTable[idx] - cp;
+        toward.Z = 0f;
+        toward.Normalize();
+        Vector3 pos = cp + toward * 0.75f;
+        pos.Z = cp.Z + 0.78f;
+        cup.Position = pos;
+        Function.Call(Hash.FREEZE_ENTITY_POSITION, cup, true);
+        tableCups[idx] = cup;
     }
 
     void AttachCup(Prop cup, Ped p)
@@ -740,14 +778,20 @@ public class GtaVietLifeWorld : Script
             Ped p = staffPeds[i];
             StaffState st = staffStates[i];
             if (p == null || !p.Exists() || !p.IsAlive) continue;
-            if (st.Mode == 0 && p.IsPositionFrozen && now % 1 == 0 && !(i > 0 && staffTasks.Count > 0)) continue;
-
             if (st.Mode == 0)
             {
-                if (i > 0 && staffTasks.Count > 0)
+                StaffTask t = null;
+                if (i > 0 && staffTasks.Count > 0) { t = staffTasks[0]; staffTasks.RemoveAt(0); }
+                else if (i > 0 && chairProps.Count > 0 && now > st.NextPatrol)
                 {
-                    StaffTask t = staffTasks[0];
-                    staffTasks.RemoveAt(0);
+                    st.NextPatrol = now + 9000 + rnd.Next(0, 8000);
+                    t = new StaffTask();
+                    t.Type = 2;
+                    t.Chair = rnd.Next(chairProps.Count);
+                    if (ChairTaken(t.Chair)) t = null;   // dang co khach ngoi, khong don luc do
+                }
+                if (t != null)
+                {
                     if (t.Chair < 0 || t.Chair >= chairProps.Count || chairProps[t.Chair] == null || !chairProps[t.Chair].Exists()) continue;
                     st.Type = t.Type;
                     st.Chair = t.Chair;
@@ -758,13 +802,14 @@ public class GtaVietLifeWorld : Script
                     p.Task.ClearAll();
                     if (t.Type == 1) { st.Cup = MakeCup(); AttachCup(st.Cup, p); }
                     Vector3 cp = chairProps[t.Chair].Position;
-                    Vector3 toward = bizPos - cp;
+                    Vector3 toward = chairTable[t.Chair] - cp;
                     toward.Z = 0f;
                     toward.Normalize();
                     Vector3 spot = cp + toward * 0.9f;
                     Function.Call(Hash.TASK_FOLLOW_NAV_MESH_TO_COORD, p, spot.X, spot.Y, spot.Z, 1.0f, 15000, 1.0f, false, 0f);
                     continue;
                 }
+                if (p.IsPositionFrozen) continue;
                 // ve cho dung
                 if (p.Position.DistanceTo(staffSlots[i]) > 1.5f) p.Position = staffSlots[i];
                 p.Heading = bizHeading;
@@ -778,15 +823,12 @@ public class GtaVietLifeWorld : Script
                 {
                     if (st.Type == 1)
                     {
-                        // dua nuoc cho khach
-                        DeleteProp(st.Cup);
+                        // dua ly nuoc ra ban cho khach
+                        Prop cupToPlace = st.Cup;
                         st.Cup = null;
                         Cust c = st.Target;
-                        if (c != null && c.P != null && c.P.Exists() && c.Stage == 2)
-                        {
-                            c.Cup = MakeCup();
-                            AttachCup(c.Cup, c.P);
-                        }
+                        if (c != null && c.P != null && c.P.Exists() && c.Stage == 2) PutCupOnTable(st.Chair, cupToPlace);
+                        else DeleteProp(cupToPlace);
                         p.Task.ClearAll();
                         Function.Call(Hash.TASK_START_SCENARIO_IN_PLACE, p, "WORLD_HUMAN_CLIPBOARD", 0, true);
                         st.Until = now + 3500;
@@ -794,8 +836,8 @@ public class GtaVietLifeWorld : Script
                     else
                     {
                         p.Task.ClearAll();
-                        Function.Call(Hash.TASK_START_SCENARIO_IN_PLACE, p, "WORLD_HUMAN_JANITOR", 0, true);
-                        st.Until = now + 9000;
+                        Function.Call(Hash.TASK_START_SCENARIO_IN_PLACE, p, "WORLD_HUMAN_MAID_CLEAN", 0, true);
+                        st.Until = now + 8000;
                     }
                     st.Mode = 2;
                 }
@@ -804,6 +846,7 @@ public class GtaVietLifeWorld : Script
             {
                 if (now > st.Until)
                 {
+                    if (st.Type == 2 && st.Chair >= 0 && st.Chair < tableCups.Count) { DeleteProp(tableCups[st.Chair]); tableCups[st.Chair] = null; }
                     p.Task.ClearAll();
                     Vector3 sl = staffSlots[i];
                     Function.Call(Hash.TASK_FOLLOW_NAV_MESH_TO_COORD, p, sl.X, sl.Y, sl.Z, 1.0f, 20000, 0.8f, false, 0f);
