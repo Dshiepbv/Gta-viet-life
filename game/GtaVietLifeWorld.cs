@@ -524,6 +524,13 @@ public class GtaVietLifeWorld : Script
         return (float)(Math.Atan2(-d.X, d.Y) * 180.0 / Math.PI);
     }
 
+    // cay cao tan rong (doi trong .ini: Tree=...); neu chua nap duoc thi thu lai nhu cac prop khac
+    void AddTree(Vector3 pos, float heading)
+    {
+        string t = Settings.GetValue("Business", "Tree", "prop_tree_lficus_02");
+        if (AddProp(t, pos, heading) == null && !buildMissing) AddProp("prop_bush_neat_01", pos, heading);
+    }
+
     readonly List<int> fxHandles = new List<int>();
     // nuoc phun: hieu ung hat (particle) vong lap dat tai dinh dai phun nuoc. Doi trong .ini: FountainFxAsset / FountainFx / FountainFxZ / FountainFxPitch / FountainFxScale
     void StartFountainWater(Vector3 baseP)
@@ -692,20 +699,14 @@ public class GtaVietLifeWorld : Script
         // cap 3+: hang rao cay xanh hai ben, khong gian phan cach voi via he; ly ruou tren ban
         if (bizLevel >= 3)
         {
-            for (int k = -3; k <= 5; k++)   // hang rao hai ben tu sau quay den sat cong
+            // cay tan rong, thua hon hang bui cu: hai ben, mat tien (chua loi cong), cay cao bong rong
+            for (int k = -3; k <= 5; k += 2)
             {
-                if (k == 2 || k == 3) continue;   // loi vao ben hong, rong ~5 m
-                Vector3 hl = bizPos - right * 9.0f + fwd * (k * 2.0f);
-                Vector3 hr = bizPos + right * 9.0f + fwd * (k * 2.0f);
-                AddProp("prop_bush_neat_01", hl, bizHeading);
-                AddProp("prop_bush_neat_01", hr, bizHeading);
+                AddTree(bizPos - right * 9.5f + fwd * (k * 2.0f), bizHeading);
+                AddTree(bizPos + right * 9.5f + fwd * (k * 2.0f), bizHeading);
             }
-            // mat tien: hang rao hai canh, chua loi vao rong 6,4 m giua hai tru cong (cot den cao kieu co dien)
-            for (int k = 0; k < 3; k++)
-            {
-                AddProp("prop_bush_neat_01", bizPos - right * (4.8f + k * 2.0f) + fwd * 10.0f, bizHeading + 90f);
-                AddProp("prop_bush_neat_01", bizPos + right * (4.8f + k * 2.0f) + fwd * 10.0f, bizHeading + 90f);
-            }
+            AddTree(bizPos - right * 6.6f + fwd * 10.4f, bizHeading);
+            AddTree(bizPos + right * 6.6f + fwd * 10.4f, bizHeading);
             AddProp("prop_streetlight_01", bizPos - right * 3.4f + fwd * 10.0f, bizHeading);
             AddProp("prop_streetlight_01", bizPos + right * 3.4f + fwd * 10.0f, bizHeading);
             AddProp("prop_pot_plant_05a", bizPos - right * 2.4f + fwd * 10.4f, bizHeading);
@@ -723,7 +724,7 @@ public class GtaVietLifeWorld : Script
         // cap 4: dai phun nuoc, hang rao phia sau, ly champagne + chai ruou tren ban
         if (bizLevel >= 4)
         {
-            for (int k = -4; k <= 4; k++) { if (k >= -1 && k <= 1) continue; AddProp("prop_bush_neat_01", bizPos - fwd * 7.4f + right * (k * 2.0f), bizHeading + 90f); }   // chua loi vao phia sau o giua
+            foreach (float tx in new float[] { -8f, -4.2f, 4.2f, 8f }) AddTree(bizPos - fwd * 8.0f + right * tx, bizHeading);   // chua loi vao phia sau o giua
             Vector3 fp = bizPos - fwd * 5.0f;
             Prop fnt = AddProp("prop_fountain2", fp, bizHeading);
             if (fnt != null) StartFountainWater(new Vector3(fp.X, fp.Y, fnt.Position.Z));
