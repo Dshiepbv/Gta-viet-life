@@ -89,6 +89,7 @@ public class GtaVietLifeWorld : Script
     Blip bizBlip;
     int bizStock, bizStaff, bizCash;
     readonly List<Ped> staffPeds = new List<Ped>();
+    readonly List<float> chairTableTop = new List<float>();   // do cao mat ban cua tung ghe
     readonly List<Vector3> staffSlots = new List<Vector3>();
     int nextStaffCheck;
     class StaffState
@@ -114,9 +115,10 @@ public class GtaVietLifeWorld : Script
     float ChairDist = 1.55f;   // ghe cach tam ban (ban dai nen ghe ra xa hon cho thoang)
     float staffZ = 0f;
     float staffBack = 1.45f;
+    float standHalf = 0f;   // nua kich thuoc quay hien tai, de nhan vien khong dung de len quay lon
     int staffAngle = 0;   // 0..3: nhan vien dung phia nao cua quay (F9 de xoay cho dung)
     string standModel = "prop_hotdogstand_01";
-    float cupX = 0.06f, cupY = 0f, cupZ = 0f, cupTable = 0.9f;
+    float cupX = 0.06f, cupY = 0f, cupZ = 0f, cupTable = 0.02f;   // cupTable: cao hon mat ban bao nhieu (m)
     float bizGround;   // do cao mat dat that tai quan (do luc dat quan, truoc khi dung props)
     float standYaw = -90f;   // xoay quay de mat quay (bang menu, dung cu) huong ve phia khach; neu nguoc thi doi thanh 90
     class Cust
@@ -178,7 +180,7 @@ public class GtaVietLifeWorld : Script
         cupX = ReadF("Business", "CupHandX", cupX);
         cupY = ReadF("Business", "CupHandY", cupY);
         cupZ = ReadF("Business", "CupHandZ", cupZ);
-        cupTable = ReadF("Business", "CupTableZ", cupTable);
+        cupTable = ReadF("Business", "CupTableOffset", cupTable);
 
         Load();
 
@@ -493,7 +495,7 @@ public class GtaVietLifeWorld : Script
         float h = (bizHeading + 180f + staffAngle * 90f) * (float)Math.PI / 180f;
         Vector3 dir = new Vector3(-(float)Math.Sin(h), (float)Math.Cos(h), 0f);   // huong tu quay ra cho nhan vien
         Vector3 lat = new Vector3(dir.Y, -dir.X, 0f);
-        Vector3 p0 = bizPos + dir * staffBack + lat * (k == 0 ? 0f : (k % 2 == 1 ? 1f : -1f) * 0.9f * ((k + 1) / 2));
+        Vector3 p0 = bizPos + dir * Math.Max(staffBack, standHalf + 0.65f) + lat * (k == 0 ? 0f : (k % 2 == 1 ? 1f : -1f) * 0.9f * ((k + 1) / 2));
         return new Vector3(p0.X, p0.Y, GroundForBiz() + 1.0f + staffZ);
     }
 
@@ -533,6 +535,7 @@ public class GtaVietLifeWorld : Script
         chairBusy.Clear();
         chairFace.Clear();
         chairTable.Clear();
+        chairTableTop.Clear();
         foreach (Prop tc in tableCups) DeleteProp(tc);
         tableCups.Clear();
     }
@@ -586,26 +589,50 @@ public class GtaVietLifeWorld : Script
         float h = bizHeading * (float)Math.PI / 180f;
         Vector3 right = new Vector3((float)Math.Cos(h), (float)Math.Sin(h), 0f);
         Vector3 fwd = new Vector3(-(float)Math.Sin(h), (float)Math.Cos(h), 0f);
-        Prop stand = AddProp(standModel, bizPos, bizHeading + standYaw);
-        if (stand == null && standModel != "prop_hotdogstand_01") { Log("model quay " + standModel + " khong dung duoc, dung quay hot dog"); stand = AddProp("prop_hotdogstand_01", bizPos, bizHeading + standYaw); }
-        if (stand != null) Function.Call(Hash.SET_ENTITY_COLLISION, stand, false, false);   // quay chi de trang tri, nhan vien khong bi day len mat quay
+        // quay doi theo cap: xe hot dog -> quay burger -> quay nuoc ep -> quay hot dog + may pha cafe & tu lanh bar (doi trong .ini: Stand1..4, StandYaw1..4)
+        string[] defStand = { standModel, "prop_burgerstand_01", "prop_juicestand", "prop_juicestand" };
+        string stName = Settings.GetValue("Business", "Stand" + bizLevel, defStand[Math.Min(bizLevel, 4) - 1]);
+        float stYaw = bizLevel == 1 ? standYaw : ReadF("Business", "StandYaw" + bizLevel, 0f);
+        Prop stand = AddProp(stName, bizPos, bizHeading + stYaw);
+        if (stand == null && stName != "prop_hotdogstand_01") { Log("model quay " + stName + " khong dung duoc, dung quay hot dog"); stYaw = standYaw; stand = AddProp("prop_hotdogstand_01", bizPos, bizHeading + stYaw); }
+        standHalf = 0f; float standTop = GroundForBiz() + 1.0f;
+        if (stand != null)
+        {
+            Function.Call(Hash.SET_ENTITY_COLLISION, stand, false, false);   // quay chi de trang tri, nhan vien khong bi day len mat quay
+            try { Vector3 smn, smx; stand.Model.GetDimensions(out smn, out smx); standHalf = Math.Max(smx.X - smn.X, smx.Y - smn.Y) * 0.5f; standTop = stand.Position.Z + smx.Z; Log("quay " + stName + " kich thuoc " + (smx.X - smn.X).ToString("0.0") + "x" + (smx.Y - smn.Y).ToString("0.0") + "x" + smx.Z.ToString("0.0")); }
+            catch { }
+            if (bizLevel >= 3) AddProp("prop_coffee_mac_01", new Vector3(bizPos.X, bizPos.Y, standTop), bizHeading + stYaw, false);   // may pha cafe tren quay
+        }
         string[] parasols = { "prop_parasol_01", "prop_parasol_03", "prop_parasol_04", "prop_parasol_05" };
         List<Vector3> tcs = new List<Vector3>();
-        int tables = Math.Min(4, bizLevel);   // cap 1: 1 ban, cap 2: 2 ban, cap 3: 3 ban, cap 4: 4 ban
+        List<float> tcTop = new List<float>();
+        // Bo cuc theo cap (x = sang phai, y = ra phia truoc, so voi quay): khu ban ghe o phia truoc 3-8 m, khu phu tro (may, cay) o sau quay
+        // cap 1: 1 ban giua | cap 2: 2 ban doi xung | cap 3: 2 ban + 1 ban giua hang sau | cap 4: luoi 2x2 rong, nha mai che o giua
+        float[,] tpos;
+        if (bizLevel <= 1) tpos = new float[,] { { 0f, 3.6f } };
+        else if (bizLevel == 2) tpos = new float[,] { { -3.0f, 3.6f }, { 3.0f, 3.6f } };
+        else if (bizLevel == 3) tpos = new float[,] { { -3.4f, 3.4f }, { 3.4f, 3.4f }, { 0f, 7.2f } };
+        else tpos = new float[,] { { -4.4f, 3.4f }, { 4.4f, 3.4f }, { -4.4f, 7.2f }, { 4.4f, 7.2f } };
+        int tables = tpos.GetLength(0);
         for (int l = 1; l <= tables; l++)
         {
-            int row = (l - 1) / 2;
-            float side = (l % 2 == 1) ? 1f : -1f;
-            Vector3 c = bizPos + fwd * (3.5f + row * 3.0f) + right * (2.4f * side);
+            Vector3 c = bizPos + fwd * tpos[l - 1, 1] + right * tpos[l - 1, 0];
             tcs.Add(c);
             Prop tb = AddProp(bizLevel >= 3 ? "prop_table_03b" : "prop_table_03", c, bizHeading);
             if (tb == null && bizLevel >= 3) tb = AddProp("prop_table_03", c, bizHeading);
+            float top = GroundForBiz() + 0.74f;   // du phong neu khong do duoc
+            if (tb != null)
+            {
+                try { Vector3 dmn, dmx; tb.Model.GetDimensions(out dmn, out dmx); top = tb.Position.Z + dmx.Z; }
+                catch { }
+            }
+            tcTop.Add(top);
             if (tb != null) Function.Call(Hash.SET_ENTITY_COLLISION, tb, false, false);   // ngoi vao ban khong bi vat ly hat len troi
             string chairM = bizLevel >= 3 ? "prop_chair_01b" : "prop_chair_01a";
             if (AddProp(chairM, c + right * ChairDist, bizHeading - 90f) == null && bizLevel >= 3) AddProp("prop_chair_01a", c + right * ChairDist, bizHeading - 90f);
-            if (bizProps.Count > 0) { chairProps.Add(bizProps[bizProps.Count - 1]); chairBusy.Add(false); chairFace.Add(FaceHeading(c + right * ChairDist, c)); chairTable.Add(c); tableCups.Add(null); }
+            if (bizProps.Count > 0) { chairProps.Add(bizProps[bizProps.Count - 1]); chairBusy.Add(false); chairFace.Add(FaceHeading(c + right * ChairDist, c)); chairTable.Add(c); chairTableTop.Add(top); tableCups.Add(null); }
             if (AddProp(chairM, c - right * ChairDist, bizHeading + 90f) == null && bizLevel >= 3) AddProp("prop_chair_01a", c - right * ChairDist, bizHeading + 90f);
-            if (bizProps.Count > 0) { chairProps.Add(bizProps[bizProps.Count - 1]); chairBusy.Add(false); chairFace.Add(FaceHeading(c - right * ChairDist, c)); chairTable.Add(c); tableCups.Add(null); }
+            if (bizProps.Count > 0) { chairProps.Add(bizProps[bizProps.Count - 1]); chairBusy.Add(false); chairFace.Add(FaceHeading(c - right * ChairDist, c)); chairTable.Add(c); chairTableTop.Add(top); tableCups.Add(null); }
             if (bizLevel < 4) AddProp(parasols[Math.Min(bizLevel, 4) - 1], c, bizHeading);   // o che doi mau theo cap; cap 4 co nha mai che rieng
         }
         foreach (Prop chp in chairProps) if (chp != null && chp.Exists()) Function.Call(Hash.SET_ENTITY_COLLISION, chp, false, false);
@@ -616,43 +643,45 @@ public class GtaVietLifeWorld : Script
         if (bizLevel >= 2)
         {
             AddProp("prop_pot_plant_05a", bizPos + right * 2.2f + fwd * 0.6f, bizHeading);
-            AddProp("prop_pot_plant_05a", bizPos - right * 3.2f + fwd * 3.2f, bizHeading);   // chau cay canh dau ghe dai, khong de vao cho ghe cao
+            AddProp("prop_pot_plant_05a", bizPos - right * 2.2f + fwd * 0.6f, bizHeading);   // doi xung hai ben quay
         }
         // cap 3: den suoi, thung rac, ghe da
         if (bizLevel >= 3)
         {
-            AddProp("prop_patio_heater_01", bizPos + fwd * 3.0f + right * 0.0f, bizHeading);
+            if (bizLevel == 3) AddProp("prop_patio_heater_01", bizPos + fwd * 5.3f, bizHeading);   // giua hai hang ban
             AddProp("prop_bin_01a", bizPos + right * 2.8f - fwd * 0.4f, bizHeading);
-            Prop bn = AddProp("prop_bench_01a", bizPos - right * 3.2f + fwd * 1.5f, bizHeading + 90f);
+            Prop bn = AddProp("prop_bench_01a", bizPos - right * 6.0f + fwd * 1.5f, bizHeading + 90f);   // ghe dai sat hang rao ben trai
             if (bn != null) { Function.Call(Hash.SET_ENTITY_COLLISION, bn, false, false); benchProps.Add(bn); }
+            AddProp("prop_pot_plant_05a", bizPos - right * 6.0f - fwd * 0.4f, bizHeading);   // chau cay canh dau ghe dai
         }
         // cap 4: ghe quay bar, hang cay xanh, them den suoi
         if (bizLevel >= 4)
         {
             AddProp("prop_bar_stool_01", bizPos - right * 1.4f + fwd * 1.0f, bizHeading);
             AddProp("prop_bar_stool_01", bizPos - right * 2.0f + fwd * 1.0f, bizHeading);
-            AddProp("prop_pot_plant_05a", bizPos + right * 4.4f + fwd * 3.0f, bizHeading);
-            AddProp("prop_pot_plant_05a", bizPos - right * 4.4f + fwd * 3.0f, bizHeading);
-            AddProp("prop_patio_heater_01", bizPos + fwd * 6.5f, bizHeading);
+            AddProp("prop_bar_stool_01", bizPos - right * 0.8f + fwd * 1.0f, bizHeading);
+            AddProp("prop_pot_plant_05a", bizPos + right * 4.4f + fwd * 0.8f, bizHeading);
+            AddProp("prop_patio_heater_01", bizPos - right * 6.3f + fwd * 5.3f, bizHeading);
+            AddProp("prop_patio_heater_01", bizPos + right * 6.3f + fwd * 5.3f, bizHeading);
         }
         // do sang hon theo cap: may pha ca phe, tu lanh, cay canh lon, hang rao hoa... (danh sach doi duoc trong .ini)
         float gz = GroundForBiz();
         // cap 3+: hang rao cay xanh hai ben, khong gian phan cach voi via he; ly ruou tren ban
         if (bizLevel >= 3)
         {
-            for (int k = -1; k <= 4; k++)
+            for (int k = -3; k <= 4; k++)
             {
                 Vector3 hl = bizPos - right * 7.4f + fwd * (k * 2.0f);
                 Vector3 hr = bizPos + right * 7.4f + fwd * (k * 2.0f);
                 AddProp("prop_bush_neat_01", hl, bizHeading);
                 AddProp("prop_bush_neat_01", hr, bizHeading);
             }
-            foreach (Vector3 tc in tcs) AddProp("prop_wine_glass", new Vector3(tc.X + 0.25f, tc.Y + 0.15f, gz + 0.76f), bizHeading, false);
+            for (int ti = 0; ti < tcs.Count; ti++) AddProp("prop_wine_glass", new Vector3(tcs[ti].X + 0.2f, tcs[ti].Y + 0.1f, tcTop[ti] + 0.01f), bizHeading, false);
         }
         // cap 4: nha mai che (gazebo) phu khu ban ghe
         if (bizLevel >= 4)
         {
-            Vector3 gc = bizPos + fwd * 4.6f;
+            Vector3 gc = bizPos + fwd * 5.2f;   // giua hai hang ban
             Prop gz1 = AddProp("prop_gazebo_01", gc, bizHeading);
             if (gz1 == null) gz1 = AddProp("prop_gazebo_02", gc, bizHeading);
             if (gz1 != null) Function.Call(Hash.SET_ENTITY_COLLISION, gz1, false, false);
@@ -660,12 +689,12 @@ public class GtaVietLifeWorld : Script
         // cap 4: dai phun nuoc, hang rao phia sau, ly champagne + chai ruou tren ban
         if (bizLevel >= 4)
         {
-            for (int k = -3; k <= 3; k++) AddProp("prop_bush_neat_01", bizPos - fwd * 6.2f + right * (k * 2.0f), bizHeading + 90f);
-            AddProp("prop_fountain2", bizPos - fwd * 4.8f, bizHeading);
-            foreach (Vector3 tc in tcs)
+            for (int k = -3; k <= 3; k++) AddProp("prop_bush_neat_01", bizPos - fwd * 7.4f + right * (k * 2.0f), bizHeading + 90f);
+            AddProp("prop_fountain2", bizPos - fwd * 5.0f, bizHeading);
+            for (int ti = 0; ti < tcs.Count; ti++)
             {
-                AddProp("prop_cs_champ_flute", new Vector3(tc.X - 0.25f, tc.Y - 0.15f, gz + 0.76f), bizHeading, false);
-                AddProp("prop_wine_bot_01", new Vector3(tc.X, tc.Y + 0.3f, gz + 0.76f), bizHeading, false);
+                AddProp("prop_cs_champ_flute", new Vector3(tcs[ti].X - 0.2f, tcs[ti].Y - 0.1f, tcTop[ti] + 0.01f), bizHeading, false);
+                AddProp("prop_wine_bot_01", new Vector3(tcs[ti].X, tcs[ti].Y + 0.25f, tcTop[ti] + 0.01f), bizHeading, false);
             }
         }
         int slotIdx = 0;
@@ -685,8 +714,8 @@ public class GtaVietLifeWorld : Script
 
     // [right, fwd] so voi quay, cach xa quay >= 3 m de khong chong len nhau hay len cho nhan vien
     static readonly float[,] DecoSlots = {
-        { -4.4f, -1.2f }, { 4.4f, -1.2f }, { -6.2f, -1.2f }, { 6.2f, -1.2f }, { -4.4f, -3.2f },
-        { 4.4f, -3.2f }, { -2.4f, -4.4f }, { 2.4f, -4.4f }, { -6.2f, -3.2f }, { 6.2f, -3.2f } };
+        { -4.4f, -1.2f }, { 4.4f, -1.2f }, { -6.0f, -2.4f }, { 6.0f, -2.4f }, { -4.4f, -3.6f },
+        { 4.4f, -3.6f }, { -3.2f, -5.0f }, { 3.2f, -5.0f }, { -6.0f, -4.4f }, { 6.0f, -4.4f } };
     static readonly string[] DefaultDeco = {
         "prop_vend_coffe_01,prop_watercooler",
         "prop_vend_soda_01,prop_vend_soda_02,prop_plant_int_03a,prop_plant_int_03a",
@@ -960,8 +989,10 @@ public class GtaVietLifeWorld : Script
         Vector3 toward = chairTable[idx] - cp;
         toward.Z = 0f;
         toward.Normalize();
-        Vector3 pos = cp + toward * 0.75f;
-        pos.Z = cp.Z + cupTable;
+        // ly dat sat mep ban phia nguoi ngoi: cach tam ban 0,28 m (mat ban ~1 m vuong), cao bang mat ban
+        Vector3 c0 = chairTable[idx];
+        Vector3 pos = c0 - toward * 0.28f;
+        pos.Z = (idx < chairTableTop.Count ? chairTableTop[idx] : cp.Z + 0.74f) + cupTable;
         cup.Position = pos;
         cup.Rotation = Vector3.Zero;
         Function.Call(Hash.FREEZE_ENTITY_POSITION, cup, true);
