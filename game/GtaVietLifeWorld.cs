@@ -42,6 +42,7 @@ public class GtaVietLifeWorld : Script
     Keys sitKey = Keys.E;
     int sitIdx = -1;
     int safeUntil;
+    int nextStaffCheck;
     Prop sitBench;
     readonly List<Prop> benchProps = new List<Prop>();
     readonly Queue<Action> pendingActs = new Queue<Action>();   // viec can goi AddProp/CreatePed phai chay trong vong lap chinh, khong phai trong su kien phim
@@ -197,6 +198,13 @@ public class GtaVietLifeWorld : Script
         int now = Game.GameTime;
 
         if (safeUntil > 0 && now > safeUntil) { safeUntil = 0; Function.Call(Hash.SET_ENTITY_INVINCIBLE, me, false); }
+
+        if (rebuildAt > 0 && now > rebuildAt && hasBiz) { rebuildAt = 0; BuildBizProps(); }
+        if (hasBiz && now > nextStaffCheck)
+        {
+            nextStaffCheck = now + 3000;
+            if (staffPeds.Count < Math.Min(bizStaff, MaxVisibleStaff) && me.Position.DistanceTo(bizPos) < 80f) SpawnStaff();
+        }
 
         while (pendingActs.Count > 0)
         {
@@ -529,6 +537,18 @@ public class GtaVietLifeWorld : Script
         tableCups.Clear();
     }
 
+    // Script.Wait() khong dung duoc trong su kien => khong cho model nap: yeu cau nap roi bao "chua san sang", thu lai sau
+    bool Loaded(Model m)
+    {
+        if (m.IsLoaded) return true;
+        Function.Call(Hash.REQUEST_MODEL, m.Hash);
+        return false;
+    }
+
+    bool buildMissing;
+    int buildRetry;
+    int rebuildAt;
+
     Prop AddProp(string model, Vector3 pos, float heading) { return AddProp(model, pos, heading, true); }
 
     Prop AddProp(string model, Vector3 pos, float heading, bool onGround)
@@ -536,7 +556,8 @@ public class GtaVietLifeWorld : Script
         try
         {
             Model m = new Model(model);
-            if (!m.IsValid || !m.Request(1500)) { Log("khong nap duoc prop " + model); return null; }
+            if (!m.IsValid) { Log("khong co model prop " + model); return null; }
+            if (!Loaded(m)) { buildMissing = true; return null; }
             Prop p = World.CreateProp(m, pos, new Vector3(0f, 0f, heading), false, onGround);
             m.MarkAsNoLongerNeeded();
             if (p == null || !p.Exists()) return null;
@@ -550,6 +571,15 @@ public class GtaVietLifeWorld : Script
 
     // Quan: lv1 = quay + thung hang + ban nho; moi cap nang cap them bo ban ghe + o che
     void BuildBizProps()
+    {
+        buildMissing = false;
+        BuildBizPropsCore();
+        // model chua nap xong thi dung lai sau 1,5 giay cho du bo do
+        if (buildMissing && buildRetry < 5) { buildRetry++; rebuildAt = Game.GameTime + 1500; }
+        else { if (buildMissing) Log("van thieu model sau 5 lan thu"); buildRetry = 0; rebuildAt = 0; }
+    }
+
+    void BuildBizPropsCore()
     {
         ClearBizProps();
         foreach (Cust k in customers) k.Chair = -1;
@@ -681,7 +711,7 @@ public class GtaVietLifeWorld : Script
         try
         {
             Model mdl = new Model(rnd.Next(2) == 0 ? "a_m_y_business_01" : "a_f_y_business_01");
-            if (!mdl.Request(1000)) return;
+            if (!Loaded(mdl)) return;
             float h = bizHeading * (float)Math.PI / 180f;
             Vector3 right = new Vector3((float)Math.Cos(h), (float)Math.Sin(h), 0f);
             Vector3 fwd = new Vector3(-(float)Math.Sin(h), (float)Math.Cos(h), 0f);
@@ -730,7 +760,7 @@ public class GtaVietLifeWorld : Script
             Vector3 sp = World.GetSafeCoordForPed(raw, true);
             if (sp == Vector3.Zero || sp.DistanceTo(me.Position) < 15f) return;
             Model mdl = new Model(CustModels[rnd.Next(CustModels.Length)]);
-            if (!mdl.Request(1000)) return;
+            if (!Loaded(mdl)) return;
             Ped p = World.CreatePed(mdl, sp);
             mdl.MarkAsNoLongerNeeded();
             if (p == null || !p.Exists()) return;
@@ -905,13 +935,13 @@ public class GtaVietLifeWorld : Script
                 foreach (string name in CupModels)
                 {
                     Model t = new Model(name);
-                    if (t.IsValid && t.Request(800)) { cupModel = name; Log("dung model ly: " + name); break; }
+                    if (t.IsValid && Loaded(t)) { cupModel = name; Log("dung model ly: " + name); break; }
                 }
-                if (cupModel == null) { Log("khong co model ly nao dung duoc"); cupModel = ""; }
+                if (cupModel == null) return null;   // chua nap xong, lan sau thu lai
             }
             if (cupModel.Length == 0) return null;
             Model m = new Model(cupModel);
-            if (!m.Request(800)) return null;
+            if (!Loaded(m)) return null;
             Prop cup = World.CreateProp(m, Game.Player.Character.Position + new Vector3(0f, 0f, 3f), false, false);
             m.MarkAsNoLongerNeeded();
             return cup;
