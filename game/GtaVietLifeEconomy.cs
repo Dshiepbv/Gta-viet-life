@@ -9,7 +9,12 @@
 //   GVL.Pay  Func<int,string,string,bool>  file này ĐĂNG KÝ ĐÈ bản của lõi: trừ tài khoản trước, thiếu thì tiền mặt, ghi sổ cái.
 //   GVL.Earn Action<int,string,string>     file này đăng ký: tiền vào tài khoản, ghi sổ cái.
 //   Sự kiện phát ra: ledger.expense / ledger.income, econ.loan, econ.repay, econ.late, econ.foreclose, econ.impound, econ.release, econ.fuel, econ.repair.
-//   GVL.Bank     (int)            số dư tài khoản, cập nhật mỗi tick.
+//   GVL.Bank     (int)            số dư tài khoản, cập nhật mỗi tick. GVL.Debt (int) tổng nợ ngân hàng + dư nợ vay.
+//   GVL.EarnCash Action<int,string,string>   nhận TIỀN MẶT (quán GT, giao hàng, làm công, rút quỹ) có ghi sổ cái.
+//   GVL.AddDebt  Action<int,string,string>   ghi nợ vào MỘT sổ nợ duy nhất (lãi 2%/ngày, tự trừ khi tài khoản có tiền).
+//   GVL.ImpoundCar Action<int,int,int,string> (hash, màu 1, màu 2, biển) đưa xe vào MỘT bãi giữ xe duy nhất (Davis).
+//   GVL.PriceZone Func<float,float,float,float> (x,y,z) -> he so gia theo khu, nhan vao gia chuan cua moi mat hang.
+//   GVL.Fee.Impound / GVL.Fee.ImpoundDay (int) phí bãi xe chuẩn.
 //   GVL.Credit   (int)            điểm tín dụng 300..850.
 //   GVL.EconMenu (bool)           menu Kinh tế đang mở.
 //   Đọc: GVL.Assets (int, tổng giá trị BĐS do file Đời sống công bố), GVL.Record (int tiền án: >0 thì không cho vay),
@@ -27,6 +32,13 @@ using GTA.Native;
 
 public class GtaVietLifeEconomy : Script
 {
+    // tien: nhan vat tuy bien khong co tien trong game => dung vi cua Core (GVL.CashGet/CashSet), xem docs/CORE.md
+    static int PlayerCash
+    {
+        get { Func<int> g = AppDomain.CurrentDomain.GetData("GVL.CashGet") as Func<int>; return g != null ? g() : Game.Player.Money; }
+        set { Action<int> s = AppDomain.CurrentDomain.GetData("GVL.CashSet") as Action<int>; if (s != null) s(value); else Game.Player.Money = value; }
+    }
+
     const string SaveFile = "GtaVietLifeEconomy.sav";
     const double GameDaySeconds = 2880.0;   // 1 ngày game = 48 phút thực (giống file Đời sống)
     const int MaxOfflineDays = 14;
@@ -34,7 +46,7 @@ public class GtaVietLifeEconomy : Script
     Keys menuKey = Keys.L;
     Keys navUp = Keys.Oemcomma, navDown = Keys.OemPeriod, navOk = Keys.Return;
     bool modBank = true, modFuel = true, modWear = true, modImpound = true;
-    float fuelPrice = 2f, fuelMul = 1f;
+    float fuelPrice = 1f, fuelMul = 1f;
 
     // ------------------------------------------------------------ sổ cái
     int bank;
@@ -73,7 +85,7 @@ public class GtaVietLifeEconomy : Script
         new Vector3(-365.4f, -131.8f, 38.7f), new Vector3(731.8f, -1088.8f, 22.2f), new Vector3(-1155.0f, -2007.0f, 13.2f),
         new Vector3(1175.0f, 2640.0f, 37.8f), new Vector3(110.0f, 6626.0f, 31.8f) };
     static readonly Vector3 ImpoundLot = new Vector3(409.5f, -1623.0f, 29.3f);
-    const int ImpoundFee = 250, ImpoundPerDay = 25, TowFee = 200, RescueFee = 120, CanPrice = 30, OilChange = 40;
+    const int ImpoundFee = 80, ImpoundPerDay = 10, TowFee = 60, RescueFee = 40, CanPrice = 10, OilChange = 30;   // bang gia chuan docs/ECONOMY.md (1$ ~ 5.000d)
 
     long lastSeen; bool caughtUp; int lastDayMinute = -1;
     readonly List<Blip> blips = new List<Blip>();
@@ -96,7 +108,7 @@ public class GtaVietLifeEconomy : Script
         fuelPrice = ReadF("Fuel", "PricePerLiter", fuelPrice);
         fuelMul = ReadF("Fuel", "ConsumeMul", fuelMul);
         Load();
-        payFn = BusPay; earnFn = BusEarn;
+        payFn = BusPay; priceZoneFn = PriceZone; earnFn = BusEarn; addDebtFn = BusAddDebt; earnCashFn = BusEarnCash; impoundFn = BusImpound;
         try
         {
             if (modBank) foreach (Vector3 b in Banks) AddBlip(b, BlipColor.Green, "Ngan hang (gui/rut, vay)");
@@ -123,8 +135,8 @@ public class GtaVietLifeEconomy : Script
     bool BusPay(int amount, string cat, string note)
     {
         if (amount <= 0) return true;
-        if (!ModOn()) { if (Game.Player.Money < amount) return false; Game.Player.Money = Game.Player.Money - amount; return true; }
-        if (Game.Player.Money + Math.Max(0, modBank ? bank : 0) < amount) return false;
+        if (!ModOn()) { if (PlayerCash < amount) return false; PlayerCash = PlayerCash - amount; return true; }
+        if (PlayerCash + Math.Max(0, modBank ? bank : 0) < amount) return false;
         Charge(amount, cat, note, true);
         return true;
     }
@@ -139,6 +151,53 @@ public class GtaVietLifeEconomy : Script
         object cur = Bus("GVL.Pay");
         if (cur != null && Bus("GVL.PayOwner") as string == "economy" && cur == payFn) return;
         BusSet("GVL.Pay", payFn); BusSet("GVL.Earn", earnFn); BusSet("GVL.PayOwner", "economy");
+        BusSet("GVL.AddDebt", addDebtFn); BusSet("GVL.EarnCash", earnCashFn); BusSet("GVL.ImpoundCar", impoundFn);
+        BusSet("GVL.PriceZone", priceZoneFn);
+        BusSet("GVL.Fee.Impound", ImpoundFee); BusSet("GVL.Fee.ImpoundDay", ImpoundPerDay);
+    }
+    Action<int, string, string> addDebtFn, earnCashFn;
+    Func<float, float, float, float> priceZoneFn;
+
+    // HE SO GIA THEO KHU (docs/ECONOMY.md muc 6): khu dong khach, thue mat bang dat thi ban dat hon.
+    // he so = 0,7 + 0,3 x he so khu (khu 0,5 -> x0,85; khu 1,0 -> x1,0; khu 1,5 -> x1,15). Moi file nhan gia chuan voi he so nay.
+    static readonly Dictionary<string, KeyValuePair<string, float>> Zones = new Dictionary<string, KeyValuePair<string, float>> {
+        { "DOWNT", new KeyValuePair<string, float>("Trung tam", 1.5f) }, { "LEGSQU", new KeyValuePair<string, float>("Quang truong Legion", 1.5f) },
+        { "VINE", new KeyValuePair<string, float>("Vinewood", 1.4f) }, { "DTVINE", new KeyValuePair<string, float>("Trung tam Vinewood", 1.4f) },
+        { "ROCKF", new KeyValuePair<string, float>("Rockford Hills", 1.4f) }, { "BEACH", new KeyValuePair<string, float>("Bai bien Vespucci", 1.5f) },
+        { "VESPB", new KeyValuePair<string, float>("Vespucci", 1.4f) }, { "VCANA", new KeyValuePair<string, float>("Kenh Vespucci", 1.3f) },
+        { "DELBE", new KeyValuePair<string, float>("Del Perro", 1.3f) }, { "DELPE", new KeyValuePair<string, float>("Del Perro", 1.3f) },
+        { "MORN", new KeyValuePair<string, float>("Morningwood", 1.2f) }, { "PBOX", new KeyValuePair<string, float>("Pillbox", 1.2f) },
+        { "MIRR", new KeyValuePair<string, float>("Mirror Park", 1.1f) }, { "STRAW", new KeyValuePair<string, float>("Strawberry", 1.0f) },
+        { "EAST_V", new KeyValuePair<string, float>("East Vinewood", 1.0f) }, { "DAVIS", new KeyValuePair<string, float>("Davis", 0.9f) },
+        { "SANDY", new KeyValuePair<string, float>("Sandy Shores", 0.6f) }, { "PALETO", new KeyValuePair<string, float>("Paleto Bay", 0.6f) },
+        { "GRAPES", new KeyValuePair<string, float>("Grapeseed", 0.5f) } };
+
+    static float PriceZone(float x, float y, float zz)
+    {
+        string code = "";
+        try { code = Function.Call<string>(Hash.GET_NAME_OF_ZONE, x, y, zz); } catch { }
+        KeyValuePair<string, float> v;
+        float m = code != null && Zones.TryGetValue(code, out v) ? v.Value : 0.8f;
+        return 0.7f + 0.3f * m;
+    }
+    float PumpPrice() { Vector3 p = Game.Player.Character.Position; return fuelPrice * PriceZone(p.X, p.Y, p.Z); }
+    void BusEarnCash(int amount, string cat, string note) { if (amount > 0) Cash(amount, cat, note); } Action<int, int, int, string> impoundFn;
+
+    // MOT loai no duy nhat cho ca game: file khac (no cu cua Doi song, phat chua tra...) day vao day
+    void BusAddDebt(int amount, string cat, string note)
+    {
+        if (amount <= 0) return;
+        bankDebt += amount; Post("no", -amount, cat, note + " (ghi no)");
+        credit = Math.Max(300, credit - Math.Min(30, 2 + amount / 200));
+    }
+
+    // MOT bai giu xe duy nhat: file Ca nhan (canh sat giam xe) dua xe vao bai cua Kinh te
+    void BusImpound(int hash, int prim, int sec, string plate)
+    {
+        impounded.Add(new Impounded { Hash = hash, Prim = prim, Sec = sec, Plate = plate ?? "", Day = dayNo, Key = hash + ":" + (plate ?? "").Trim() });
+        while (impounded.Count > 5) impounded.RemoveAt(0);
+        Emit("econ.impound", "plate=" + Clean((plate ?? "").Trim()) + ";fee=" + ImpoundFee + ";by=police");
+        Save();
     }
     Func<int, string, string, bool> payFn; Action<int, string, string> earnFn;
 
@@ -164,7 +223,7 @@ public class GtaVietLifeEconomy : Script
         while (ledger.Count > 200) ledger.RemoveAt(0);
         if (acct != "no") Emit(amt >= 0 ? "ledger.income" : "ledger.expense", "amount=" + Math.Abs(amt) + ";cat=" + Clean(cat) + ";note=" + Clean(note) + ";acct=" + acct);
     }
-    void Cash(int amt, string cat, string note) { Game.Player.Money = Game.Player.Money + amt; Post("cash", amt, cat, note); }
+    void Cash(int amt, string cat, string note) { PlayerCash = PlayerCash + amt; Post("cash", amt, cat, note); }
     void Deposit(int amt, string cat, string note) { bank += amt; Post("bank", amt, cat, note); }
 
     // tra mot khoan: uu tien tai khoan (neu preferBank), roi tien mat, con thieu thi ghi no ngan hang. Tra ve so da tra ngay.
@@ -172,8 +231,8 @@ public class GtaVietLifeEconomy : Script
     {
         int left = amt;
         if (preferBank && modBank) { int b = Math.Min(Math.Max(0, bank), left); if (b > 0) { bank -= b; left -= b; Post("bank", -b, cat, note); } }
-        int c = Math.Min(Game.Player.Money, left);
-        if (c > 0) { Game.Player.Money = Game.Player.Money - c; left -= c; Post("cash", -c, cat, note); }
+        int c = Math.Min(PlayerCash, left);
+        if (c > 0) { PlayerCash = PlayerCash - c; left -= c; Post("cash", -c, cat, note); }
         if (!preferBank && left > 0 && modBank) { int b = Math.Min(Math.Max(0, bank), left); if (b > 0) { bank -= b; left -= b; Post("bank", -b, cat, note); } }
         if (left > 0) { bankDebt += left; Post("no", -left, cat, note + " (ghi no)"); Notify("~r~Khong du tien " + note + "~s~, ghi no ngan hang $" + left + "."); credit = Math.Max(300, credit - 5); }
         return amt - left;
@@ -182,10 +241,10 @@ public class GtaVietLifeEconomy : Script
     // tra bang tien mat tai quay (xang, cuu ho...): thieu thi tu dong quet the (tai khoan) neu bat ngan hang
     bool PayAtCounter(int amt, string cat, string note)
     {
-        if (Game.Player.Money >= amt) { Game.Player.Money = Game.Player.Money - amt; Post("cash", -amt, cat, note); return true; }
-        if (modBank && bank + Game.Player.Money >= amt)
+        if (PlayerCash >= amt) { PlayerCash = PlayerCash - amt; Post("cash", -amt, cat, note); return true; }
+        if (modBank && bank + PlayerCash >= amt)
         {
-            int c = Game.Player.Money; if (c > 0) { Game.Player.Money = 0; Post("cash", -c, cat, note); }
+            int c = PlayerCash; if (c > 0) { PlayerCash = 0; Post("cash", -c, cat, note); }
             bank -= amt - c; Post("bank", -(amt - c), cat, note + " (quet the)");
             return true;
         }
@@ -208,6 +267,7 @@ public class GtaVietLifeEconomy : Script
         if (now > nextPumpCheck) { nextPumpCheck = now + 1000; ScanPlaces(me); }
         if (rescueAt > 0 && now > rescueAt) { rescueAt = 0; FinishRescue(); }
         BusSet("GVL.Bank", bank);
+        BusSet("GVL.Debt", bankDebt + Sum());
         BusSet("GVL.Credit", credit);
         if (now > nextSave) { nextSave = now + 60000; Save(); }
         if (BusFlag("GVL.WorldMenu") || BusFlag("GVL.PersonalMenu")) { if (menuOpen) CloseMenu(); }
@@ -257,7 +317,7 @@ public class GtaVietLifeEconomy : Script
             int inst = l.Periods <= 1 ? l.Left : (int)Math.Ceiling(l.Left / (double)l.Periods);
             int paid = 0;
             int b = Math.Min(Math.Max(0, bank), inst); if (b > 0) { bank -= b; paid += b; Post("bank", -b, "vay", "tra gop khoan vay"); }
-            if (paid < inst && offline) { int c = Math.Min(Game.Player.Money, inst - paid); if (c > 0) { Game.Player.Money = Game.Player.Money - c; paid += c; Post("cash", -c, "vay", "tra gop (tien mat)"); } }
+            if (paid < inst && offline) { int c = Math.Min(PlayerCash, inst - paid); if (c > 0) { PlayerCash = PlayerCash - c; paid += c; Post("cash", -c, "vay", "tra gop (tien mat)"); } }
             l.Left -= paid;
             if (paid >= inst)
             {
@@ -286,7 +346,7 @@ public class GtaVietLifeEconomy : Script
     {
         int need = l.Left;
         int b = Math.Min(Math.Max(0, bank), need); bank -= b; need -= b; if (b > 0) Post("bank", -b, "siet no", "ngan hang siet tai khoan");
-        int c = Math.Min(Game.Player.Money, need); Game.Player.Money = Game.Player.Money - c; need -= c; if (c > 0) Post("cash", -c, "siet no", "siet tien mat");
+        int c = Math.Min(PlayerCash, need); PlayerCash = PlayerCash - c; need -= c; if (c > 0) Post("cash", -c, "siet no", "siet tien mat");
         if (need > 0 && l.Kind == 1) { BusSet("GVL.Seize", need + (Bus("GVL.Seize") is int ? (int)Bus("GVL.Seize") : 0)); Post("no", -need, "siet no", "yeu cau phat mai tai san the chap"); need = 0; }
         if (need > 0) bankDebt += need;
         credit = 350; badUntil = dayNo + 30;
@@ -429,7 +489,7 @@ public class GtaVietLifeEconomy : Script
         Car c = CarOf(v);
         float add = Math.Min(liters, c.Cap - c.Fuel);
         if (add < 0.5f) { Notify("Binh da day."); return; }
-        int cost = (int)Math.Ceiling(add * fuelPrice);
+        int cost = (int)Math.Ceiling(add * PumpPrice());
         if (!PayAtCounter(cost, "xang", "do " + (int)add + " L xang")) return;
         c.Fuel += add;
         Emit("econ.fuel", "liters=" + (int)add + ";cost=" + cost);
@@ -485,7 +545,7 @@ public class GtaVietLifeEconomy : Script
     {
         Vehicle v = Game.Player.Character.CurrentVehicle ?? Game.Player.Character.LastVehicle;
         if (v == null || !v.Exists()) { Notify("Khong co xe."); return; }
-        int cost = 30 + (int)((1000f - Math.Max(0f, v.EngineHealth)) * 0.6f);
+        int cost = 10 + (int)((1000f - Math.Max(0f, v.EngineHealth)) * 0.2f);
         if (!PayAtCounter(cost, "sua xe", "sua may xe")) return;
         Function.Call(Hash.SET_VEHICLE_FIXED, v);
         v.EngineHealth = 1000f;
@@ -552,7 +612,7 @@ public class GtaVietLifeEconomy : Script
         v.PlaceOnGround();
         impounded.RemoveAt(i);
         Notify("~g~Da lay xe ra~s~ (-$" + fee + ").");
-        Emit("econ.release", "fee=" + fee);
+        Emit("econ.release", "fee=" + fee + ";plate=" + Clean(im.Plate.Trim()) + ";hash=" + im.Hash);
         Save();
     }
 
@@ -561,7 +621,7 @@ public class GtaVietLifeEconomy : Script
     {
         if (dayNo < badUntil) return 0;
         object rec = Bus("GVL.Record"); if (rec is int && (int)rec > 0) return 0;   // co tien an: ngan hang tu choi
-        int baseL = Math.Max(0, (credit - 500) * 60);
+        int baseL = Math.Max(0, (credit - 500) * 20);
         if (kind == 1) { object a = Bus("GVL.Assets"); int assets = a is int ? (int)a : 0; return Math.Max(0, assets * 6 / 10 - LoanSumKind(1)); }
         return Math.Max(0, baseL - LoanSumKind(0));
     }
@@ -595,7 +655,7 @@ public class GtaVietLifeEconomy : Script
         Begin("KINH TE  (" + menuKey + "/Backspace: dong)", null);
         if (modBank)
         {
-            Info("Tien mat $" + Game.Player.Money + "   Tai khoan $" + bank + "   Diem tin dung " + credit + (bankDebt > 0 ? "   No NH $" + bankDebt : "") + (loans.Count > 0 ? "   Du no vay $" + Sum() : ""));
+            Info("Tien mat $" + PlayerCash + "   Tai khoan $" + bank + "   Diem tin dung " + credit + (bankDebt > 0 ? "   No NH $" + bankDebt : "") + (loans.Count > 0 ? "   Du no vay $" + Sum() : ""));
             if (nearAtm || nearBank) Item((nearBank ? "Ngan hang" : "Cay ATM") + ": gui / rut tien...", delegate { ShowAtm(); });
             else Info("Gui/rut tien: den cay ATM hoac chi nhanh ngan hang (cham xanh la tren ban do)");
             Item("Vay von, tra no...", delegate { ShowLoans(); });
@@ -610,16 +670,16 @@ public class GtaVietLifeEconomy : Script
                 Info("Xe: xang " + (int)c.Fuel + "/" + (int)c.Cap + " L, nhot " + (int)c.Oil + "%, may " + (int)(Math.Max(0f, v.EngineHealth) / 10f) + "%, da chay " + c.Km.ToString("0.0", CultureInfo.InvariantCulture) + " km");
                 if (modFuel && nearPump)
                 {
-                    Item("Do day binh  (~$" + (int)Math.Ceiling((c.Cap - c.Fuel) * fuelPrice) + ", $" + fuelPrice.ToString("0.##", CultureInfo.InvariantCulture) + "/L)", delegate { Refuel(999f); ShowMain(); });
-                    Item("Do 10 L  ($" + (int)Math.Ceiling(10f * fuelPrice) + ")", delegate { Refuel(10f); ShowMain(); });
-                    Item("Mua binh xang du phong 10 L  ($" + (CanPrice + (int)(10f * fuelPrice)) + ", dang co " + cans + ")", delegate { if (PayAtCounter(CanPrice + (int)(10f * fuelPrice), "xang", "binh xang du phong")) cans++; ShowMain(); });
+                    Item("Do day binh  (~$" + (int)Math.Ceiling((c.Cap - c.Fuel) * PumpPrice()) + ", $" + PumpPrice().ToString("0.##", CultureInfo.InvariantCulture) + "/L)", delegate { Refuel(999f); ShowMain(); });
+                    Item("Do 10 L  ($" + (int)Math.Ceiling(10f * PumpPrice()) + ")", delegate { Refuel(10f); ShowMain(); });
+                    Item("Mua binh xang du phong 10 L  ($" + (CanPrice + (int)(10f * PumpPrice())) + ", dang co " + cans + ")", delegate { if (PayAtCounter(CanPrice + (int)(10f * PumpPrice()), "xang", "binh xang du phong")) cans++; ShowMain(); });
                 }
                 if (modFuel && cans > 0) Item("Do binh xang du phong (+10 L, con " + cans + ")", delegate { UseCan(); ShowMain(); });
                 if (modFuel && c.Fuel < 3f) Item("Goi cuu ho do xang  ($" + RescueFee + ")", delegate { CallRescue(); ShowMain(); });
                 if (modWear && nearGarage)
                 {
                     Item("Thay nhot  ($" + OilChange + ")", delegate { ChangeOil(); ShowMain(); });
-                    Item("Sua may  (~$" + (30 + (int)((1000f - Math.Max(0f, v.EngineHealth)) * 0.6f)) + ")", delegate { RepairAtGarage(); ShowMain(); });
+                    Item("Sua may  (~$" + (10 + (int)((1000f - Math.Max(0f, v.EngineHealth)) * 0.2f)) + ")", delegate { RepairAtGarage(); ShowMain(); });
                 }
                 if (modWear) Item("Goi xe keo ve gara gan nhat  (tu $" + TowFee + ")", delegate { CloseMenu(); pending.Enqueue(TowToGarage); });
             }
@@ -640,28 +700,28 @@ public class GtaVietLifeEconomy : Script
     void ShowAtm()
     {
         Begin(nearBank ? "NGAN HANG" : "CAY ATM", delegate { ShowMain(); });
-        Info("Tien mat $" + Game.Player.Money + "   Tai khoan $" + bank + (nearBank ? "" : "   (ATM rut mat phi $2)"));
-        int[] amts = { 100, 500, 1000, 5000 };
+        Info("Tien mat $" + PlayerCash + "   Tai khoan $" + bank + (nearBank ? "" : "   (ATM rut mat phi $1)"));
+        int[] amts = { 20, 100, 500, 2000 };
         foreach (int a in amts)
         {
             int aa = a;
             Item("Rut $" + a, delegate
             {
-                int fee = nearBank ? 0 : 2;
+                int fee = nearBank ? 0 : 1;
                 if (bank < aa + fee) Notify("Tai khoan khong du.");
                 else { bank -= aa + fee; Post("bank", -(aa + fee), "rut", "rut tien mat"); Cash(aa, "rut", "rut tu tai khoan"); }
                 ShowAtm();
             });
         }
-        Item("Gui het tien mat ($" + Game.Player.Money + ")", delegate
+        Item("Gui het tien mat ($" + PlayerCash + ")", delegate
         {
-            int c = Game.Player.Money;
-            if (c > 0) { Game.Player.Money = 0; Post("cash", -c, "gui", "gui vao tai khoan"); Deposit(c, "gui", "nop tien mat"); }
+            int c = PlayerCash;
+            if (c > 0) { PlayerCash = 0; Post("cash", -c, "gui", "gui vao tai khoan"); Deposit(c, "gui", "nop tien mat"); }
             ShowAtm();
         });
-        Item("Gui $500", delegate
+        Item("Gui $100", delegate
         {
-            if (Game.Player.Money >= 500) { Game.Player.Money = Game.Player.Money - 500; Post("cash", -500, "gui", "gui vao tai khoan"); Deposit(500, "gui", "nop tien mat"); }
+            if (PlayerCash >= 100) { PlayerCash = PlayerCash - 100; Post("cash", -100, "gui", "gui vao tai khoan"); Deposit(100, "gui", "nop tien mat"); }
             else Notify("Khong du tien mat.");
             ShowAtm();
         });
@@ -687,9 +747,9 @@ public class GtaVietLifeEconomy : Script
         if (!nearBank) { Info("Muon vay moi: den chi nhanh ngan hang (cham xanh la)."); Item("Quay lai", delegate { ShowMain(); }); return; }
         int l0 = LoanLimit(0), l1 = LoanLimit(1);
         Info("Tin chap: lai 0,25%/ngay, 4 ky. Han muc $" + l0 + " (theo diem tin dung).");
-        foreach (int a in new[] { 1000, 3000, 10000 }) { int aa = a; if (aa <= l0) Item("Vay tin chap $" + aa, delegate { TakeLoan(0, aa); ShowLoans(); }); }
+        foreach (int a in new[] { 300, 1000, 3000 }) { int aa = a; if (aa <= l0) Item("Vay tin chap $" + aa, delegate { TakeLoan(0, aa); ShowLoans(); }); }
         Info("The chap bat dong san: lai 0,12%/ngay, 8 ky, toi da 60% gia tri BDS. Han muc $" + l1 + (Bus("GVL.Assets") == null ? " (chua doc duoc tai san tu file Doi song)" : ""));
-        foreach (int a in new[] { 10000, 30000, 100000 }) { int aa = a; if (aa <= l1) Item("Vay the chap $" + aa, delegate { TakeLoan(1, aa); ShowLoans(); }); }
+        foreach (int a in new[] { 3000, 10000, 30000 }) { int aa = a; if (aa <= l1) Item("Vay the chap $" + aa, delegate { TakeLoan(1, aa); ShowLoans(); }); }
         Item("Quay lai", delegate { ShowMain(); });
     }
 
