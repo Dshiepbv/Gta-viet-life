@@ -557,13 +557,15 @@ public class GtaVietLifeWorld : Script
             int row = (l - 1) / 2;
             float side = (l % 2 == 1) ? 1f : -1f;
             Vector3 c = bizPos + fwd * (3.5f + row * 3.0f) + right * (2.4f * side);
-            AddProp("prop_table_03", c, bizHeading);
+            Prop tb = AddProp("prop_table_03", c, bizHeading);
+            if (tb != null) Function.Call(Hash.SET_ENTITY_COLLISION, tb, false, false);   // ngoi vao ban khong bi vat ly hat len troi
             AddProp("prop_chair_01a", c + right * 1.1f, bizHeading - 90f);
             if (bizProps.Count > 0) { chairProps.Add(bizProps[bizProps.Count - 1]); chairBusy.Add(false); chairFace.Add(FaceHeading(c + right * 1.1f, c)); chairTable.Add(c); tableCups.Add(null); }
             AddProp("prop_chair_01a", c - right * 1.1f, bizHeading + 90f);
             if (bizProps.Count > 0) { chairProps.Add(bizProps[bizProps.Count - 1]); chairBusy.Add(false); chairFace.Add(FaceHeading(c - right * 1.1f, c)); chairTable.Add(c); tableCups.Add(null); }
             AddProp(parasols[Math.Min(l, 4) - 1], c, bizHeading);
         }
+        foreach (Prop chp in chairProps) if (chp != null && chp.Exists()) Function.Call(Hash.SET_ENTITY_COLLISION, chp, false, false);   // nguoi ngoi vao ghe co va cham => bi hat len troi
         // cap 2: chau cay hai ben quay
         if (bizLevel >= 2)
         {
@@ -730,6 +732,7 @@ public class GtaVietLifeWorld : Script
             p.IsPersistent = false;
             Function.Call(Hash.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS, p, false);
             p.Task.ClearAll();
+            SnapNearGround(p);
             p.Task.WanderAround();
             p.MarkAsNoLongerNeeded();
         }
@@ -1405,11 +1408,21 @@ public class GtaVietLifeWorld : Script
         Function.Call(Hash.TASK_START_SCENARIO_AT_POSITION, me, "PROP_HUMAN_SEAT_CHAIR", ch.Position.X, ch.Position.Y, ch.Position.Z + seatZ, i < chairFace.Count ? chairFace[i] : ch.Heading, -1, true, true);
     }
 
+    // neu bi day len cao bat thuong quanh quan thi dua ve mat dat (chong roi chet)
+    void SnapNearGround(Ped p)
+    {
+        if (p == null || !p.Exists() || !hasBiz) return;
+        Vector3 pos = p.Position;
+        if (pos.DistanceTo2D(bizPos) < 30f && Math.Abs(pos.Z - (GroundForBiz() + 1f)) > 2.5f)
+            Function.Call(Hash.SET_ENTITY_COORDS_NO_OFFSET, p, pos.X, pos.Y, GroundForBiz() + 1f, false, false, false);
+    }
+
     void StandUp(Ped me)
     {
         if (sitIdx >= 0 && sitIdx < chairBusy.Count) chairBusy[sitIdx] = false;
         sitIdx = -1;
         me.Task.ClearAll();
+        SnapNearGround(me);
     }
 
     void OnKeyDown(object sender, KeyEventArgs e)
