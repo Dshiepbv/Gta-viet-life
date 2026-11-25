@@ -688,6 +688,8 @@ public class GtaVietLifeWorld : Script
                 int qty = Math.Min(bizStock, c.Qty);
                 if (qty <= 0) { Release(c); customers.RemoveAt(i); continue; }
                 bizStock -= qty;
+                if (bizStock == 0) Notify("~r~Het hang!~s~ Den quan bam M > Kinh doanh > Nhap hang de tiep tuc ban.");
+                else if (bizStock <= 5) Notify("~y~Kho sap het~s~ (con " + bizStock + " phan).");
                 soldToday += qty;
                 int pay = qty * Price();
                 Game.Player.Money = Game.Player.Money + pay;
@@ -1185,9 +1187,12 @@ public class GtaVietLifeWorld : Script
     void DrawHud()
     {
         float x = 18f, y = 18f;
+        DrawText("$" + Game.Player.Money, x, y - 4f, 0.5f, Color.FromArgb(255, 120, 230, 120));
+        y += 28f;
         DrawBar("An", hunger, x, y, Color.FromArgb(220, 235, 150, 40));
         DrawBar("Uong", thirst, x, y + 22f, Color.FromArgb(220, 60, 160, 235));
         DrawBar("Nang luong", energy, x, y + 44f, Color.FromArgb(220, 235, 210, 60));
+        if (hasBiz) DrawText("Kho quan: " + bizStock + " phan" + (bizStock == 0 ? "  (HET HANG - nhap hang de co khach)" : ""), x, y + 66f, 0.32f, bizStock == 0 ? Color.FromArgb(255, 255, 90, 90) : Color.White);
         string extra = "";
         if (jobGiaoHang) extra += "Giao hang";
         if (delivering)
@@ -1196,7 +1201,7 @@ public class GtaVietLifeWorld : Script
             extra += " | con " + (int)Game.Player.Character.Position.DistanceTo2D(dest) + "m, " + (left > 0 ? left + "s" : "TRE");
         }
         if (debt > 0) extra += (extra.Length > 0 ? " | " : "") + "No $" + debt;
-        if (extra.Length > 0) DrawText(extra, x, y + 68f, 0.32f, Color.White);
+        if (extra.Length > 0) DrawText(extra, x, y + (hasBiz ? 86f : 66f), 0.32f, Color.White);
     }
 
     void DrawMenu()
