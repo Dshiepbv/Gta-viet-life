@@ -46,6 +46,27 @@ public class GtaVietLifeWorld : Script
 
     bool hasHome;
     Vector3 home;
+    int homeIdx = -1;
+    int rentPerDay = RentPerDay;
+    string homeName = "";
+    float homeEnergy = 100f;
+    int fadeAction;
+    int nextTraffic;
+
+    class HomeInfo
+    {
+        public string Name; public Vector3 Pos; public int Rent; public float Energy; public string Note;
+        public HomeInfo(string n, float x, float y, float z, int rent, float energy, string note) { Name = n; Pos = new Vector3(x, y, z); Rent = rent; Energy = energy; Note = note; }
+    }
+    static readonly HomeInfo[] Homes = {
+        new HomeInfo("Trailer o Sandy Shores", 1972.7f, 3817.0f, 33.4f, 80, 80f, "re, ngu hoi it"),
+        new HomeInfo("Nha nho o Strawberry", -14.4f, -1436.5f, 31.1f, 200, 95f, "kha tot"),
+        new HomeInfo("Nha o Vinewood Hills", 7.1f, 536.6f, 176.0f, 450, 100f, "view dep, ngu day suc"),
+        new HomeInfo("Biet thu Rockford Hills", -813.6f, 176.0f, 72.2f, 900, 100f, "sang trong")
+    };
+    // noi lam viec: tho phu o LS Customs (Burton)
+    static readonly Vector3 WorkSpot = new Vector3(-365.4f, -131.8f, 38.7f);
+    const int WorkPay = 130;   // cho 4 gio lam
 
     bool jobGiaoHang;
     bool delivering;
@@ -171,6 +192,7 @@ public class GtaVietLifeWorld : Script
         UpdateResidents(now);
         UpdateStaff(now);
         UpdateCustomers(now, me);
+        UpdateTraffic(me, now);
 
         if (now > nextStatePost) { nextStatePost = now + 15000; PostState(); }
         if (now > nextSave) { nextSave = now + 30000; Save(); }
@@ -246,8 +268,8 @@ public class GtaVietLifeWorld : Script
 
         if (hasHome)
         {
-            if (Game.Player.Money >= RentPerDay) { Game.Player.Money = Game.Player.Money - RentPerDay; report += " Tien nha -$" + RentPerDay + "."; }
-            else { debt += RentPerDay; report += " ~r~Thieu tien nha, ghi no $" + RentPerDay + ".~s~"; }
+            if (Game.Player.Money >= rentPerDay) { Game.Player.Money = Game.Player.Money - rentPerDay; report += " Tien nha -$" + rentPerDay + "."; }
+            else { debt += rentPerDay; report += " ~r~Thieu tien nha, ghi no $" + rentPerDay + ".~s~"; }
         }
         if (debt > 0)
         {
@@ -987,19 +1009,98 @@ public class GtaVietLifeWorld : Script
         Notify("Da uong nuoc (-$" + DrinkPrice + ").");
     }
 
-    void SetHome()
+    // ---- tim nha thue
+    void RentHome(int idx)
     {
-        if (hasHome) { Notify("Sep da co cho o roi."); return; }
-        home = Game.Player.Character.Position;
+        HomeInfo h = Homes[idx];
+        int deposit = h.Rent * 3;
+        if (!Spend(deposit)) return;
+        homeIdx = idx;
         hasHome = true;
-        Notify("~g~Da thue cho o day~s~ ($" + RentPerDay + "/ngay). Ve day bam M de ngu.");
+        home = h.Pos;
+        rentPerDay = h.Rent;
+        homeName = h.Name;
+        homeEnergy = h.Energy;
+        Notify("~g~Da thue " + h.Name + "~s~. Coc 3 ngay $" + deposit + ", thue $" + h.Rent + "/ngay. Den gan nha bam M de ngu.");
+        PostEvent("Có gã vừa thuê " + h.Name + ".");
+        Save();
     }
 
+    void LeaveHome()
+    {
+        hasHome = false;
+        homeIdx = -1;
+        homeName = "";
+        rentPerDay = RentPerDay;
+        Notify("Da tra nha.");
+    }
+
+    void ShowHomes()
+    {
+        Begin("TIM NHA THUE  (coc 3 ngay)", delegate { ShowMain(); });
+        Vector3 me = Game.Player.Character.Position;
+        for (int i = 0; i < Homes.Length; i++)
+        {
+            int idx = i;
+            HomeInfo h = Homes[i];
+            int dist = (int)me.DistanceTo2D(h.Pos);
+            string tag = (homeIdx == i) ? "  [DANG O]" : "";
+            Item(h.Name + "  $" + h.Rent + "/ngay  (" + h.Note + ")  cach " + dist + "m" + tag, delegate
+            {
+                if (homeIdx == idx) { Notify("Sep dang o day roi."); return; }
+                if (Game.Player.Character.Position.DistanceTo2D(Homes[idx].Pos) < 80f)
+                {
+                    if (homeIdx >= 0 || (hasHome && homeIdx < 0)) LeaveHome();
+                    RentHome(idx);
+                    ShowHomes();
+                }
+                else
+                {
+                    Function.Call(Hash.SET_NEW_WAYPOINT, Homes[idx].Pos.X, Homes[idx].Pos.Y);
+                    Notify("Da dat diem den: ~y~" + Homes[idx].Name + "~s~. Den gan (80 m) roi mo lai muc nay de ky thue.");
+                    CloseMenu();
+                }
+            });
+        }
+        if (hasHome) Item("Tra nha hien tai (" + (homeName.Length > 0 ? homeName : "cho tu chon") + ")", delegate { LeaveHome(); ShowHomes(); });
+        Item("Quay lai", delegate { ShowMain(); });
+    }
+
+    // ---- ngu / lam ca (mo man hinh den, tua gio, xong thi sang lai)
     void Sleep()
     {
         Ped me = Game.Player.Character;
-        if (!hasHome || me.Position.DistanceTo(home) > 30f) { Notify("Phai o gan nha moi ngu duoc."); return; }
+        float maxDist = homeIdx >= 0 ? 70f : 30f;
+        if (!hasHome || me.Position.DistanceTo(home) > maxDist) { Notify("Phai o gan nha (" + (int)maxDist + " m) moi ngu duoc."); return; }
         if (me.IsInVehicle()) { Notify("Xuong xe da."); return; }
+        fadeAction = 1;
+        GTA.UI.Screen.FadeOut(800);
+        sleepAt = Game.GameTime + 1100;
+    }
+
+    void SleepRough()
+    {
+        Ped me = Game.Player.Character;
+        if (me.IsInVehicle()) { Notify("Xuong xe da."); return; }
+        if (Game.Player.WantedLevel > 0) { Notify("Dang bi truy na, khong ngu duoc."); return; }
+        fadeAction = 2;
+        GTA.UI.Screen.FadeOut(800);
+        sleepAt = Game.GameTime + 1100;
+    }
+
+    void StartWork()
+    {
+        Ped me = Game.Player.Character;
+        int hour = World.CurrentTimeOfDay.Hours;
+        if (me.Position.DistanceTo2D(WorkSpot) > 40f)
+        {
+            Function.Call(Hash.SET_NEW_WAYPOINT, WorkSpot.X, WorkSpot.Y);
+            Notify("Da dat diem den: ~y~Los Santos Customs~s~ (Burton). Den gan roi mo lai muc nay de lam ca.");
+            return;
+        }
+        if (hour < 7 || hour >= 18) { Notify("Chi lam ca tu 7h den 18h."); return; }
+        if (me.IsInVehicle()) { Notify("Xuong xe da."); return; }
+        fadeAction = 3;
         GTA.UI.Screen.FadeOut(800);
         sleepAt = Game.GameTime + 1100;
     }
@@ -1007,14 +1108,62 @@ public class GtaVietLifeWorld : Script
     void FinishSleep()
     {
         Ped me = Game.Player.Character;
-        AdvanceTime(8 * 60);
-        energy = 100f;
-        hunger = Clamp(hunger - 15f);
-        thirst = Clamp(thirst - 15f);
-        me.Health = me.MaxHealth;
-        GTA.UI.Screen.FadeIn(800);
-        Notify("Da ngu 8 tieng. Khoe re!");
+        if (fadeAction == 3)
+        {
+            AdvanceTime(4 * 60);
+            Game.Player.Money = Game.Player.Money + WorkPay;
+            hunger = Clamp(hunger - 15f);
+            thirst = Clamp(thirst - 18f);
+            energy = Clamp(energy - 20f);
+            rep += 1;
+            GTA.UI.Screen.FadeIn(800);
+            Notify("~g~Het ca tho phu 4 gio:~s~ +$" + WorkPay + ". Hoi met, doi va khat.");
+        }
+        else if (fadeAction == 2)
+        {
+            AdvanceTime(6 * 60);
+            energy = Math.Max(energy, 70f);
+            hunger = Clamp(hunger - 18f);
+            thirst = Clamp(thirst - 18f);
+            me.Health = Math.Max(me.Health, me.MaxHealth * 3 / 4);
+            string extra = "";
+            if (rnd.Next(100) < 30 && Game.Player.Money > 0)
+            {
+                int stolen = Math.Min(Game.Player.Money, 50 + rnd.Next(250));
+                Game.Player.Money = Game.Player.Money - stolen;
+                extra = " ~r~Bi mat $" + stolen + " luc dang ngu!~s~";
+            }
+            GTA.UI.Screen.FadeIn(800);
+            Notify("Ngu ngoai duong 6 tieng." + extra);
+        }
+        else
+        {
+            AdvanceTime(8 * 60);
+            energy = Math.Max(energy, homeEnergy);
+            hunger = Clamp(hunger - 15f);
+            thirst = Clamp(thirst - 15f);
+            me.Health = me.MaxHealth;
+            GTA.UI.Screen.FadeIn(800);
+            Notify("Da ngu 8 tieng. Khoe re!");
+        }
+        fadeAction = 0;
         Save();
+    }
+
+    // ---- camera phat toc do
+    void UpdateTraffic(Ped me, int now)
+    {
+        if (now < nextTraffic || !me.IsInVehicle() || Game.Player.WantedLevel > 0) return;
+        Vehicle v = me.CurrentVehicle;
+        if (v == null || !v.Exists()) return;
+        if (v.Speed > 38f && rnd.Next(100) < 30)   // > ~137 km/h
+        {
+            nextTraffic = now + 60000;
+            int fine = 200;
+            if (Game.Player.Money >= fine) { Game.Player.Money = Game.Player.Money - fine; Notify("~r~Camera phat toc do:~s~ -$" + fine + "."); }
+            else { debt += fine; Notify("~r~Camera phat toc do:~s~ thieu tien, ghi no $" + fine + "."); }
+            rep -= 1;
+        }
     }
 
     // ------------------------------------------------------------ menu
@@ -1046,7 +1195,8 @@ public class GtaVietLifeWorld : Script
         Item("An com  (-$" + FoodPrice + ")", delegate { Eat(); });
         Item("Uong nuoc  (-$" + DrinkPrice + ")", delegate { Drink(); });
         if (hasHome) Item("Ngu o nha  (tua 8 gio)", delegate { CloseMenu(); Sleep(); });
-        else Item("Thue cho o day  ($" + RentPerDay + "/ngay)", delegate { SetHome(); ShowMain(); });
+        Item("Tim nha thue...", delegate { ShowHomes(); });
+        Item("Ngu ngoai duong  (mien phi, 30% bi cuop)", delegate { CloseMenu(); SleepRough(); });
         Item("Cong viec...", delegate { ShowJob(); });
         Item("Kinh doanh...", delegate { ShowBiz(); });
         Item("Dat nguoi gan nhat lam cu dan (co lich)", delegate { MakeResident(); });
@@ -1064,6 +1214,7 @@ public class GtaVietLifeWorld : Script
             else Item("Huy don dang giao", delegate { EndDelivery(false, false); ShowJob(); });
             Item("Nghi viec", delegate { if (delivering) EndDelivery(false, false); jobGiaoHang = false; ShowJob(); });
         }
+        Item("Lam ca tho phu o LS Customs  (4 gio, +$" + WorkPay + ", 7h-18h)", delegate { CloseMenu(); StartWork(); });
         Item("Quay lai", delegate { ShowMain(); });
     }
 
@@ -1119,7 +1270,7 @@ public class GtaVietLifeWorld : Script
         Begin("THONG TIN", delegate { ShowMain(); });
         Item("Tien: $" + Game.Player.Money + "   No: $" + debt, delegate { });
         Item("Uy tin: " + rep + "   Giao hang hom nay: " + deliveriesToday + " don ($" + earnedToday + ")", delegate { });
-        Item("Nha: " + (hasHome ? "co ($" + RentPerDay + "/ngay)" : "chua thue"), delegate { });
+        Item("Nha: " + (hasHome ? (homeName.Length > 0 ? homeName : "cho tu chon") + " ($" + rentPerDay + "/ngay)" : "chua thue"), delegate { });
         Item("Quan: " + (hasBiz ? "cap " + bizLevel + " " + TierName[bizLevel - 1] + ", kho " + bizStock + ", nv " + bizStaff + ", quy $" + bizCash : "chua co"), delegate { });
         Item("Cu dan co lich: " + residents.Count, delegate { });
         Item("Quay lai", delegate { ShowMain(); });
@@ -1267,6 +1418,9 @@ public class GtaVietLifeWorld : Script
             l.Add("job=" + (jobGiaoHang ? 1 : 0));
             l.Add("deliveries=" + deliveriesTotal);
             l.Add("hasHome=" + (hasHome ? 1 : 0));
+            l.Add("homeIdx=" + homeIdx);
+            l.Add("rent=" + rentPerDay);
+            l.Add("homeEnergy=" + homeEnergy.ToString(ci));
             l.Add("home=" + home.X.ToString(ci) + "," + home.Y.ToString(ci) + "," + home.Z.ToString(ci));
             l.Add("hasBiz=" + (hasBiz ? 1 : 0));
             l.Add("biz=" + bizPos.X.ToString(ci) + "," + bizPos.Y.ToString(ci) + "," + bizPos.Z.ToString(ci));
@@ -1302,6 +1456,9 @@ public class GtaVietLifeWorld : Script
                     case "job": jobGiaoHang = v == "1"; break;
                     case "deliveries": deliveriesTotal = int.Parse(v); break;
                     case "hasHome": hasHome = v == "1"; break;
+                    case "homeIdx": homeIdx = int.Parse(v); if (homeIdx >= 0 && homeIdx < Homes.Length) homeName = Homes[homeIdx].Name; break;
+                    case "rent": rentPerDay = int.Parse(v); break;
+                    case "homeEnergy": homeEnergy = float.Parse(v, ci); break;
                     case "home": home = ParseVec(v); break;
                     case "hasBiz": hasBiz = v == "1"; break;
                     case "biz": bizPos = ParseVec(v); break;
