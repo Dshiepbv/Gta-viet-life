@@ -1,4 +1,6 @@
 """Bộ não NPC: Gemini (gói miễn phí) là chính, Ollama chạy local là dự phòng."""
+import random
+import re
 import json
 import time
 import urllib.error
@@ -91,6 +93,10 @@ def style_for(npc: dict, ctx: dict) -> str:
     if hint:
         out.append("Bối cảnh ảnh hưởng giọng: " + "; ".join(hint) + ".")
     return "\n".join(out)
+
+
+FALLBACK = ["Ơ, nói gì cơ? Ồn quá chả nghe rõ.", "Từ từ, để tôi nghĩ đã...", "Hả? Nói lại cái coi.",
+            "Ừm... chuyện đó để lúc khác nhé.", "Ờ ờ, tôi đang bận chút, lát nói tiếp."]
 
 
 def _parse(text: str) -> dict:
@@ -218,7 +224,7 @@ class Brain:
                     last_err = e
                     print(f"[llm] ollama lỗi: {e}")
         print(f"[llm] không có bộ não nào trả lời được: {last_err}")
-        return {"reply": "Xin lỗi, tôi đang vội.", "action": "none", "affinity_delta": 0}
+        return {"reply": random.choice(FALLBACK), "action": "none", "affinity_delta": 0}
 
     AUDIO_NOTE = ("\n\nNgười chơi nói bằng giọng, bạn nhận được file âm thanh tiếng Việt. Hãy nghe, chép lại nguyên văn "
                   "lời họ vào trường \"heard\" (để trống \"\" nếu không có tiếng người nói rõ hoặc chỉ là tiếng ồn), "
@@ -254,27 +260,44 @@ class Brain:
         msgs = [{"role": "system", "content": system}]
         msgs += [{"role": "user" if r == "player" else "assistant", "content": t} for r, t in history]
         msgs.append({"role": "user", "content": player_text})
-        if not getattr(self, "groq_model", None):
-            self.groq_model = self.cfg.get("groq_model") or "llama-3.3-70b-versatile"
-        body = {"model": self.groq_model, "messages": msgs, "temperature": 0.9, "max_tokens": 700}
-        if "gpt-oss" in self.groq_model:
-            body["reasoning_effort"] = "low"   # model suy luận: nghĩ ngắn để còn chỗ cho câu trả lời JSON
-        # không dùng response_format=json_object: model suy luận hay làm hỏng bước kiểm tra JSON của Groq
-        req = urllib.request.Request("https://api.groq.com/openai/v1/chat/completions",
-                                     data=json.dumps(body).encode("utf-8"), method="POST",
-                                     headers={"Content-Type": "application/json", "User-Agent": "gta-viet-life",
-                                              "Authorization": "Bearer " + self.cfg["groq_api_key"]})
-        try:
-            with urllib.request.urlopen(req, timeout=10) as r:
-                data = json.loads(r.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            print(f"[llm]   groq lỗi {e.code}: {e.read().decode('utf-8', 'replace')[:200]}")
-            if e.code == 404 and not getattr(self, "_groq_listed", False):
-                self._groq_listed = True
-                self._groq_pick_model()
-                return self._groq_chat(system, history, player_text)
-            raise
-        return _parse(data["choices"][0]["message"]["content"])
+        return _parse(self._groq_text(msgs))
+
+    def _groq_text(self, msgs) -> str:
+        if not getattr(self, "groq_models", None):
+            self._groq_pick_model()
+        last = None
+        # thu lan luot toi da 3 model: model nao loi (vd gpt-oss bao "Failed to validate JSON") thi doi model khac
+        for model in list(self.groq_models)[:3]:
+            body = {"model": model, "messages": msgs, "temperature": 0.9, "max_tokens": 700}
+            if "gpt-oss" in model:
+                body["reasoning_effort"] = "low"
+            if "qwen" in model:
+                body["reasoning_format"] = "hidden"   # khong tra ve phan suy nghi <think>
+            req = urllib.request.Request("https://api.groq.com/openai/v1/chat/completions",
+                                         data=json.dumps(body).encode("utf-8"), method="POST",
+                                         headers={"Content-Type": "application/json", "User-Agent": "gta-viet-life",
+                                                  "Authorization": "Bearer " + self.cfg["groq_api_key"]})
+            try:
+                with urllib.request.urlopen(req, timeout=12) as r:
+                    data = json.loads(r.read().decode("utf-8"))
+                text = data["choices"][0]["message"].get("content") or ""
+                text = re.sub(r"<think>.*?</think>", "", text, flags=re.S)
+                if not text.strip():
+                    raise ValueError("model tra ve rong")
+                if self.groq_models[0] != model:   # nho model chay duoc cho lan sau
+                    self.groq_models.remove(model)
+                    self.groq_models.insert(0, model)
+                    print(f"[llm] groq doi sang model {model}")
+                return text
+            except urllib.error.HTTPError as e:
+                last = e
+                print(f"[llm]   groq {model} lỗi {e.code}: {e.read().decode('utf-8', 'replace')[:160]}")
+                if e.code == 429:
+                    raise
+            except (ValueError, KeyError, IndexError, TimeoutError, urllib.error.URLError) as e:
+                last = e
+                print(f"[llm]   groq {model} lỗi: {e}")
+        raise last or RuntimeError("groq khong tra loi")
 
     def _groq_pick_model(self):
         req = urllib.request.Request("https://api.groq.com/openai/v1/models", headers={
@@ -282,15 +305,18 @@ class Brain:
         with urllib.request.urlopen(req, timeout=10) as r:
             ids = [m["id"] for m in json.loads(r.read().decode("utf-8")).get("data", [])]
         print(f"[llm] groq có các model: {ids}")
-        chat = [i for i in ids if not any(x in i.lower() for x in ("whisper", "guard", "tts", "playai", "orpheus", "embed"))]
+        chat = [i for i in ids if not any(x in i.lower() for x in ("whisper", "guard", "tts", "playai", "orpheus", "embed", "allam"))]
         def rank(i):
             l = i.lower()
-            return (0 if "llama" in l and "70b" in l else 1 if "llama" in l and "scout" in l else 2 if "gpt-oss-120b" in l
-                    else 3 if "qwen" in l else 4 if "llama" in l else 5, i)
+            return (0 if "llama" in l and "70b" in l else 1 if "qwen" in l else 2 if "llama" in l and "scout" in l
+                    else 3 if "gpt-oss-120b" in l else 4 if "llama" in l else 5, i)
         if not chat:
             raise RuntimeError("Groq không có model chat nào")
-        self.groq_model = sorted(chat, key=rank)[0]
-        print(f"[llm] groq chọn model {self.groq_model}")
+        self.groq_models = sorted(chat, key=rank)
+        pref = self.cfg.get("groq_model")
+        if pref in self.groq_models:
+            self.groq_models.remove(pref); self.groq_models.insert(0, pref)
+        print(f"[llm] groq thu theo thu tu: {self.groq_models[:3]}")
 
     def transcribe_groq(self, wav: bytes) -> str:
         """Nghe bằng Whisper large-v3-turbo của Groq (miễn phí, ~0.5 giây)."""
@@ -311,6 +337,62 @@ class Brain:
         except urllib.error.HTTPError as e:
             print(f"[stt] groq lỗi {e.code}: {e.read().decode('utf-8', 'replace')[:200]}")
             raise
+
+    def _ollama_text(self, msgs, num_predict=150) -> str:
+        body = {"model": self.cfg.get("ollama_model", "qwen2.5:3b"), "messages": msgs,
+                "stream": False, "format": "json", "keep_alive": "60m",
+                "options": {"temperature": 0.95, "num_predict": num_predict, "num_ctx": 2048,
+                            "num_gpu": int(self.cfg.get("ollama_gpu_layers", 0))}}
+        url = self.cfg.get("ollama_url", "http://127.0.0.1:11434") + "/api/chat"
+        return _post_json(url, body, timeout=45.0)["message"]["content"]
+
+    BANTER = ("Bạn viết một đoạn hội thoại ngắn, tự nhiên giữa hai người Việt đang đứng cạnh nhau ngoài phố "
+              "(nói như đời thường ở Việt Nam, khẩu ngữ, có thể dùng từ địa phương theo quê). "
+              "2 đến 4 lượt, xen kẽ A và B, mỗi lượt MỘT câu ngắn dưới 18 từ. "
+              "Nội dung hợp với nghề, tính cách, tuổi, giờ giấc, thời tiết, chỗ đang đứng hoặc tin đồn gần đây "
+              "(chuyện cơm áo, giá cả, việc làm, kẹt xe, chuyện hàng xóm, trêu nhau...). "
+              "Không nhắc tới game hay người chơi, không chào khán giả. "
+              "Chỉ trả về JSON: {\"lines\": [{\"who\": \"A\", \"text\": \"...\", \"tone\": \"binh_thuong\"}]} "
+              "với tone là một trong: " + ", ".join(TONES) + ".")
+
+    def banter(self, a: dict, b: dict, ctx: dict) -> list:
+        """Hai NPC noi chuyen voi nhau. Tra ve [(who 'A'/'B', text, tone)]; loi thi tra ve []."""
+        def desc(n):
+            h, (region, words), (age, _agew), catch = profile_for(n)
+            return f"{n['name']} ({n['gender']}, {age}, giọng {region}: {words}, làm {n['job']}, tính {n['trait']})"
+        rel = random.choice(["hai người lạ vừa đứng cạnh nhau", "hai người quen sơ sơ cùng khu", "hai người bạn lâu năm",
+                             "hàng xóm", "đồng nghiệp tình cờ gặp"])
+        user = (f"A là {desc(a)}. B là {desc(b)}. Quan hệ: {rel}. "
+                f"Lúc này {ctx.get('hour', '?')} giờ, thời tiết {ctx.get('weather', '?')}, ở {ctx.get('street', 'ngoài phố')}. "
+                + (f"Tin đồn gần đây: {ctx.get('extra')}" if ctx.get("extra") else ""))
+        msgs = [{"role": "system", "content": self.BANTER}, {"role": "user", "content": user}]
+        text = None
+        if self.cfg.get("groq_api_key"):
+            try:
+                text = self._groq_text(msgs)
+            except Exception as e:
+                print(f"[banter] groq lỗi: {e}")
+        if text is None and self.cfg.get("ollama_enabled", True):
+            try:
+                text = self._ollama_text(msgs, num_predict=300)
+            except Exception as e:
+                print(f"[banter] ollama lỗi: {e}")
+        if not text:
+            return []
+        try:
+            t = text.strip()
+            data = json.loads(t[t.find("{"):t.rfind("}") + 1])
+            out = []
+            for ln in data.get("lines", [])[:4]:
+                who = "B" if str(ln.get("who", "A")).strip().upper().startswith("B") else "A"
+                tx = str(ln.get("text", "")).strip()
+                tone = str(ln.get("tone", "binh_thuong")).strip().lower()
+                if tx:
+                    out.append((who, tx, tone if tone in TONES else "binh_thuong"))
+            return out
+        except (ValueError, TypeError, AttributeError) as e:
+            print(f"[banter] không đọc được JSON: {e}")
+            return []
 
     def _ollama(self, system: str, history: list, player_text: str) -> dict:
         msgs = [{"role": "system", "content": system}]

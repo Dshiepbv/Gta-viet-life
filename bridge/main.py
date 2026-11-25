@@ -91,7 +91,48 @@ class Bridge:
             self.stt = STT(self.cfg)
         return self.stt
 
+    banter_epoch = 0
+
+    def banter(self, ctx: dict) -> str:
+        """Hai NPC gan nhau noi chuyen voi nhau. Tra ve: so cau, roi moi dong 'A|ms' hoac 'B|ms'."""
+        if not self.busy.acquire(blocking=False):
+            return "0"
+        try:
+            a = self.memory.get_or_create(ctx.get("keyA", "tmp_a"), ctx.get("genderA", "male"), int(ctx.get("pedtypeA", "4") or 4))
+            b = self.memory.get_or_create(ctx.get("keyB", "tmp_b"), ctx.get("genderB", "male"), int(ctx.get("pedtypeB", "4") or 4))
+            if a["name"] == b["name"] and a["key"] != b["key"]:
+                b = dict(b, name=b["name"] + " (bạn)")
+            try:
+                ctx["extra"] = self.life.context(a)
+            except Exception:
+                ctx["extra"] = ""
+            lines = self.brain.banter(a, b, ctx)
+        finally:
+            self.busy.release()
+        if not lines:
+            return "0"
+        plan = [(who, text, tone, 700 + 85 * len(text)) for who, text, tone in lines]
+        self.banter_epoch += 1
+        my = self.banter_epoch
+
+        def run():
+            for who, text, tone, ms in plan:
+                if my != self.banter_epoch:
+                    return
+                n = a if who == "A" else b
+                self.overlay.show("npc", f"{n['name']}: {text}", ms + 1500)
+                try:
+                    self.voice.speak(text, dict(n, _tone=tone))
+                except Exception as e:
+                    print(f"[banter] tts lỗi: {e}")
+                time.sleep(ms / 1000.0 + 0.5)
+
+        threading.Thread(target=run, daemon=True).start()
+        print("[banter] " + " / ".join(f"{(a if w == 'A' else b)['name']}: {t}" for w, t, _, _ in plan))
+        return str(len(plan)) + "\n" + "\n".join(f"{w}|{ms}" for w, _, _, ms in plan)
+
     def start(self):
+        self.banter_epoch += 1   # Sep bat dau noi thi dung cuoc tro chuyen cua NPC
         self.voice.stop()
         self.recorder.start()
         self.overlay.show("player", "🎙 ...", 30000)
@@ -204,6 +245,8 @@ def make_handler(bridge: Bridge):
                     self._send("ok")
                 elif self.path == "/stop":
                     self._send(bridge.stop(ctx))
+                elif self.path == "/banter":
+                    self._send(bridge.banter(ctx))
                 else:
                     self._send("not found", 404)
             except Exception as e:

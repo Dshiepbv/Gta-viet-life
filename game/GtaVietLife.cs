@@ -27,6 +27,7 @@ public class GtaVietLife : Script
     Keys talkKey = Keys.N;
     Keys markKey = Keys.K;
     float talkRadius = 5f;
+    int banterEvery = 45;          // giay giua hai cuoc NPC tu noi chuyen voi nhau (0 = tat)
 
     Ped target;
     bool recording;
@@ -50,6 +51,7 @@ public class GtaVietLife : Script
         talkKey = Settings.GetValue("Keys", "Talk", talkKey);
         markKey = Settings.GetValue("Keys", "Remember", markKey);
         talkRadius = Settings.GetValue("Talk", "Radius", talkRadius);
+        banterEvery = Settings.GetValue("Talk", "BanterEvery", banterEvery);
 
         Tick += OnTick;
         KeyDown += OnKeyDown;
@@ -105,6 +107,8 @@ public class GtaVietLife : Script
             }
             catch { }
         }
+
+        UpdateBanter(now);
 
         // Nói xong thì để NPC đi tiếp việc của mình
         if (releasePed != null && now > releaseAt)
@@ -276,6 +280,133 @@ public class GtaVietLife : Script
                 if (!followers.Contains(p.Handle)) ReleaseLater(p, ms + 7000);
                 break;
         }
+    }
+
+    // ----------------------------------------------------------------- NPC noi chuyen voi nhau
+    readonly Random rnd = new Random();
+    int nextBanter = 20000;
+    Ped banA, banB;
+    bool banWaiting;
+    int banStart, banEnd;
+    readonly List<KeyValuePair<bool, int>> banPlan = new List<KeyValuePair<bool, int>>();   // (A noi?, ms)
+    int banFacial;
+
+    bool FreePed(Ped p, Ped me)
+    {
+        return p != null && p.Exists() && p != me && p.IsHuman && p.IsAlive && !p.IsPlayer && !p.IsInVehicle()
+               && !followers.Contains(p.Handle) && p != target && p != speakingPed && p != releasePed
+               && !p.IsInCombat && !p.IsRunning && !p.IsSprinting;
+    }
+
+    void UpdateBanter(int now)
+    {
+        if (banA != null)
+        {
+            bool gone = banA == null || !banA.Exists() || !banA.IsAlive || banB == null || !banB.Exists() || !banB.IsAlive;
+            if (gone || recording || (!banWaiting && now > banEnd) || (banWaiting && now - banStart > 25000)) { EndBanter(); return; }
+            if (banWaiting || now < banStart) return;
+            // ai dang noi thi mấp máy miệng
+            int t = now - banStart, acc = 0;
+            for (int i = 0; i < banPlan.Count; i++)
+            {
+                int ms = banPlan[i].Value;
+                if (t < acc + ms)
+                {
+                    if (now > banFacial)
+                    {
+                        Function.Call(Hash.PLAY_FACIAL_ANIM, banPlan[i].Key ? banA : banB, "mic_chatter", "mp_facial");
+                        banFacial = now + 900;
+                    }
+                    break;
+                }
+                acc += ms + 500;
+            }
+            return;
+        }
+        if (banterEvery <= 0 || now < nextBanter || recording || waiting || speakingPed != null) return;
+        nextBanter = now + banterEvery * 1000 + rnd.Next(0, 20000);
+        Ped me = Game.Player.Character;
+        if (me.IsInVehicle()) return;
+        Ped[] near = World.GetNearbyPeds(me, 25f);
+        for (int i = 0; i < near.Length; i++)
+        {
+            if (!FreePed(near[i], me)) continue;
+            for (int j = i + 1; j < near.Length; j++)
+            {
+                if (!FreePed(near[j], me)) continue;
+                if (near[i].Position.DistanceTo(near[j].Position) > 4.5f) continue;
+                StartBanter(near[i], near[j]);
+                return;
+            }
+        }
+    }
+
+    void Face(Ped p, Ped other)
+    {
+        Vector3 d = other.Position - p.Position;
+        p.Heading = (float)(Math.Atan2(-d.X, d.Y) * 180.0 / Math.PI);
+    }
+
+    void StartBanter(Ped a, Ped b)
+    {
+        banA = a; banB = b; banWaiting = true; banStart = Game.GameTime; banPlan.Clear();
+        foreach (Ped p in new[] { a, b })
+        {
+            Function.Call(Hash.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS, p, true);
+            p.Task.ClearAll();
+        }
+        // B buoc lai gan A, hai nguoi quay mat vao nhau
+        Vector3 dir = b.Position - a.Position; dir.Z = 0f;
+        if (dir.Length() > 1.6f) { dir.Normalize(); b.Task.GoTo(a.Position + dir * 1.3f); }
+        Face(a, b); Face(b, a);
+        a.Task.LookAt(b, 40000); b.Task.LookAt(a, 40000);
+        NameValueCollection c = new NameValueCollection();
+        c["keyA"] = KeyFor(a); c["genderA"] = a.Gender == Gender.Female ? "female" : "male"; c["pedtypeA"] = Function.Call<int>(Hash.GET_PED_TYPE, a).ToString();
+        c["keyB"] = KeyFor(b); c["genderB"] = b.Gender == Gender.Female ? "female" : "male"; c["pedtypeB"] = Function.Call<int>(Hash.GET_PED_TYPE, b).ToString();
+        c["hour"] = World.CurrentTimeOfDay.Hours.ToString();
+        c["weather"] = World.Weather.ToString();
+        c["street"] = World.GetStreetName(a.Position);
+        Task.Run(() =>
+        {
+            string resp = "0";
+            try { resp = Post("/banter", c); } catch (Exception ex) { Log("/banter loi: " + ex.Message); }
+            mainThread.Enqueue(() => OnBanterReply(resp));
+        });
+    }
+
+    void OnBanterReply(string resp)
+    {
+        if (banA == null) return;
+        string[] lines = (resp ?? "0").Replace("\r", "").Split('\n');
+        int n = 0;
+        int.TryParse(lines[0].Trim(), out n);
+        if (n <= 0) { EndBanter(); return; }
+        banPlan.Clear();
+        int total = 0;
+        for (int i = 1; i < lines.Length && banPlan.Count < n; i++)
+        {
+            string[] w = lines[i].Split('|');
+            int ms;
+            if (w.Length < 2 || !int.TryParse(w[1].Trim(), out ms)) continue;
+            banPlan.Add(new KeyValuePair<bool, int>(w[0].Trim() == "A", ms));
+            total += ms + 500;
+        }
+        if (banA.Exists() && banB.Exists()) { Face(banA, banB); Face(banB, banA); }
+        banWaiting = false;
+        banStart = Game.GameTime + 1200;   // cho giong doc kip tao
+        banEnd = banStart + total + 1500;
+    }
+
+    void EndBanter()
+    {
+        foreach (Ped p in new[] { banA, banB })
+        {
+            if (p == null || !p.Exists()) continue;
+            Function.Call(Hash.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS, p, false);
+            p.Task.ClearLookAt();
+            if (p.IsAlive) p.Task.WanderAround();
+        }
+        banA = null; banB = null; banWaiting = false; banPlan.Clear();
     }
 
     // ----------------------------------------------------------------- tiện ích
