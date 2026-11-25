@@ -570,7 +570,7 @@ public class GtaVietLifeWorld : Script
         public string Unit = "phan";   // dich vu tinh theo "luot"
     }
     static readonly BizType[] Types = {
-        new BizType { Name = "Quan nuoc via he", Channel = 0, Capex = 1.0f, RentMul = 1.0f, Traffic = 1.0f, PriceMul = 1.05f, MinMode = 0, Items = new[] { 0, 1, 2, 3 }, Note = "F&B, von nho, bien loi nhuan cao" },
+        new BizType { Name = "Quan nuoc via he", Channel = 0, Capex = 1.0f, RentMul = 1.0f, Traffic = 1.0f, PriceMul = 1.19f, MinMode = 0, Items = new[] { 0, 1, 2, 3 }, Note = "F&B, von nho, bien loi nhuan cao" },
         new BizType { Name = "Tap hoa", Channel = 0, Capex = 1.3f, RentMul = 1.0f, Traffic = 0.9f, PriceMul = 1.05f, MinMode = 0, Items = new[] { 10, 11, 12, 13, 14, 17, 18 }, Note = "FMCG, nhap le, bien loi nhuan vua" },
         new BizType { Name = "Quan an", Channel = 0, Capex = 1.6f, RentMul = 1.2f, Traffic = 1.0f, PriceMul = 1.05f, MinMode = 1, Items = new[] { 3, 4, 5, 6, 8, 0 }, Note = "F&B, mon an chinh, can mat bang thue" },
         new BizType { Name = "Cua hang tien loi (MT)", Channel = 1, Capex = 3.0f, RentMul = 1.8f, Traffic = 1.5f, PriceMul = 0.97f, MinMode = 2, Items = new[] { 0, 1, 3, 7, 10, 11, 12, 13, 14 }, Note = "FMCG + F&B, mo 24/7, dong khach, thue VAT" },
@@ -585,19 +585,20 @@ public class GtaVietLifeWorld : Script
     static string UW(int type) { return Types[TIdx(type)].Unit; }
 
     static int TIdx(int t) { return t < 0 || t >= Types.Length ? 0 : t; }
+    const float LevelPriceStep = 0.27f;   // moi cap quan +27% gia ban (khop cong thuc cu 22$ + 6$/cap: cap 4 ~ 40$)
     static float AvgOf(BizType t, bool price)
     {
         float s = 0f; foreach (int i in t.Items) s += price ? Catalog[i].Price : Catalog[i].Cost;
         return s / t.Items.Length;
     }
     static int UnitCost(int type) { return (int)Math.Round(AvgOf(Types[TIdx(type)], false)); }
-    static int UnitPrice(int type, int level) { BizType t = Types[TIdx(type)]; return (int)Math.Round(AvgOf(t, true) * t.PriceMul * (1f + 0.12f * (level - 1))); }
+    static int UnitPrice(int type, int level) { BizType t = Types[TIdx(type)]; return (int)Math.Round(AvgOf(t, true) * t.PriceMul * (1f + LevelPriceStep * (level - 1))); }
 
     // ban qty don vi: moi don vi chon ngau nhien 1 mat hang trong danh muc cua loai hinh -> doanh thu va gia von
     void SellUnits(int type, int level, int qty, out int rev, out int cogs)
     {
         BizType t = Types[TIdx(type)];
-        float lv = 1f + 0.12f * (level - 1);
+        float lv = 1f + LevelPriceStep * (level - 1);
         float r = 0f; int c = 0;
         for (int i = 0; i < qty; i++)
         {
