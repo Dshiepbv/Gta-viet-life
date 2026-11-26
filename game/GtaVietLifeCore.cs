@@ -20,6 +20,7 @@ public class GtaVietLifeCore : Script
     const string TempFile = "GtaVietLifeCore.sav.tmp";
     static readonly string[] Modules = { "Personal", "Legal", "Body", "Social", "Life", "Economy" };
     static readonly object OutboxLock = new object();
+    static readonly object SaveLock = new object();
 
     string server = "http://127.0.0.1:5577";
     bool forward = true, logEvents = true, forwarding;
@@ -203,6 +204,7 @@ public class GtaVietLifeCore : Script
 
     void Save()
     {
+        lock (SaveLock)
         try
         {
             List<string> snapshot;
@@ -227,7 +229,9 @@ public class GtaVietLifeCore : Script
     void Load()
     {
         if (!LoadFrom(SaveFile)) LoadFrom(BackupFile);
-        Set("GVL.EventSeq", lastSeenSeq);
+        object current = Get("GVL.EventSeq");
+        long currentSeq = current is long ? (long)current : 0;
+        Set("GVL.EventSeq", Math.Max(lastSeenSeq, currentSeq));
     }
 
     bool LoadFrom(string path)
