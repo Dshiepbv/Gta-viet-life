@@ -1,35 +1,30 @@
-// GTA Việt Life: LÕI DÙNG CHUNG cho mọi module (đồng hồ, bus sự kiện, bật/tắt module, cổng trả tiền).
-// Chép vào thư mục "scripts". Các script khác KHÔNG phụ thuộc cứng vào file này: thiếu nó thì mỗi module tự chạy như cũ.
-// Giao diện chi tiết: docs/CORE.md trong repo.
-//
-// Mọi script SHVDN chạy chung một AppDomain nên trao đổi qua AppDomain.CurrentDomain.GetData/SetData("GVL.*"):
-//   GVL.Clock   long[] {giây thật (epoch), ngày game, phút trong ngày, thứ (0=T2..6=CN), cuối tuần 0/1, giờ}
-//   GVL.Events  List<string> "seq\tloai\tk=v;k=v"   (Emit/Poll: chép hàm mẫu trong docs/CORE.md)
-//   GVL.Mod.<Ten> bool       (bật/tắt module, đọc từ GtaVietLifeCore.ini)
-//   GVL.Pay     Func<int,string,string,bool>  trả tiền (so tien, nhom, ghi chu). Kinh tế đăng ký bản có ngân hàng;
-//               không ai đăng ký thì lõi dùng bản mặc định: trừ tiền mặt + phát sự kiện ledger.expense.
-//   GVL.Earn    Action<int,string,string>     nhận tiền, tương tự.
+// GTA Viet Life: shared runtime core.
+// Compatibility: preserves the AppDomain GVL.* contract and the legacy key=value save format.
+// Durable event delivery is at-least-once: consumers should deduplicate by sequence number.
 
 using System;
 using System.Collections.Generic;
 using System.Collections.Specialized;
+using System.Globalization;
 using System.IO;
 using System.Net;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using GTA;
 
 public class GtaVietLifeCore : Script
 {
     const string SaveFile = "GtaVietLifeCore.sav";
+    const string BackupFile = "GtaVietLifeCore.sav.bak";
+    const string TempFile = "GtaVietLifeCore.sav.tmp";
     static readonly string[] Modules = { "Personal", "Legal", "Body", "Social", "Life", "Economy" };
-    string server = "http://127.0.0.1:5577";
-    bool forward = true, logEvents = true;
+    static readonly object OutboxLock = new object();
 
-    long gameDay;
-    int lastMinute = -1;
-    long lastSeenSeq;
-    int nextPublish, nextForward, nextSave;
+    string server = "http://127.0.0.1:5577";
+    bool forward = true, logEvents = true, forwarding;
+    long gameDay, lastSeenSeq;
+    int lastMinute = -1, nextPublish, nextForward, nextSave;
     readonly List<string> outbox = new List<string>();
     readonly long[] clock = new long[6];
 
@@ -41,9 +36,17 @@ public class GtaVietLifeCore : Script
         logEvents = Settings.GetValue("Core", "LogEvents", true);
         foreach (string m in Modules) Set("GVL.Mod." + m, Settings.GetValue("Modules", m, true));
         Load();
-        if (Get("GVL.Pay") == null) { Func<int, string, string, bool> pay = DefaultPay; Set("GVL.Pay", pay); Set("GVL.PayOwner", "core"); }
-        if (Get("GVL.Earn") == null) { Action<int, string, string> earn = DefaultEarn; Set("GVL.Earn", earn); }
-        Set("GVL.CoreVersion", 1);
+        if (Get("GVL.Pay") == null)
+        {
+            Func<int, string, string, bool> pay = DefaultPay;
+            Set("GVL.Pay", pay); Set("GVL.PayOwner", "core");
+        }
+        if (Get("GVL.Earn") == null)
+        {
+            Action<int, string, string> earn = DefaultEarn;
+            Set("GVL.Earn", earn);
+        }
+        Set("GVL.CoreVersion", 2);
         Tick += OnTick;
         Aborted += delegate { Save(); };
     }
@@ -51,7 +54,6 @@ public class GtaVietLifeCore : Script
     static object Get(string k) { try { return AppDomain.CurrentDomain.GetData(k); } catch { return null; } }
     static void Set(string k, object v) { try { AppDomain.CurrentDomain.SetData(k, v); } catch { } }
 
-    // ---- bus su kien (ban goc; cac script khac chep ham nay)
     public static void Emit(string type, string data)
     {
         AppDomain d = AppDomain.CurrentDomain;
@@ -62,16 +64,18 @@ public class GtaVietLifeCore : Script
             object o = d.GetData("GVL.EventSeq");
             long seq = (o is long ? (long)o : 0) + 1;
             d.SetData("GVL.EventSeq", seq);
-            list.Add(seq + "\t" + type + "\t" + (data ?? ""));
+            list.Add(seq + "\t" + (type ?? "core.unknown") + "\t" + (data ?? ""));
         }
     }
+
+    static string Clean(string s) { return (s ?? "").Replace(";", ",").Replace("\t", " ").Replace("=", "-"); }
 
     static bool DefaultPay(int amount, string cat, string note)
     {
         if (amount <= 0) return true;
         if (Game.Player.Money < amount) return false;
         Game.Player.Money = Game.Player.Money - amount;
-        Emit("ledger.expense", "amount=" + amount + ";cat=" + cat + ";note=" + Clean(note));
+        Emit("ledger.expense", "amount=" + amount + ";cat=" + Clean(cat) + ";note=" + Clean(note));
         return true;
     }
 
@@ -79,36 +83,35 @@ public class GtaVietLifeCore : Script
     {
         if (amount <= 0) return;
         Game.Player.Money = Game.Player.Money + amount;
-        Emit("ledger.income", "amount=" + amount + ";cat=" + cat + ";note=" + Clean(note));
+        Emit("ledger.income", "amount=" + amount + ";cat=" + Clean(cat) + ";note=" + Clean(note));
     }
-
-    static string Clean(string s) { return (s ?? "").Replace(";", ",").Replace("\t", " ").Replace("=", "-"); }
 
     void OnTick(object sender, EventArgs e)
     {
         int now = Game.GameTime;
         TimeSpan t = World.CurrentTimeOfDay;
-        int m = t.Hours * 60 + t.Minutes;
-        if (lastMinute >= 0 && m < lastMinute)
+        int minute = t.Hours * 60 + t.Minutes;
+        if (lastMinute >= 0 && minute < lastMinute && lastMinute - minute > 600)
         {
             gameDay++;
             Emit("core.day", "day=" + gameDay + ";weekday=" + (gameDay % 7));
             Save();
         }
-        lastMinute = m;
+        lastMinute = minute;
+
         if (now > nextPublish)
         {
             nextPublish = now + 250;
             clock[0] = (long)(DateTime.UtcNow - new DateTime(1970, 1, 1)).TotalSeconds;
-            clock[1] = gameDay; clock[2] = m; clock[3] = gameDay % 7; clock[4] = gameDay % 7 >= 5 ? 1 : 0; clock[5] = t.Hours;
+            clock[1] = gameDay; clock[2] = minute; clock[3] = gameDay % 7;
+            clock[4] = gameDay % 7 >= 5 ? 1 : 0; clock[5] = t.Hours;
             Set("GVL.Clock", clock);
             DrainEvents();
         }
-        if (now > nextForward && outbox.Count > 0) { nextForward = now + 3000; Forward(); }
+        if (forward && now > nextForward) { nextForward = now + 3000; Forward(); }
         if (now > nextSave) { nextSave = now + 120000; Save(); }
     }
 
-    // doc su kien moi: ghi log, gui cau noi, cat bot danh sach (giu 300 dong cuoi)
     void DrainEvents()
     {
         List<string> list = Get("GVL.Events") as List<string>;
@@ -118,9 +121,14 @@ public class GtaVietLifeCore : Script
         {
             foreach (string line in list)
             {
-                long seq;
+                if (string.IsNullOrEmpty(line)) continue;
                 int tab = line.IndexOf('\t');
-                if (tab > 0 && long.TryParse(line.Substring(0, tab), out seq) && seq > lastSeenSeq) { fresh.Add(line); lastSeenSeq = seq; }
+                long seq;
+                if (tab > 0 && long.TryParse(line.Substring(0, tab), out seq) && seq > lastSeenSeq)
+                {
+                    fresh.Add(line);
+                    lastSeenSeq = seq;
+                }
             }
             if (list.Count > 300) list.RemoveRange(0, list.Count - 300);
         }
@@ -130,42 +138,129 @@ public class GtaVietLifeCore : Script
             try
             {
                 StringBuilder b = new StringBuilder();
-                foreach (string f in fresh) b.Append(DateTime.Now.ToString("HH:mm:ss") + " d" + gameDay + " " + f.Replace('\t', ' ') + Environment.NewLine);
+                foreach (string f in fresh)
+                    b.Append(DateTime.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture))
+                     .Append(" d").Append(gameDay).Append(" ").Append(f.Replace('\t', ' ')).AppendLine();
                 File.AppendAllText("GtaVietLifeEvents.log", b.ToString());
             }
             catch { }
         }
-        if (forward) outbox.AddRange(fresh);
-        if (outbox.Count > 200) outbox.RemoveRange(0, outbox.Count - 200);
+        lock (OutboxLock)
+        {
+            outbox.AddRange(fresh);
+            if (outbox.Count > 2000) outbox.RemoveRange(0, outbox.Count - 2000);
+        }
+        Save();
     }
 
+    // Snapshot is retained until HTTP succeeds. A crash after remote acceptance can replay it;
+    // sequence IDs make this explicitly at-least-once rather than silently lossy.
     void Forward()
     {
-        NameValueCollection c = new NameValueCollection();
-        c["lines"] = string.Join("\n", outbox.ToArray());
-        c["day"] = gameDay.ToString();
-        outbox.Clear();
-        string url = server + "/gvl_event";
+        string[] batch;
+        lock (OutboxLock)
+        {
+            if (forwarding || outbox.Count == 0) return;
+            forwarding = true;
+            int n = Math.Min(100, outbox.Count);
+            batch = outbox.GetRange(0, n).ToArray();
+        }
         Task.Run(delegate
         {
-            try { using (WebClient wc = new WebClient()) { wc.Proxy = null; wc.Encoding = Encoding.UTF8; wc.UploadValues(url, "POST", c); } }
-            catch { }
+            bool ok = false;
+            try
+            {
+                NameValueCollection c = new NameValueCollection();
+                c["lines"] = string.Join("\n", batch);
+                c["day"] = gameDay.ToString(CultureInfo.InvariantCulture);
+                using (WebClient wc = new WebClient())
+                {
+                    wc.Proxy = null; wc.Encoding = Encoding.UTF8;
+                    wc.UploadValues(server + "/gvl_event", "POST", c);
+                }
+                ok = true;
+            }
+            catch (Exception ex) { Log("forward event loi: " + ex.Message); }
+            finally
+            {
+                if (ok)
+                {
+                    lock (OutboxLock)
+                    {
+                        int remove = Math.Min(batch.Length, outbox.Count);
+                        for (int i = 0; i < remove; i++)
+                        {
+                            if (outbox[0] != batch[i]) break;
+                            outbox.RemoveAt(0);
+                        }
+                    }
+                    Save();
+                }
+                lock (OutboxLock) forwarding = false;
+            }
         });
     }
 
     void Save()
     {
-        try { File.WriteAllLines(SaveFile, new string[] { "day=" + gameDay }); } catch { }
+        try
+        {
+            List<string> snapshot;
+            lock (OutboxLock) snapshot = new List<string>(outbox);
+            string encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(string.Join("\n", snapshot.ToArray())));
+            string[] lines = {
+                "day=" + gameDay.ToString(CultureInfo.InvariantCulture),
+                "seq=" + lastSeenSeq.ToString(CultureInfo.InvariantCulture),
+                "outbox=" + encoded
+            };
+            File.WriteAllLines(TempFile, lines, Encoding.UTF8);
+            if (File.Exists(SaveFile))
+            {
+                try { File.Copy(SaveFile, BackupFile, true); } catch { }
+                File.Replace(TempFile, SaveFile, null);
+            }
+            else File.Move(TempFile, SaveFile);
+        }
+        catch (Exception ex) { Log("save loi: " + ex.Message); }
     }
 
     void Load()
     {
+        if (!LoadFrom(SaveFile)) LoadFrom(BackupFile);
+        Set("GVL.EventSeq", lastSeenSeq);
+    }
+
+    bool LoadFrom(string path)
+    {
         try
         {
-            if (!File.Exists(SaveFile)) return;
-            foreach (string line in File.ReadAllLines(SaveFile))
-                if (line.StartsWith("day=")) long.TryParse(line.Substring(4), out gameDay);
+            if (!File.Exists(path)) return false;
+            long loadedDay = 0, loadedSeq = 0;
+            List<string> loadedOutbox = new List<string>();
+            foreach (string line in File.ReadAllLines(path, Encoding.UTF8))
+            {
+                int i = line.IndexOf('=');
+                if (i < 0) continue;
+                string key = line.Substring(0, i), value = line.Substring(i + 1);
+                if (key == "day") long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out loadedDay);
+                else if (key == "seq") long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out loadedSeq);
+                else if (key == "outbox" && value.Length > 0)
+                {
+                    string decoded = Encoding.UTF8.GetString(Convert.FromBase64String(value));
+                    foreach (string item in decoded.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries)) loadedOutbox.Add(item);
+                }
+            }
+            gameDay = Math.Max(0, loadedDay);
+            lastSeenSeq = Math.Max(0, loadedSeq);
+            lock (OutboxLock) outbox.AddRange(loadedOutbox);
+            return true;
         }
+        catch (Exception ex) { Log("load " + path + " loi: " + ex.Message); return false; }
+    }
+
+    static void Log(string msg)
+    {
+        try { File.AppendAllText("GtaVietLifeCore.log", DateTime.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture) + " " + msg + Environment.NewLine); }
         catch { }
     }
 }
