@@ -149,7 +149,6 @@ public class GtaVietLifeCore : Script
         lock (OutboxLock)
         {
             outbox.AddRange(fresh);
-            if (outbox.Count > 2000) outbox.RemoveRange(0, outbox.Count - 2000);
         }
         Save();
     }
