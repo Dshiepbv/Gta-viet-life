@@ -133,6 +133,20 @@ class Bridge:
         print("[banter] " + " / ".join(f"{(a if w == 'A' else b)['name']}: {t}" for w, t, _, _ in plan))
         return str(len(plan)) + "\n" + "\n".join(f"{w}|{ms}" for w, _, _, ms in plan)
 
+    def say(self, ctx: dict) -> str:
+        """NPC chu dong noi 1 cau (vi du chu quan chao khach). Tra ve thoi luong ms."""
+        text = (ctx.get("text") or "").strip()
+        if not text or not self.busy.acquire(blocking=False):
+            return "0"
+        try:
+            npc = self.memory.get_or_create(ctx.get("key", "tmp_say"), ctx.get("gender", "male"), int(ctx.get("pedtype", "4") or 4))
+        finally:
+            self.busy.release()
+        ms = 400 + 75 * len(text)
+        self.overlay.show("npc", f"{npc['name']}: {text}", ms + 1500)
+        threading.Thread(target=lambda: self.voice.speak(text, dict(npc, _tone="")), daemon=True).start()
+        return str(ms)
+
     RADIO = {"key": "radio_host", "name": "Đài phát thanh", "gender": "nữ", "job": "phát thanh viên",
              "trait": "rõ ràng, điềm đạm", "pitch": "+0Hz", "rate": "+0%", "affinity": 0}
 
@@ -247,7 +261,7 @@ class Bridge:
                       else f"nghe {t1 - t0:.1f}s · nghĩ {t2 - t1:.1f}s")
             print(f"[{npc['name']}] {timing} | "
                   f"Bạn: {text} → {result['reply']} ({result['action']})")
-            return f"{result['action']}\n{ms}\n{ascii_name(npc['name'])}"
+            return f"{result['action']}\n{ms}\n{ascii_name(npc['name'])}\n{result.get('order', '')}"
 
 
 def make_handler(bridge: Bridge):
@@ -301,6 +315,8 @@ def make_handler(bridge: Bridge):
                     self._send(bridge.social.relation(ctx))
                 elif self.path == "/banter":
                     self._send(bridge.banter(ctx))
+                elif self.path == "/say":
+                    self._send(bridge.say(ctx))
                 elif self.path == "/news":
                     self._send(bridge.news(ctx))
                 else:

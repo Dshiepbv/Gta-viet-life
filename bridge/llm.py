@@ -6,7 +6,7 @@ import time
 import urllib.error
 import urllib.request
 
-ACTIONS = ("none", "follow", "unfollow", "flee", "fight")
+ACTIONS = ("none", "follow", "unfollow", "flee", "fight", "sell")
 
 SYSTEM = """Bạn đóng vai một cư dân trong thế giới game mô phỏng đời sống. Người chơi đang đứng trước mặt bạn và nói chuyện bằng giọng nói.
 Quy tắc:
@@ -83,6 +83,11 @@ def style_for(npc: dict, ctx: dict) -> str:
     w = str(ctx.get("weather", "")).lower()
     if any(k in w for k in ("rain", "thunder", "mưa", "drizzle", "clearing")):
         hint.append("trời đang mưa, hơi cáu hoặc than vãn")
+    if ctx.get("vendor_menu"):
+        lines.append("BẠN ĐANG BÁN HÀNG tại quầy của mình, khách là người chơi đứng trước quầy. Thực đơn và giá (đô): " + ctx["vendor_menu"] +
+                     ". Nói như người bán hàng Việt Nam thật: ngắn, thân thiện, xưng hô anh/chị/em, hỏi khách ăn gì, báo giá nếu được hỏi. "
+                     "KHÔNG tự đặt giá khác thực đơn. Khi khách gọi một món có trong thực đơn đủ rõ, đặt action là \"sell\" và thêm trường "
+                     "\"order\" ghi đúng tên món theo thực đơn kèm số lượng, ví dụ \"Banh mi x2\" (không có số thì x1). Món không có thì nói hết hàng, action là none.")
     if ctx.get("weapon") == "1":
         hint.append("người chơi đang cầm vũ khí: dè chừng hoặc sợ")
     try:
@@ -120,7 +125,8 @@ def _parse(text: str) -> dict:
     tone = str(data.get("tone", "binh_thuong")).strip().lower()
     if tone not in TONES:
         tone = "binh_thuong"
-    return {"reply": reply, "action": action, "affinity_delta": delta, "tone": tone, "heard": str(data.get("heard", "")).strip()}
+    return {"reply": reply, "action": action, "affinity_delta": delta, "tone": tone, "heard": str(data.get("heard", "")).strip(),
+            "order": str(data.get("order", "")).strip()}
 
 
 def build_context(npc: dict, ctx: dict) -> str:

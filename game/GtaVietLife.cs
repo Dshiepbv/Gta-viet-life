@@ -112,6 +112,7 @@ public class GtaVietLife : Script
         }
 
         UpdateBanter(now);
+        UpdateVendorGreet(now, Game.Player.Character);
         try { UpdateNamed(now); } catch (Exception ex) { Log("named loi: " + ex.Message); }
 
         // Nói xong thì để NPC đi tiếp việc của mình
@@ -255,6 +256,8 @@ public class GtaVietLife : Script
         c["money"] = Game.Player.Money.ToString();
         c["following"] = followers.Contains(p.Handle) ? "1" : "0";
         c["weapon"] = me.Weapons.Current != null && me.Weapons.Current.Hash != WeaponHash.Unarmed ? "1" : "0";
+        string vm = VendorMenu(p);
+        if (vm != null) c["vendor_menu"] = vm;
         string[] ri = ResidentInfo(p);
         if (ri != null) { c["name"] = ri[1]; c["res_activity"] = ri[2]; }
         return c;
@@ -295,6 +298,10 @@ public class GtaVietLife : Script
                 }
                 ReleaseLater(p, ms + 6000);
                 break;
+            case "sell":
+                DoSell(p, lines.Length > 3 ? lines[3].Trim() : "");
+                ReleaseLater(p, ms + 6000);
+                break;
             case "flee":
                 speakingPed = null;
                 Function.Call(Hash.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS, p, false);
@@ -310,6 +317,100 @@ public class GtaVietLife : Script
                 if (!followers.Contains(p.Handle)) ReleaseLater(p, ms + 7000);
                 break;
         }
+    }
+
+    // ----------------------------------------------------------------- chu quan (module Hang quan via he): mua ban bang giong noi
+    // GVL.Vendors: Dictionary<int,string> handle -> "Ten cum|Ten mon:gia:no:khat;..."
+    static string VendorRaw(Ped p)
+    {
+        string raw; if (p == null) return null;
+        var d = AppDomain.CurrentDomain.GetData("GVL.Vendors") as Dictionary<int, string>;
+        if (d != null && d.TryGetValue(p.Handle, out raw)) return raw;
+        var s2 = AppDomain.CurrentDomain.GetData("GVL.Shops") as Dictionary<int, string>;
+        return s2 != null && s2.TryGetValue(p.Handle, out raw) ? raw : null;
+    }
+    static string VendorMenu(Ped p)
+    {
+        string raw = VendorRaw(p); if (raw == null) return null;
+        string[] a = raw.Split('|'); if (a.Length < 2) return null;
+        var sb = new StringBuilder();
+        foreach (string it in a[1].Split(';')) { string[] f = it.Split(':'); if (f.Length >= 2) sb.Append(sb.Length > 0 ? ", " : "").Append(f[0]).Append(" $").Append(f[1]); }
+        return sb.ToString();
+    }
+    static string NoAccent(string s)
+    {
+        string n = (s ?? "").ToLowerInvariant().Replace('đ', 'd').Normalize(NormalizationForm.FormD);
+        var sb = new StringBuilder();
+        foreach (char ch in n) if (System.Globalization.CharUnicodeInfo.GetUnicodeCategory(ch) != System.Globalization.UnicodeCategory.NonSpacingMark) sb.Append(ch);
+        return sb.ToString().Trim();
+    }
+    void DoSell(Ped p, string order)
+    {
+        string raw = VendorRaw(p);
+        if (raw == null || order.Length == 0) return;
+        int qty = 1; string name = order;
+        int x = order.LastIndexOfAny(new[] { 'x', 'X', '*' });
+        if (x > 0) { int q; if (int.TryParse(order.Substring(x + 1).Trim(), out q)) { qty = Math.Max(1, Math.Min(5, q)); name = order.Substring(0, x); } }
+        string want = NoAccent(name);
+        foreach (string it in raw.Split('|')[1].Split(';'))
+        {
+            string[] f = it.Split(':'); if (f.Length < 4) continue;
+            if (NoAccent(f[0]) != want) continue;
+            bool goods = f[2].StartsWith("@");
+            if (goods) qty = 1;
+            int price = int.Parse(f[1]) * qty;
+            var pay = AppDomain.CurrentDomain.GetData("GVL.Pay") as Func<int, string, string, bool>;
+            bool ok;
+            if (pay != null) { try { ok = pay(price, "food", "mua " + f[0] + " x" + qty); } catch { ok = false; } }
+            else if (Game.Player.Money >= price) { Game.Player.Money = Game.Player.Money - price; ok = true; }
+            else ok = false;
+            if (!ok) { Notify("~r~Khong du tien~s~ mua " + f[0] + " x" + qty + " ($" + price + ")."); return; }
+            if (goods) { GiveGoods(f[2].Substring(1), f[3], f[0], price); return; }
+            AppDomain.CurrentDomain.SetData("GVL.NeedsAdd", new float[] { float.Parse(f[2]) * qty, float.Parse(f[3]) * qty, 0f });
+            Notify("Da mua ~g~" + f[0] + " x" + qty + "~s~ (-$" + price + ").");
+            return;
+        }
+        Notify("Quan khong co mon \"" + order + "\".");
+    }
+    void GiveGoods(string kind, string code, string name, int price)
+    {
+        Ped me = Game.Player.Character;
+        if (kind == "W")
+        {
+            try { WeaponHash h = (WeaponHash)Enum.Parse(typeof(WeaponHash), code.Replace("WEAPON_", ""), true); me.Weapons.Give(h, 120, true, true); Notify("Da mua ~g~" + name + "~s~ (-$" + price + ")."); return; }
+            catch { }
+            try { me.Weapons.Give((WeaponHash)Game.GenerateHash(code), 120, true, true); Notify("Da mua ~g~" + name + "~s~ (-$" + price + ")."); }
+            catch { Notify("Khong giao duoc " + name + " (khong co trong ban game nay), hoan tien."); var e = AppDomain.CurrentDomain.GetData("GVL.Earn") as Action<int, string, string>; if (e != null) e(price, "refund", name); else Game.Player.Money = Game.Player.Money + price; }
+            return;
+        }
+        Model m = new Model(code);
+        if (!m.IsInCdImage || !m.Request(1500)) { Notify("Mau " + name + " khong co trong ban game nay, hoan tien."); var e2 = AppDomain.CurrentDomain.GetData("GVL.Earn") as Action<int, string, string>; if (e2 != null) e2(price, "refund", name); else Game.Player.Money = Game.Player.Money + price; return; }
+        Vector3 pos = me.Position + me.ForwardVector * 9f;
+        if (kind == "V") { Vector3 st = World.GetNextPositionOnStreet(pos); if (st != Vector3.Zero) pos = st; }
+        Vehicle v = World.CreateVehicle(m, pos, me.Heading);
+        if (v != null && v.Exists()) { v.IsPersistent = true; Notify("Da mua ~g~" + name + "~s~ (-$" + price + "). Xe cho Sep o truoc mat."); }
+    }
+    readonly Dictionary<int, int> greeted = new Dictionary<int, int>();
+    int nextGreet;
+    static readonly string[] Greets = { "Anh ơi, ăn gì không anh?", "Chào anh, lại đây ăn gì đi anh.", "Mời anh, quán em có đồ ngon đây.", "Ăn gì không anh, em lấy cho." };
+    void UpdateVendorGreet(int now, Ped me)
+    {
+        if (now < nextGreet || recording || waiting || speakingPed != null) return;
+        nextGreet = now + 1500;
+        foreach (Ped p in World.GetNearbyPeds(me, 4f))
+        {
+            if (VendorRaw(p) == null || !p.IsAlive || !p.IsOnScreen) continue;
+            int last; if (greeted.TryGetValue(p.Handle, out last) && now - last < 240000) continue;
+            greeted[p.Handle] = now;
+            var c = new NameValueCollection();
+            c["key"] = KeyFor(p); c["gender"] = p.Gender == Gender.Female ? "female" : "male"; c["pedtype"] = "4";
+            c["text"] = Greets[rnd.Next(Greets.Length)];
+            Ped pp = p;
+            Task.Run(() => { try { Post("/say", c); } catch (Exception ex) { Log("/say loi: " + ex.Message); } });
+            try { pp.Task.LookAt(me, 5000); } catch { }
+            break;
+        }
+        if (greeted.Count > 200) greeted.Clear();
     }
 
     // ----------------------------------------------------------------- NPC noi chuyen voi nhau
@@ -357,13 +458,13 @@ public class GtaVietLife : Script
         nextBanter = now + banterEvery * 1000 + rnd.Next(0, 20000);
         Ped me = Game.Player.Character;
         if (me.IsInVehicle()) return;
-        Ped[] near = World.GetNearbyPeds(me, 25f);
+        Ped[] near = World.GetNearbyPeds(me, 10f);   // giọng phát ra loa, nên chỉ cho NPC gần và thấy được nói chuyện
         for (int i = 0; i < near.Length; i++)
         {
-            if (!FreePed(near[i], me)) continue;
+            if (!FreePed(near[i], me) || !near[i].IsOnScreen) continue;
             for (int j = i + 1; j < near.Length; j++)
             {
-                if (!FreePed(near[j], me)) continue;
+                if (!FreePed(near[j], me) || !near[j].IsOnScreen) continue;
                 if (near[i].Position.DistanceTo(near[j].Position) > 4.5f) continue;
                 StartBanter(near[i], near[j]);
                 return;

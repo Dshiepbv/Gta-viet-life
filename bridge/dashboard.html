@@ -29,6 +29,7 @@ svg{width:100%;height:120px;display:block}.note{color:var(--mu);font-size:12px;m
 <div class="big"><div class="lbl">Tien mat <span id="est"></span></div><div class="v" id="money">—</div><div class="sub" id="since"></div></div>
 <div class="grid">
 <div class="k"><div class="lbl">Loi nhuan / ngay game</div><div class="v" id="avg">—</div></div>
+<div class="k"><div class="lbl">Tai khoan ngan hang</div><div class="v" id="bank">—</div></div>
 <div class="k"><div class="lbl">No</div><div class="v" id="debt">—</div></div>
 <div class="k"><div class="lbl">Uy tin</div><div class="v" id="rep">—</div></div>
 <div class="k"><div class="lbl">B2B hop dong / cong no</div><div class="v" id="b2b">—</div></div>
@@ -46,6 +47,7 @@ svg{width:100%;height:120px;display:block}.note{color:var(--mu);font-size:12px;m
 <div class="sub" style="margin-top:8px">Khi game tat: quan van ban hang, tra luong, nop thue, tra tien mat bang, giao hang B2B, thu cong no, thu tien thue bat dong san, chay don giao hang. KHONG co doi/khat/met vi khong choi truc tiep. Trang nay hien so UOC TINH; so that chot luc mo game (game ap dung ca lenh tu dien thoai truoc).</div></div>
 <div class="shop"><h3>Mo hinh kinh doanh</h3>
 <div class="sub"><b>10 loai hinh</b>: quan nuoc via he, tap hoa, quan an, cua hang tien loi, sieu thi mini, nha hang chuoi va 4 loai dich vu. Moi loai co danh muc san pham rieng (20 mon), gia von, gia ban, tien nhap.<br><b>Kenh GT</b> (truyen thong: via he, tap hoa, quan an): von nho, thue khoan co dinh moi ngay.<br><b>Kenh MT</b> (hien dai: cua hang tien loi, sieu thi): chiet khau nhap hang, VAT/TNDN ~8% doanh thu.<br><b>B2C</b>: ban le truc tiep cho khach tai quan.<br><b>B2B</b>: 6 hop dong ban si (Co Lan, Ba Tu, Cay Me, Ngoc Lan, chuoi tien loi mini, Co.op Mart) — giao hang dinh ky, cong no phai thu theo ky han, co rui ro vo no.</div></div>
+<div class="shop"><h3>Thu chi: tien mat va tai khoan</h3><div class="sub">Quan kenh GT (via he, tap hoa, quan an), giao hang va lam cong thu <b>tien mat</b>. Kenh MT (cua hang tien loi, sieu thi, chuoi), B2B va bat dong san thu qua <b>tai khoan ngan hang</b> (ra ATM/ngan hang de rut). Luong, thue, tien mat bang, nhap hang, phat deu tru tai khoan truoc roi moi toi tien mat, va ghi vao so cai.</div></div>
 <div class="shop"><h3>Mat bang</h3>
 <div class="sub">4 hinh thuc: via he (phi ngay), ki-ot thue theo ngay, hop dong 30 ngay, mua dut. Cap quan toi da phu thuoc hinh thuc. Thieu tien thue 3 ngay lien tiep = bi thu hoi. Co cac cua hang that cua game goc (24/7, LTD, Los Santos Customs) lam mat bang (toa do gan dung).</div></div>
 <div class="shop"><h3>Dich vu</h3>
@@ -88,7 +90,7 @@ function render(){
   $("money").textContent=f(D.money+e.gain);$("est").textContent=e.off?"(uoc tinh)":"";
   $("since").textContent=e.off?`Tat ${Math.floor(e.el/60)} phut ≈ ${e.days.toFixed(1)} ngay game, +${f(e.gain)} uoc tinh`:"Cap nhat moi 2 phut";
   $("avg").textContent=f(e.avg);$("avg").className="v "+(e.avg>=0?"pos":"neg");
-  $("debt").textContent=f(D.debt);$("debt").className="v "+(D.debt>0?"neg":"");
+  $("bank").textContent=f(D.bank||0);$("debt").textContent=f(D.debt);$("debt").className="v "+(D.debt>0?"neg":"");
   $("rep").textContent=D.rep;$("b2b").textContent=D.contracts+" / "+D.receivables;
   // chart
   const h=(D.hist||[]).slice(-14),svg=$("chart");svg.innerHTML="";
