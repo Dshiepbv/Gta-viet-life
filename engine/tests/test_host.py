@@ -251,4 +251,27 @@ class HostTests(unittest.TestCase):
   player=next(x for x in snapshot["npcs"] if x["npc_id"]=="player.physical")
   self.assertEqual(player["needs"]["bladder"],5.0)
 
+ def test_work_hours_settle_contract_payroll_once(self):
+  npc={"npc_id":"npc.worker","display_name":"Worker","home_location_id":"home.worker","occupation":"clerk",
+       "schedule":[{"start_minute":0,"end_minute":1440,"activity":"work","location_id":"shop.worker"}]}
+  self.assertEqual(self.req("/engine/v1/simulation/npcs",{"request_id":"worker-register","npc":npc})[0],201)
+  self.req("/engine/v1/world/accounts/ensure",{"request_id":"pay-owner","account_id":"pay.owner","owner_id":"owner","opening_balance":0,"allow_negative":True})
+  self.req("/engine/v1/world/accounts/ensure",{"request_id":"pay-cash","account_id":"pay.cash","owner_id":"business","opening_balance":1000,"allow_negative":True})
+  self.req("/engine/v1/world/accounts/ensure",{"request_id":"pay-employee","account_id":"pay.employee","owner_id":"npc.worker","opening_balance":0,"allow_negative":True})
+  self.req("/engine/v1/world/buildings",{"request_id":"pay-building","building_id":"building.pay","category":"commercial","name":"Shop",
+       "adapter_maps":{"godot4.reference":{"entrance":"shop.door"}},"interactions":["enter"]})
+  self.req("/engine/v1/world/properties",{"request_id":"pay-property","property_id":"property.pay","building_id":"building.pay",
+       "owner_account_id":"pay.owner","value":1000,"rent":0})
+  self.req("/engine/v1/world/businesses",{"request_id":"pay-business","business_id":"business.pay","property_id":"property.pay",
+       "owner_account_id":"pay.owner","cash_account_id":"pay.cash","category":"retail"})
+  code,contract=self.req("/engine/v1/world/employment/contracts",{"request_id":"pay-contract","contract_id":"contract.worker",
+       "employee_id":"npc.worker","employee_account_id":"pay.employee","business_id":"business.pay","hourly_wage":50})
+  self.assertEqual(code,201); self.assertTrue(contract["created"])
+  code,result=self.req("/engine/v1/simulation/advance",{"request_id":"work-hour-1","minutes":60})
+  self.assertEqual(code,200)
+  self.assertEqual(self.state.society.account("pay.employee")["balance"],50)
+  self.assertEqual(self.state.society.account("pay.cash")["balance"],950)
+  self.req("/engine/v1/simulation/advance",{"request_id":"work-hour-1","minutes":60})
+  self.assertEqual(self.state.society.account("pay.employee")["balance"],50)
+
 if __name__=="__main__":unittest.main()
