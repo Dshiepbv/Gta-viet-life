@@ -24,14 +24,11 @@ class GodotAdapterContractTests(unittest.TestCase):
             '"/engine/v1/adapter/commands"',
             '"/engine/v1/adapter/commands/ack"',
             '"/engine/v1/simulation/interact"',
-            '"actor.set_activity"',
+            "actor.set_activity",
             '"GVL_ENGINE_TOKEN"',
             '"destination_reached"',
         ):
-            if required == '"actor.set_activity"':
-                self.assertIn(required, source + (GODOT / "README.md").read_text(encoding="utf-8"))
-            else:
-                self.assertIn(required, source)
+            self.assertIn(required, source + (GODOT / "README.md").read_text(encoding="utf-8"))
 
     def test_adapter_does_not_duplicate_game_neutral_domain_rules(self):
         source = (GODOT / "scripts" / "godot_adapter.gd").read_text(encoding="utf-8").lower()
