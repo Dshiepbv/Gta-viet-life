@@ -3071,6 +3071,7 @@ public class GtaVietLifeWorld : Script
         public bool EngineControlled;
         public string EngineActivity = "";
         public string EngineLocation = "";
+        public bool EngineScenarioPending;
         public Blip B;
     }
     readonly List<Resident> residents = new List<Resident>();
@@ -3262,24 +3263,59 @@ public class GtaVietLifeWorld : Script
         if (locationId == "res_" + resident.Id + ".home" || locationId == "res_" + resident.Id + ".leisure") target = resident.Home;
         else if (locationId == "res_" + resident.Id + ".work") target = resident.Work;
         else if (locationId == "res_" + resident.Id + ".lunch") target = resident.Lunch;
-        else return false; // khong tu y gan toa do cho semantic location chua duoc xac minh
+        else return false; // semantic location must have an explicit GTA mapping
         Ped ped = resident.P;
         resident.EngineControlled = true;
         resident.EngineActivity = activity;
         resident.EngineLocation = locationId;
         resident.Phase = -1;
         float distance = ped.Position.DistanceTo2D(target);
-        if (distance > 12f)
+        if (distance > 10f)
         {
-            float speed = distance > 250f ? 2.0f : 1.0f;
-            Function.Call(Hash.TASK_FOLLOW_NAV_MESH_TO_COORD, ped, target.X, target.Y, target.Z, speed, -1, 2.0f, false, 0f);
+            resident.EngineScenarioPending = true;
+            if (resident.LastCmd == 0 || now - resident.LastCmd > 5000)
+            {
+                resident.LastCmd = now;
+                float speed = distance > 250f ? 2.0f : 1.0f;
+                Function.Call(Hash.TASK_FOLLOW_NAV_MESH_TO_COORD, ped, target.X, target.Y, target.Z, speed, -1, 2.0f, false, 0f);
+            }
+            return false; // command remains pending until the resident physically reaches the mapped area
         }
-        else
+        return StartEngineActivityScenario(resident, target);
+    }
+
+    bool StartEngineActivityScenario(Resident resident, Vector3 target)
+    {
+        if (resident == null || resident.P == null || !resident.P.Exists()) return false;
+        string scenario = "";
+        switch (resident.EngineActivity)
         {
-            float radius = activity == "sleep" ? 2.5f : activity == "work" ? 5f : activity == "eat" ? 4f : 8f;
-            Function.Call(Hash.TASK_WANDER_IN_AREA, ped, target.X, target.Y, target.Z, radius, 2f, 6f);
+            case "sleep": scenario = "WORLD_HUMAN_BUM_SLEEP"; break;
+            case "eat": scenario = "WORLD_HUMAN_EATING"; break;
+            case "work": scenario = "WORLD_HUMAN_CLIPBOARD"; break;
+            case "socialize": scenario = "WORLD_HUMAN_STAND_MOBILE"; break;
+            case "leisure": scenario = "WORLD_HUMAN_PICNIC"; break;
+            case "free_time": scenario = "WORLD_HUMAN_STAND_IMPATIENT"; break;
         }
-        return true;
+        Ped ped = resident.P;
+        try
+        {
+            Function.Call(Hash.CLEAR_PED_TASKS, ped);
+            if (scenario.Length > 0)
+                Function.Call(Hash.TASK_START_SCENARIO_IN_PLACE, ped, scenario, 0, true);
+            else
+            {
+                float radius = resident.EngineActivity == "sleep" ? 2.5f : 7f;
+                Function.Call(Hash.TASK_WANDER_IN_AREA, ped, target.X, target.Y, target.Z, radius, 2f, 6f);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log("scenario NPC khong kha dung (" + resident.EngineActivity + "): " + ex.Message);
+            try { Function.Call(Hash.TASK_WANDER_IN_AREA, ped, target.X, target.Y, target.Z, 5f, 2f, 6f); } catch { }
+        }
+        resident.EngineScenarioPending = false;
+        return true; // task was issued only after physical arrival was observed within the location radius
     }
 
     void UpdateResidents(int now)
@@ -3311,7 +3347,11 @@ public class GtaVietLifeWorld : Script
                 bool inGroup = false;
                 try { inGroup = me.PedGroup.Contains(p); } catch { }
                 if (inGroup) continue;   // dang di theo Sep
-                if (r.EngineControlled) continue; // Engine la nguon quyet dinh lich hoat dong cua cu dan nay
+                if (r.EngineControlled)
+                {
+                    if (r.EngineScenarioPending) ApplyEngineResidentActivity(r, r.EngineActivity, r.EngineLocation, now);
+                    continue; // Engine is authoritative; wait for arrival before issuing the activity scenario
+                }
                 float d = p.Position.DistanceTo2D(spot);
                 if (d > rad + 10f)
                 {
