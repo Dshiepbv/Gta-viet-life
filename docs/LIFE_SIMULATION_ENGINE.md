@@ -157,3 +157,10 @@ A module passes only when:
 ## 13. Migration rule
 
 Do not rewrite all current GTA scripts at once. Freeze the old `GVL.*` contract, add an anti-corruption adapter around it, and migrate one vertical slice at a time. Keep rollback possible until the new path passes the same in-game acceptance tests.
+
+
+## M2 cognition and social-life extension
+
+NPC profiles now support household identity, age, bounded biography, skill levels and provenance-aware known facts. Knowledge facts carry a source and confidence; dialogue context explicitly distinguishes known facts and memories from unknown events. The bridge receives this bounded context before generating Vietnamese dialogue. Actual voice transcript and NPC reply are returned to the game adapter as a compact payload and recorded by the Host as episodic memories. The Host validates the cognition provider's affinity proposal before updating the canonical relationship.
+
+Off-screen social activity is deterministic: every 15 simulated minutes, NPCs scheduled to socialize at the same semantic location are paired in stable ID order. Both participants receive a bounded episodic memory and a relationship update; shared-household interactions have a stronger deterministic gain. No game engine is needed for this simulation.
