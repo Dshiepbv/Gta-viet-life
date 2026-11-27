@@ -331,7 +331,7 @@ public class GtaVietLifePersonal : Script
         if (lastMoney == int.MinValue || model != lastModel) { lastMoney = money; lastModel = model; return; }
         int d = money - lastMoney;
         lastMoney = money;
-        if (d != 0 && walletReady && activeWalletKey.Length > 0)
+        if (d != 0 && walletReady && activeWalletKey == CharPrefix(me))
         {
             savedWallets[activeWalletKey] = money;
             Save(); // persist immediately when cash changes
