@@ -39,7 +39,7 @@ class SocietySimulationTests(unittest.TestCase):
         self.assertEqual(len(self.society.pending_commands()), 1)
         cmd = self.society.pending_commands()[0]
         self.assertEqual(cmd["command_type"], "space.transition")
-        self.assertEqual(cmd["payload"]["semantic_target"], "home.001.room")
+        self.assertEqual(cmd["payload"]["semantic_target"], "home.001.interior")
         self.assertTrue(self.society.acknowledge_command(
             cmd["command_id"], {"success": True, "status": "completed", "observed": "entered"}
         ))
@@ -133,9 +133,9 @@ class SocietySimulationTests(unittest.TestCase):
              "data": "amount=70;cat=deposit;note=bank deposit;acct=bank", "sim_minute": 14},
         ]
         result = self.society.ingest_legacy_events("gta5.shvdn", batch)
-        self.assertEqual(result["accepted"], 2)
+        self.assertEqual(result["accepted"], 3)
         replay = self.society.ingest_legacy_events("gta5.shvdn", batch)
-        self.assertEqual(replay["duplicates"], 2)
+        self.assertEqual(replay["duplicates"], 3)
         self.assertEqual(self.society.account("legacy:player_cash")["balance"], 210)
         self.assertEqual(self.society.account("legacy:player_bank")["balance"], 70)
         unbalanced = self.store.connection.execute(
