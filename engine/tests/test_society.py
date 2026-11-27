@@ -94,6 +94,44 @@ class SocietySimulationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "insufficient_funds"):
             self.society.sell_product("tx.sale.2", "business.shop.001", "account.buyer", "rice", 1, 10000)
 
+    def test_native_business_snapshot_sync_reconciles_cash_inventory_and_retries(self):
+        self.society.register_building(
+            "building.native.shop", "commercial", "Native Shop",
+            {"gta5.shvdn": {"entrance": "shop.native.door"}}, ["enter", "inspect"]
+        )
+        self.society.create_account("account.native.owner", "player.main", 0, allow_negative=True)
+        self.society.create_account("account.native.cash", "business.native", 100, allow_negative=True)
+        self.society.create_property("property.native", "building.native.shop",
+                                     "account.native.owner", 1000, 0)
+        self.society.create_business("business.native", "property.native",
+                                     "account.native.owner", "account.native.cash", "retail")
+        first = self.society.sync_business_state(
+            "native-snapshot-1", "business.native", "gta5.shvdn", 100, {"stock": 20}
+        )
+        self.assertEqual(first["cash_delta"], 0)
+        self.assertEqual(first["inventory"], {"stock": 20})
+        replay = self.society.sync_business_state(
+            "native-snapshot-1", "business.native", "gta5.shvdn", 999, {"stock": 1}
+        )
+        self.assertEqual(replay, first)
+        second = self.society.sync_business_state(
+            "native-snapshot-2", "business.native", "gta5.shvdn", 125, {"stock": 17}
+        )
+        self.assertEqual(second["cash_delta"], 25)
+        self.assertEqual(self.society.account("account.native.cash")["balance"], 125)
+        self.assertEqual(self.society.account("system:business_sync_equity")["balance"], -25)
+        state = self.society.snapshot()["businesses"][0]
+        self.assertEqual(state["inventory"], {"stock": 17})
+        self.assertTrue(state["is_open"])
+        with self.assertRaisesRegex(ValueError, "adapter_mapping_unavailable"):
+            self.society.sync_business_state(
+                "native-snapshot-wrong-adapter", "business.native", "godot4.reference", 125, {"stock": 17}
+            )
+        totals = self.store.connection.execute(
+            "SELECT SUM(amount) FROM world_ledger_entries GROUP BY transaction_id"
+        ).fetchall()
+        self.assertTrue(all(row[0] == 0 for row in totals))
+
     def test_traffic_incident_affects_commuting_npc_and_is_idempotent(self):
         profile = NPCProfile(
             npc_id="npc.driver", display_name="Nam", home_location_id="home",
