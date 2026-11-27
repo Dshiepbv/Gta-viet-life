@@ -3167,9 +3167,17 @@ public class GtaVietLifeWorld : Script
                 string npcId = Convert.ToString(command.ContainsKey("npc_id") ? command["npc_id"] : "");
                 string commandId = Convert.ToString(command.ContainsKey("command_id") ? command["command_id"] : "");
                 Dictionary<string, object> payload = command.ContainsKey("payload") ? command["payload"] as Dictionary<string, object> : null;
-                if (type != "actor.set_activity" || payload == null || string.IsNullOrEmpty(npcId) || string.IsNullOrEmpty(commandId))
+                if (string.IsNullOrEmpty(commandId))
                 {
-                    Log("bo qua lenh engine khong ho tro: " + commandId + " / " + type);
+                    Log("lenh Engine thieu command_id: " + type);
+                    continue;
+                }
+                if (type != "actor.set_activity" || payload == null || string.IsNullOrEmpty(npcId))
+                {
+                    Log("lenh Engine khong ho tro: " + commandId + " / " + type);
+                    Action<string, string, string> reportUnsupported = AppDomain.CurrentDomain.GetData("GVL.Engine.Report") as Action<string, string, string>;
+                    if (reportUnsupported != null) { reportUnsupported(commandId, "unsupported", "unknown_command_or_invalid_payload"); processed++; }
+                    else { lock (queue) queue.Enqueue(command); }
                     continue;
                 }
                 Resident resident = null;
@@ -3188,6 +3196,13 @@ public class GtaVietLifeWorld : Script
                 }
                 string activity = Convert.ToString(payload.ContainsKey("activity") ? payload["activity"] : "");
                 string locationId = Convert.ToString(payload.ContainsKey("location_id") ? payload["location_id"] : "");
+                if (!IsSupportedEngineResidentActivity(resident, activity, locationId))
+                {
+                    Action<string, string, string> reportUnsupported = AppDomain.CurrentDomain.GetData("GVL.Engine.Report") as Action<string, string, string>;
+                    if (reportUnsupported != null) { reportUnsupported(commandId, "unsupported", "activity_or_location_not_mapped"); processed++; }
+                    else { lock (queue) queue.Enqueue(command); }
+                    continue;
+                }
                 if (!ApplyEngineResidentActivity(resident, activity, locationId, now))
                 {
                     lock (queue) queue.Enqueue(command);
@@ -3203,6 +3218,19 @@ public class GtaVietLifeWorld : Script
                 lock (queue) queue.Enqueue(command);
             }
         }
+    }
+
+    bool IsSupportedEngineResidentActivity(Resident resident, string activity, string locationId)
+    {
+        if (resident == null) return false;
+        bool knownActivity = activity == "sleep" || activity == "eat" || activity == "work" ||
+            activity == "commute" || activity == "socialize" || activity == "leisure" ||
+            activity == "free_time" || activity == "idle";
+        bool knownLocation = locationId == "res_" + resident.Id + ".home" ||
+            locationId == "res_" + resident.Id + ".leisure" ||
+            locationId == "res_" + resident.Id + ".work" ||
+            locationId == "res_" + resident.Id + ".lunch";
+        return knownActivity && knownLocation;
     }
 
     bool ApplyEngineResidentActivity(Resident resident, string activity, string locationId, int now)
