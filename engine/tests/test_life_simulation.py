@@ -59,7 +59,7 @@ class LifeSimulationTests(unittest.TestCase):
         self.assertTrue(result["memory_recorded"])
         self.assertEqual(engine.snapshot()["npcs"][0]["memory_count"], 1)
 
-    def test_actual_voice_dialogue_is_saved_idempotently_without_changing_affinity(self):
+    def test_actual_voice_dialogue_is_saved_idempotently_with_bounded_affinity(self):
         engine = LifeSimulationEngine()
         engine.register_npc(profile())
         first = engine.record_dialogue_memory(
