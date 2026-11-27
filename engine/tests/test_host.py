@@ -62,6 +62,32 @@ class HostTests(unittest.TestCase):
   code,r=self.req("/engine/v1/simulation/snapshot")
   self.assertEqual(code,200); self.assertEqual(r["npc_count"],1)
   self.assertEqual(r["npcs"][0]["memory_count"],1)
+ def test_second_game_adapter_uses_same_host_contract_and_domain_state(self):
+  hello={"protocol":PROTOCOL,"request_id":"godot-hello","session_id":"godot-session",
+         "adapter":{"id":"godot4.reference","version":"0.1.0","base_game":"Godot 4","base_game_build":"4.x"},
+         "capabilities":["adapter.session","adapter.command_poll","adapter.actor_activity","adapter.actor_interaction"]}
+  code,r=self.req("/engine/v1/handshake",hello); self.assertEqual(code,200); self.assertTrue(r["accepted"])
+  npc={"npc_id":"npc.godot.minh-an","display_name":"Minh An","home_location_id":"home.godot","occupation":"barista",
+       "traits":["friendly","disciplined"],"life_goal":"career",
+       "schedule":[{"start_minute":0,"end_minute":1440,"activity":"work","location_id":"work.godot"}]}
+  code,r=self.req("/engine/v1/simulation/npcs",{"request_id":"godot-register","npc":npc})
+  self.assertEqual(code,201); self.assertTrue(r["registered"])
+  code,r=self.req("/engine/v1/simulation/advance",{"request_id":"godot-advance","minutes":1})
+  self.assertEqual(code,200)
+  commands=self.req("/engine/v1/adapter/commands")[1]["commands"]
+  self.assertEqual(len(commands),1)
+  command=commands[0]
+  self.assertEqual(command["command_type"],"actor.set_activity")
+  self.assertEqual(command["payload"]["location_id"],"work.godot")
+  code,r=self.req("/engine/v1/adapter/commands/ack",{"request_id":"godot-ack","command_id":command["command_id"],
+       "result":{"success":True,"status":"completed","reason":"destination_reached","adapter_id":"godot4.reference"}})
+  self.assertEqual(code,200); self.assertTrue(r["accepted"])
+  code,r=self.req("/engine/v1/simulation/interact",{"request_id":"godot-talk","npc_id":"npc.godot.minh-an","player_id":"player.godot"})
+  self.assertEqual(code,200); self.assertTrue(r["memory_recorded"])
+  snapshot=self.req("/engine/v1/simulation/snapshot")[1]
+  self.assertEqual(snapshot["npc_count"],1)
+  self.assertEqual(snapshot["npcs"][0]["memory_count"],1)
+  self.assertEqual(snapshot["npcs"][0]["relationships"],{"player.godot":2.0})
  def test_adapter_command_poll_and_ack(self):
   npc={"npc_id":"npc.command","display_name":"Minh","home_location_id":"home.command","occupation":"worker",
        "schedule":[{"start_minute":0,"end_minute":1440,"activity":"work","location_id":"work.command"}]}
