@@ -148,3 +148,14 @@ A result distinguishes `completed`, `rejected`, `failed`, `cancelled` and `unsup
 ## 10. Compatibility policy
 
 Minor protocol additions are backward-compatible and capability-negotiated. Breaking semantic changes require a new major protocol version. Each adapter must publish the exact base-game build and adapter version used for acceptance tests.
+
+
+## 7. Current GTA V adapter capability declaration
+
+After the command executor increment, the GTA V Core handshake declares:
+
+- `adapter.session` — authenticated adapter session and heartbeat;
+- `adapter.command_poll` — authenticated polling of the durable Engine command outbox;
+- `adapter.actor_activity` — execution of the first `actor.set_activity` command for registered resident Peds.
+
+The World script maps only the existing resident's verified home, work and lunch coordinates. It defers commands while the resident Ped is absent, frozen in conversation, or following the player. Acknowledgement currently means the GTA task was issued, not that the destination was reached. The capability declaration must not be interpreted as support for arbitrary ambient NPCs, interiors, vehicle tasks, or activity-specific animations.
