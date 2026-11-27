@@ -286,7 +286,7 @@ class SQLiteLifeStore:
         with self._lock:
             state = self.npcs.get(actor_id)
             if state is None:
-                raise KeyError("actor_not_found")
+                return {"applied": False, "reason": "actor_not_registered", "actor_id": actor_id}
             for field_name, delta in changes.items():
                 if field_name == "goal_progress":
                     state.goal_progress = self._clamp(state.goal_progress + delta)
