@@ -78,6 +78,7 @@ public class GtaVietLifeCore : Script
         Set("GVL.Engine.WorldPost", new Action<string, string>(PostWorldRequest));
         Set("GVL.Engine.WorldAck", new Action<string, string, string>(ReportWorldCommand));
         Set("GVL.Engine.Context", new Func<string, string, string>(GetNpcDialogueContext));
+        Set("GVL.Engine.RecordDialogue", new Action<string, string>(RecordNpcDialogue));
         Tick += OnTick;
         Aborted += delegate { CloseHostSession(); Save(); };
     }
@@ -773,6 +774,33 @@ public class GtaVietLifeCore : Script
 
     // Context reads are performed by the voice bridge worker, never on the GTA game tick.
     // The Host remains authoritative; the bridge receives bounded facts only.
+    void RecordNpcDialogue(string npcId, string dialogueJson)
+    {
+        if (string.IsNullOrEmpty(npcId) || string.IsNullOrEmpty(dialogueJson) ||
+            dialogueJson.Length > 10000 || string.IsNullOrEmpty(hostToken)) return;
+        Task.Run(delegate
+        {
+            try
+            {
+                JavaScriptSerializer json = new JavaScriptSerializer();
+                Dictionary<string, object> dialogue = json.Deserialize<Dictionary<string, object>>(dialogueJson);
+                if (dialogue == null) return;
+                Dictionary<string, object> request = new Dictionary<string, object> {
+                    { "request_id", Guid.NewGuid().ToString("N") },
+                    { "npc_id", npcId }, { "player_id", "player.main" }, { "dialogue", dialogue }
+                };
+                using (WebClient wc = new HostWebClient())
+                {
+                    wc.Proxy = null; wc.Encoding = Encoding.UTF8;
+                    wc.Headers[HttpRequestHeader.ContentType] = "application/json; charset=utf-8";
+                    wc.Headers["X-GVL-Token"] = hostToken;
+                    wc.UploadString(hostServer + "/engine/v1/simulation/memory", "POST", json.Serialize(request));
+                }
+            }
+            catch (Exception ex) { Log("ghi ky uc hoi thoai NPC vao life engine loi: " + ex.Message); }
+        });
+    }
+
     string GetNpcDialogueContext(string npcId, string playerId)
     {
         if (string.IsNullOrEmpty(npcId) || string.IsNullOrEmpty(hostToken) || !hostConnected) return "";
