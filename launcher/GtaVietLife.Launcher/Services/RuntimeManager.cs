@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Microsoft.Win32;
 using System.Net.Http;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using GtaVietLife.Launcher.Models;
 namespace GtaVietLife.Launcher.Services;
@@ -37,8 +38,14 @@ public sealed class RuntimeManager:IDisposable {
   var src=Path.Combine(root,"game");if(!Directory.Exists(src))return(false,"Thiếu gói module game trong bộ cài.",sd);
   Directory.CreateDirectory(sd);var backup=Path.Combine(data,"Backups",DateTime.Now.ToString("yyyyMMdd-HHmmss")+"-"+Guid.NewGuid().ToString("N"));
   foreach(var f in Directory.GetFiles(src,"GtaVietLife*.*")){
-   var n=Path.GetFileName(f);if(!n.EndsWith(".cs",StringComparison.OrdinalIgnoreCase)&&!n.EndsWith(".ini",StringComparison.OrdinalIgnoreCase))continue;
-   var t=Path.Combine(sd,n);
+   var n=Path.GetFileName(f);var ext=Path.GetExtension(n);var t=Path.Combine(sd,n);
+   if(ext.Equals(".ini",StringComparison.OrdinalIgnoreCase)){
+    if(n.Equals("GtaVietLifeCore.ini",StringComparison.OrdinalIgnoreCase)){
+     if(!File.Exists(t))File.Copy(f,t,true);else EnsureEnginePort(t,backup);
+    }else if(!File.Exists(t))File.Copy(f,t,true);
+    continue;
+   }
+   if(!ext.Equals(".cs",StringComparison.OrdinalIgnoreCase))continue;
    if(File.Exists(t)){
     var oldHash=SHA256.HashData(File.ReadAllBytes(t));var newHash=SHA256.HashData(File.ReadAllBytes(f));
     if(System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(oldHash,newHash))continue;
@@ -61,6 +68,22 @@ public sealed class RuntimeManager:IDisposable {
   }
   string logState=hookBuildConfirmed?"Script Hook V đã xác nhận đúng build trong log":"chưa có log Success khớp chính xác build này; tương thích thực tế vẫn chưa được xác nhận";
   return(true,"GTA build "+gameVersion+"; đã phát hiện đủ bộ Script Hook V/ScriptHookVDotNet Enhanced và .NET/VC++ runtime; "+logState+". Kết nối Adapter trong game là bước xác nhận cuối. Save game và mod khác được giữ nguyên.",sd);
+ }
+ void EnsureEnginePort(string path,string backupRoot){
+  var lines=File.ReadAllLines(path).ToList();
+  int section=lines.FindIndex(x=>x.Trim().Equals("[Engine]",StringComparison.OrdinalIgnoreCase));
+  bool changed=false;
+  if(section<0){lines.Add("");lines.Add("[Engine]");lines.Add("Port=5580");changed=true;}
+  else{
+   int end=lines.FindIndex(section+1,lines.Count-section-1,x=>x.TrimStart().StartsWith("[",StringComparison.Ordinal));
+   if(end<0)end=lines.Count;
+   int port=lines.FindIndex(section+1,end-section-1,x=>x.TrimStart().StartsWith("Port=",StringComparison.OrdinalIgnoreCase));
+   if(port>=0){if(!lines[port].Trim().Equals("Port=5580",StringComparison.OrdinalIgnoreCase)){lines[port]="Port=5580";changed=true;}}
+   else{lines.Insert(end,"Port=5580");changed=true;}
+  }
+  if(!changed)return;
+  Directory.CreateDirectory(backupRoot);File.Copy(path,Path.Combine(backupRoot,Path.GetFileName(path)),true);
+  var temp=path+".tmp";File.WriteAllLines(temp,lines,new UTF8Encoding(false));File.Move(temp,path,true);
  }
  static bool HasNet48(){
   try{using var key=RegistryKey.OpenBaseKey(RegistryHive.LocalMachine,RegistryView.Registry64).OpenSubKey(@"SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full");
