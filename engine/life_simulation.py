@@ -82,7 +82,7 @@ class NPCState:
 class SQLiteLifeStore:
     """Versioned, transactional persistence for canonical NPC state and events."""
 
-    SCHEMA_VERSION = 2
+    SCHEMA_VERSION = 3
 
     def __init__(self, path: str | Path = ":memory:") -> None:
         self._lock = threading.RLock()
@@ -111,6 +111,14 @@ class SQLiteLifeStore:
                     request_id TEXT PRIMARY KEY, response_json TEXT NOT NULL,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""")
                 version = 2
+            if version < 3:
+                self.connection.execute("""CREATE TABLE IF NOT EXISTS command_outbox (
+                    command_id TEXT PRIMARY KEY, npc_id TEXT NOT NULL, command_type TEXT NOT NULL,
+                    payload_json TEXT NOT NULL, created_minute INTEGER NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending', result_json TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, completed_at TEXT)""")
+                self.connection.execute("CREATE INDEX IF NOT EXISTS idx_command_outbox_status ON command_outbox(status, created_minute)")
+                version = 3
             self.connection.execute(
                 "INSERT OR REPLACE INTO schema_meta(key,value) VALUES('schema_version',?)", (str(version),)
             )
@@ -147,7 +155,8 @@ class SQLiteLifeStore:
             return json.loads(row["response_json"]) if row else None
 
     def save(self, sim_minute: int, states: Sequence[NPCState], events: Sequence[dict],
-             request_result: Optional[tuple[str, dict]] = None) -> None:
+             request_result: Optional[tuple[str, dict]] = None,
+             commands: Sequence[dict] = ()) -> None:
         with self._lock, self.connection:
             for state in states:
                 p = asdict(state.profile)
@@ -176,12 +185,42 @@ class SQLiteLifeStore:
             self.connection.execute(
                 "INSERT OR REPLACE INTO schema_meta(key,value) VALUES('last_wallclock_epoch',?)", (str(time.time()),)
             )
+            for command in commands:
+                self.connection.execute(
+                    """INSERT OR IGNORE INTO command_outbox
+                    (command_id,npc_id,command_type,payload_json,created_minute,status)
+                    VALUES(?,?,?,?,?,'pending')""",
+                    (command["command_id"], command["npc_id"], command["command_type"],
+                     json.dumps(command["payload"], ensure_ascii=False), command["created_minute"]),
+                )
             if request_result is not None:
                 request_id, response = request_result
                 self.connection.execute(
                     "INSERT OR IGNORE INTO request_dedup(request_id,response_json) VALUES(?,?)",
                     (request_id, json.dumps(response, ensure_ascii=False)),
                 )
+
+    def pending_commands(self, limit: int = 50) -> List[dict]:
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 200:
+            raise ValueError("invalid_command_limit")
+        with self._lock:
+            rows = self.connection.execute(
+                """SELECT command_id,npc_id,command_type,payload_json,created_minute
+                FROM command_outbox WHERE status='pending'
+                ORDER BY created_minute,command_id LIMIT ?""", (limit,)
+            ).fetchall()
+            return [{"command_id": r["command_id"], "npc_id": r["npc_id"],
+                     "command_type": r["command_type"], "payload": json.loads(r["payload_json"]),
+                     "created_minute": r["created_minute"]} for r in rows]
+
+    def complete_command(self, command_id: str, result: dict) -> bool:
+        with self._lock, self.connection:
+            cur = self.connection.execute(
+                """UPDATE command_outbox SET status='completed',result_json=?,completed_at=CURRENT_TIMESTAMP
+                WHERE command_id=? AND status='pending'""",
+                (json.dumps(result, ensure_ascii=False), command_id)
+            )
+            return cur.rowcount == 1
 
     def get_wallclock_epoch(self) -> Optional[float]:
         with self._lock:
@@ -202,6 +241,7 @@ class LifeSimulationEngine:
         self.simulation_minute, loaded = self.store.load()
         self.npcs: Dict[str, NPCState] = {s.profile.npc_id: s for s in loaded}
         self.events: List[dict] = []
+        self.commands: List[dict] = []
 
     @staticmethod
     def _clamp(value: float) -> float:
@@ -231,6 +271,13 @@ class LifeSimulationEngine:
             "event_id": event_id, "sim_minute": self.simulation_minute,
             "npc_id": state.profile.npc_id, "event_type": event_type, "payload": payload,
         })
+        if event_type == "activity_changed":
+            self.commands.append({
+                "command_id": event_id, "npc_id": state.profile.npc_id,
+                "command_type": "actor.set_activity", "created_minute": self.simulation_minute,
+                "payload": {"activity": payload["to"], "location_id": payload["location_id"],
+                            "transition_minute": self.simulation_minute},
+            })
 
     def _tick_npc(self, state: NPCState) -> None:
         minute_of_day = self.simulation_minute % 1440
@@ -297,6 +344,7 @@ class LifeSimulationEngine:
                 if cached is not None:
                     return cached
             self.events = []
+            self.commands = []
             for _ in range(minutes):
                 self.simulation_minute += 1
                 for state in self.npcs.values():
@@ -304,7 +352,7 @@ class LifeSimulationEngine:
             result = {"simulation_minute": self.simulation_minute, "advanced_minutes": minutes,
                       "npc_count": len(self.npcs), "events": list(self.events)}
             request_result = (dedup_key, result) if dedup_key else None
-            self.store.save(self.simulation_minute, list(self.npcs.values()), self.events, request_result)
+            self.store.save(self.simulation_minute, list(self.npcs.values()), self.events, request_result, self.commands)
             return result
 
     def interact(self, npc_id: str, player_id: str, interaction: str = "talk",
@@ -341,6 +389,16 @@ class LifeSimulationEngine:
             request_result = (dedup_key, result) if dedup_key else None
             self.store.save(self.simulation_minute, [state], self.events, request_result)
             return result
+
+    def pending_commands(self, limit: int = 50) -> List[dict]:
+        return self.store.pending_commands(limit)
+
+    def complete_command(self, command_id: str, result: dict) -> bool:
+        if not isinstance(command_id, str) or not command_id or len(command_id) > 128:
+            raise ValueError("invalid_command_id")
+        if not isinstance(result, dict) or result.get("success") is not True:
+            raise ValueError("command_success_required")
+        return self.store.complete_command(command_id, result)
 
     def snapshot(self) -> dict:
         with self._lock:
