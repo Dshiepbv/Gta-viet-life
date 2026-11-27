@@ -119,12 +119,18 @@ def handler_for(state, log):
                         npc_id=raw.get("npc_id",""), display_name=raw.get("display_name",""),
                         home_location_id=raw.get("home_location_id",""), occupation=raw.get("occupation",""),
                         traits=tuple(raw.get("traits",[])), schedule=tuple(blocks),
-                        life_goal=raw.get("life_goal","career"))
+                        life_goal=raw.get("life_goal","career"), household_id=raw.get("household_id",""),
+                        age_years=raw.get("age_years",30), biography=raw.get("biography",""),
+                        skills=raw.get("skills",{}), knowledge=tuple(raw.get("knowledge",[])))
                     state.simulation.register_npc(profile)
                     return self.sendj(201,{"registered":True,"npc_id":profile.npc_id})
                 if self.path=="/engine/v1/simulation/interact":
                     result=state.simulation.interact(
-                        p.get("npc_id",""),p.get("player_id",""),p.get("interaction","talk"),rid)
+                        p.get("npc_id",""),p.get("player_id",""),p.get("interaction","talk"),rid,p.get("message",""))
+                    return self.sendj(200,result)
+                if self.path=="/engine/v1/simulation/context":
+                    result=state.simulation.dialogue_context(
+                        p.get("npc_id",""),p.get("player_id",""),p.get("topic",""))
                     return self.sendj(200,result)
                 if self.path=="/engine/v1/heartbeat":
                     ok=state.heartbeat(str(p.get("session_id","")),p.get("world_minute")); return self.sendj(200 if ok else 409,{"accepted":ok})
