@@ -254,6 +254,17 @@ class LifeSimulationEngine:
     def _clamp(value: float) -> float:
         return round(max(0.0, min(100.0, value)), 3)
 
+    def set_clock_baseline(self, minute: int) -> bool:
+        """Align an empty simulation to the first live game-clock observation."""
+        if isinstance(minute, bool) or not isinstance(minute, int) or minute < 0:
+            raise ValueError("invalid_clock_baseline")
+        with self._lock:
+            if self.npcs:
+                return False
+            self.simulation_minute = minute
+            self.store.save(minute, [], [])
+            return True
+
     def register_npc(self, profile: NPCProfile) -> NPCState:
         with self._lock:
             existing = self.npcs.get(profile.npc_id)
