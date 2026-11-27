@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Microsoft.Win32;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -19,9 +20,20 @@ public sealed class RuntimeManager:IDisposable {
    if(File.Exists(Path.Combine(sd,"GtaVietLifeCore.cs")))return(true,"GTA V đang chạy; giữ nguyên các script đã nạp. Bản cập nhật module sẽ áp dụng ở lần mở game kế tiếp.",sd);
    return(false,"GTA V đang chạy và chưa có Adapter trong scripts. Hãy thoát game để Launcher cài đặt an toàn.",sd);
   }
-  bool asi=File.Exists(Path.Combine(gd,"ScriptHookVDotNet.asi"));
-  bool dll=File.Exists(Path.Combine(gd,"ScriptHookVDotNet3.dll"))||File.Exists(Path.Combine(gd,"ScriptHookVDotNet2.dll"))||File.Exists(Path.Combine(sd,"ScriptHookVDotNet3.dll"));
-  if(!asi||!dll)return(false,"Chưa phát hiện đầy đủ ScriptHookVDotNet. Cần cài runtime tương thích trước; Launcher không tự thay thế mod loader.",sd);
+  string gameVersion=FileVersionInfo.GetVersionInfo(exe).FileVersion??"unknown";
+  var required=new[]{"ScriptHookV.dll","ScriptHookVDotNet.asi","ScriptHookVDotNet2.dll","ScriptHookVDotNet3.dll","ScriptHookVDotNet.ini","MinHook.x64.dll"};
+  var missing=required.Where(n=>!File.Exists(Path.Combine(gd,n))).ToList();
+  bool asiLoader=File.Exists(Path.Combine(gd,"dinput8.dll"))||File.Exists(Path.Combine(gd,"xinput1_4.dll"));
+  if(!asiLoader)missing.Add("dinput8.dll hoặc xinput1_4.dll (ASI loader)");
+  if(missing.Count>0)return(false,"Thiếu thành phần runtime bắt buộc: "+string.Join(", ",missing)+". Cần Script Hook V và ScriptHookVDotNet Enhanced cùng phiên bản tương thích; Launcher không tự thay thế loader nền.",sd);
+  if(!HasNet48())return(false,"Máy chưa phát hiện .NET Framework 4.8 trở lên, là yêu cầu của ScriptHookVDotNet Enhanced.",sd);
+  if(!HasVcRuntime())return(false,"Máy chưa phát hiện Microsoft Visual C++ Redistributable x64 (v14), là yêu cầu của ScriptHookVDotNet Enhanced.",sd);
+  var shLog=Path.Combine(gd,"ScriptHookV.log");
+  if(File.Exists(shLog)){
+   var logText=File.ReadAllText(shLog);
+   if(logText.IndexOf("Unknown game version",StringComparison.OrdinalIgnoreCase)>=0)
+    return(false,"Script Hook V báo Unknown game version cho bản GTA hiện tại. Không thể báo sẵn sàng; cần chờ upstream hỗ trợ đúng bản game.",sd);
+  }
   var src=Path.Combine(root,"game");if(!Directory.Exists(src))return(false,"Thiếu gói module game trong bộ cài.",sd);
   Directory.CreateDirectory(sd);var backup=Path.Combine(data,"Backups",DateTime.Now.ToString("yyyyMMdd-HHmmss")+"-"+Guid.NewGuid().ToString("N"));
   foreach(var f in Directory.GetFiles(src,"GtaVietLife*.*")){
@@ -47,7 +59,18 @@ public sealed class RuntimeManager:IDisposable {
     Directory.CreateDirectory(Path.GetDirectoryName(dest)!);File.Copy(icon,dest,true);
    }
   }
-  return(true,"Đã phát hiện tệp ScriptHookVDotNet và cài module GTA Viet Life. Phiên bản runtime/game sẽ được xác nhận qua phiên Adapter; save game và mod khác được giữ nguyên.",sd);
+  string logState=File.Exists(shLog)&&File.ReadAllText(shLog).IndexOf("Success",StringComparison.OrdinalIgnoreCase)>=0?"Script Hook V đã ghi log thành công":"chưa có log xác nhận Script Hook V cho phiên game này";
+  return(true,"GTA build "+gameVersion+"; đã phát hiện đủ bộ Script Hook V/ScriptHookVDotNet Enhanced và .NET/VC++ runtime; "+logState+". Kết nối Adapter trong game là bước xác nhận cuối. Save game và mod khác được giữ nguyên.",sd);
+ }
+ static bool HasNet48(){
+  try{using var key=RegistryKey.OpenBaseKey(RegistryHive.LocalMachine,RegistryView.Registry64).OpenSubKey(@"SOFTWARE\\Microsoft\\NET Framework Setup\\NDP\\v4\\Full");
+   return Convert.ToInt32(key?.GetValue("Release")??0)>=528040;
+  }catch{return false;}
+ }
+ static bool HasVcRuntime(){
+  try{using var key=RegistryKey.OpenBaseKey(RegistryHive.LocalMachine,RegistryView.Registry64).OpenSubKey(@"SOFTWARE\\Microsoft\\VisualStudio\\14.0\\VC\\Runtimes\\x64");
+   return Convert.ToInt32(key?.GetValue("Installed")??0)==1;
+  }catch{return false;}
  }
  public async Task StartAsync(CancellationToken ct){
   if(!await HealthyAsync("http://127.0.0.1:5580/health",ct)){Kill(host);host=null;KillNamed("GtaVietLifeEngine");StartHost();}
