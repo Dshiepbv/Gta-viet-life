@@ -31,8 +31,8 @@ public class GtaVietLifeCore : Script
     volatile bool hostConnected;
     bool hostConnecting, residentSyncing;
     long nextHostHeartbeatTicks;
-    int nextResidentSync, nextEngineCommandPoll;
-    bool engineCommandPolling;
+    int nextResidentSync, nextEngineCommandPoll, nextWorldCommandPoll;
+    bool engineCommandPolling, worldCommandPolling;
     readonly object EngineCommandLock = new object();
     readonly HashSet<string> queuedEngineCommandIds = new HashSet<string>();
     bool forward = true, logEvents = true, forwarding;
@@ -71,6 +71,9 @@ public class GtaVietLifeCore : Script
         Set("GVL.Engine.Commands", new Queue<Dictionary<string, object>>());
         Set("GVL.Engine.Ack", new Action<string>(AckEngineCommand));
         Set("GVL.Engine.Report", new Action<string, string, string>(ReportEngineCommand));
+        Set("GVL.Engine.WorldCommands", new Queue<Dictionary<string, object>>());
+        Set("GVL.Engine.WorldPost", new Action<string, string>(PostWorldRequest));
+        Set("GVL.Engine.WorldAck", new Action<string, string, string>(ReportWorldCommand));
         Set("GVL.Engine.Context", new Func<string, string, string>(GetNpcDialogueContext));
         Tick += OnTick;
         Aborted += delegate { CloseHostSession(); Save(); };
@@ -144,6 +147,7 @@ public class GtaVietLifeCore : Script
         MaintainHostSession(Stopwatch.GetTimestamp());
         if (hostConnected && now > nextResidentSync) { nextResidentSync = now + 10000; SyncResidentProfiles(); }
         if (hostConnected && now > nextEngineCommandPoll) { nextEngineCommandPoll = now + 2000; PollEngineCommands(); }
+        if (hostConnected && now > nextWorldCommandPoll) { nextWorldCommandPoll = now + 2000; PollEngineWorldCommands(); }
 
         if (now > nextPublish)
         {
@@ -417,7 +421,7 @@ public class GtaVietLifeCore : Script
                 if (!hostConnected) RegisterHostSession();
                 else SendHostHeartbeat();
             }
-            catch (Exception ex) { hostConnected = false; Log("engine host heartbeat loi: " + ex.Message); }
+            catch (Exception ex) { hostConnected = false; Set("GVL.Engine.Connected", false); Log("engine host heartbeat loi: " + ex.Message); }
             finally { lock (HostLock) hostConnecting = false; }
         });
     }
@@ -455,9 +459,10 @@ public class GtaVietLifeCore : Script
                     throw new Exception("host tu choi handshake: " + response);
             }
             hostConnected = true;
+            Set("GVL.Engine.Connected", true);
             Log("engine host handshake thanh cong, session=" + hostSessionId);
         }
-        catch (Exception ex) { hostConnected = false; Log("engine host handshake chua thanh cong: " + ex.Message); }
+        catch (Exception ex) { hostConnected = false; Set("GVL.Engine.Connected", false); Log("engine host handshake chua thanh cong: " + ex.Message); }
     }
 
     static string JsonEscape(string value)
@@ -572,6 +577,101 @@ public class GtaVietLifeCore : Script
             }
             catch (Exception ex) { Log("poll lenh life engine loi: " + ex.Message); }
             finally { lock (HostLock) engineCommandPolling = false; }
+        });
+    }
+
+    void PostWorldRequest(string path, string body)
+    {
+        if (string.IsNullOrEmpty(path) || !path.StartsWith("/engine/v1/world/", StringComparison.Ordinal) ||
+            string.IsNullOrEmpty(body) || !hostConnected || string.IsNullOrEmpty(hostToken)) return;
+        Task.Run(delegate
+        {
+            try
+            {
+                using (WebClient wc = new HostWebClient())
+                {
+                    wc.Proxy = null; wc.Encoding = Encoding.UTF8;
+                    wc.Headers[HttpRequestHeader.ContentType] = "application/json; charset=utf-8";
+                    wc.Headers["X-GVL-Token"] = hostToken;
+                    wc.UploadString(hostServer + path, "POST", body);
+                }
+            }
+            catch (Exception ex) { Log("gui tuong tac the gioi toi engine loi: " + ex.Message); }
+        });
+    }
+
+    void PollEngineWorldCommands()
+    {
+        lock (HostLock)
+        {
+            if (worldCommandPolling || !hostConnected || string.IsNullOrEmpty(hostToken)) return;
+            worldCommandPolling = true;
+        }
+        Task.Run(delegate
+        {
+            try
+            {
+                using (WebClient wc = new HostWebClient())
+                {
+                    wc.Proxy = null; wc.Encoding = Encoding.UTF8;
+                    wc.Headers["X-GVL-Token"] = hostToken;
+                    string response = wc.DownloadString(hostServer + "/engine/v1/world/commands");
+                    JavaScriptSerializer json = new JavaScriptSerializer();
+                    Dictionary<string, object> root = json.Deserialize<Dictionary<string, object>>(response);
+                    object raw;
+                    if (root == null || !root.TryGetValue("commands", out raw)) return;
+                    object[] commands = raw as object[];
+                    if (commands == null) return;
+                    Queue<Dictionary<string, object>> queue = Get("GVL.Engine.WorldCommands") as Queue<Dictionary<string, object>>;
+                    if (queue == null) { queue = new Queue<Dictionary<string, object>>(); Set("GVL.Engine.WorldCommands", queue); }
+                    foreach (object item in commands)
+                    {
+                        Dictionary<string, object> command = item as Dictionary<string, object>;
+                        if (command == null) continue;
+                        lock (queue)
+                        {
+                            bool exists = false;
+                            foreach (Dictionary<string, object> queued in queue)
+                            {
+                                object oldId;
+                                if (queued.TryGetValue("command_id", out oldId) &&
+                                    Convert.ToString(oldId, CultureInfo.InvariantCulture) == Convert.ToString(command["command_id"], CultureInfo.InvariantCulture))
+                                { exists = true; break; }
+                            }
+                            if (!exists) queue.Enqueue(command);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex) { Log("poll world commands loi: " + ex.Message); }
+            finally { lock (HostLock) worldCommandPolling = false; }
+        });
+    }
+
+    void ReportWorldCommand(string commandId, string status, string reason)
+    {
+        if (string.IsNullOrEmpty(commandId) || string.IsNullOrEmpty(hostToken)) return;
+        if (status != "completed" && status != "failed" && status != "unsupported" &&
+            status != "rejected" && status != "cancelled") status = "failed";
+        Task.Run(delegate
+        {
+            try
+            {
+                bool success = status == "completed";
+                string body = "{\"request_id\":\"" + Guid.NewGuid().ToString("N") +
+                    "\",\"command_id\":\"" + JsonEscape(commandId) +
+                    "\",\"result\":{\"success\":" + (success ? "true" : "false") +
+                    ",\"status\":\"" + status + "\",\"reason\":\"" + JsonEscape(reason ?? "") +
+                    "\",\"adapter_id\":\"gta5.shvdn\"}}";
+                using (WebClient wc = new HostWebClient())
+                {
+                    wc.Proxy = null; wc.Encoding = Encoding.UTF8;
+                    wc.Headers[HttpRequestHeader.ContentType] = "application/json; charset=utf-8";
+                    wc.Headers["X-GVL-Token"] = hostToken;
+                    wc.UploadString(hostServer + "/engine/v1/world/commands/ack", "POST", body);
+                }
+            }
+            catch (Exception ex) { Log("bao ket qua world command loi: " + ex.Message); }
         });
     }
 
