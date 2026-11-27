@@ -146,6 +146,9 @@ def handler_for(state, log):
                     result=state.simulation.dialogue_context(
                         p.get("npc_id",""),p.get("player_id",""),p.get("topic",""))
                     return self.sendj(200,result)
+                if self.path=="/engine/v1/world/events":
+                    return self.sendj(200,state.society.ingest_legacy_events(
+                        p.get("source_id",""),p.get("events",[])))
                 if self.path=="/engine/v1/world/buildings":
                     return self.sendj(201,state.society.register_building(
                         p.get("building_id",""),p.get("category",""),p.get("name",""),
