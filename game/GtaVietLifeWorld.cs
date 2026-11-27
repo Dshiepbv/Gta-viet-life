@@ -206,6 +206,7 @@ public class GtaVietLifeWorld : Script
 
         SyncPersonalBus();
         TickEnterHome(me, now);
+        SyncEngineWorldCatalog();
         if (now > nextEconBus) { nextEconBus = now + 2000; EconBus(); }
         if (!caughtUp) { ApplyPhoneCmds(); CatchUpOffline(); }
         else if (now > nextCmdCheck) { nextCmdCheck = now + 10000; ApplyPhoneCmds(); }
@@ -274,6 +275,8 @@ public class GtaVietLifeWorld : Script
         if (sleepAt > 0) return;
         UpdateClock();
         ProcessEngineCommands(now);
+        ProcessEngineWorldCommands(now);
+        CompletePendingWorldTransition(now);
         UpdateNeeds(me, now);
         UpdateWanted(me);
         UpdateDelivery(me, now);
@@ -2352,6 +2355,9 @@ public class GtaVietLifeWorld : Script
     static readonly string[] AptIpls = { "apa_v_mp_h_01_a", "apa_v_mp_h_01_b", "apa_v_mp_h_01_c", "apa_v_mp_h_02_a", "apa_v_mp_h_02_b", "apa_v_mp_h_02_c", "apa_v_mp_h_03_a", "apa_v_mp_h_04_a", "apa_v_mp_h_05_a", "apa_v_mp_h_06_a" };
     float[][] curCands; int candIdx;
     bool insideHome; int enterMinAt; int doorCool;
+    bool engineWorldCatalogSent;
+    string pendingWorldCommandId = "", pendingWorldCommandAction = "";
+    int pendingWorldCommandDeadline;
     Vector3 homeOutPos;
     Vector3 enterTarget; int enterUntil;
     bool enterIsExit;
@@ -3243,6 +3249,162 @@ public class GtaVietLifeWorld : Script
         }
     }
 
+    static string WorldJsonEscape(string value)
+    {
+        StringBuilder b = new StringBuilder();
+        foreach (char ch in value ?? "")
+        {
+            if (ch == '\\') b.Append("\\\\");
+            else if (ch == '"') b.Append("\\\"");
+            else if (ch == '\n') b.Append("\\n");
+            else if (ch == '\r') b.Append("\\r");
+            else if (ch == '\t') b.Append("\\t");
+            else if (ch < 32) b.Append("\\u").Append(((int)ch).ToString("x4", CultureInfo.InvariantCulture));
+            else b.Append(ch);
+        }
+        return b.ToString();
+    }
+
+    void SyncEngineWorldCatalog()
+    {
+        if (engineWorldCatalogSent || !(AppDomain.CurrentDomain.GetData("GVL.Engine.Connected") is bool) ||
+            !(bool)AppDomain.CurrentDomain.GetData("GVL.Engine.Connected")) return;
+        Action<string, string> post = AppDomain.CurrentDomain.GetData("GVL.Engine.WorldPost") as Action<string, string>;
+        if (post == null) return;
+        for (int i = 0; i < Homes.Length; i++)
+        {
+            string id = "building.home." + i;
+            string exterior = "home.gta." + i + ".exterior";
+            string interior = "home.gta." + i + ".interior";
+            string body = "{\"request_id\":\"" + Guid.NewGuid().ToString("N") +
+                "\",\"building_id\":\"" + id + "\",\"category\":\"residential\",\"name\":\"" +
+                WorldJsonEscape(Homes[i].Name) + "\",\"adapter_maps\":{\"gta5.shvdn\":{\"entrance\":\"" +
+                exterior + "\",\"interior\":\"" + interior + "\"}},\"interactions\":[\"enter\",\"exit\",\"inspect\"]}";
+            post("/engine/v1/world/buildings", body);
+            foreach (string kind in new[] { "bed", "fridge", "sofa" })
+            {
+                string objectId = "object.home." + i + "." + kind;
+                string objectBody = "{\"request_id\":\"" + Guid.NewGuid().ToString("N") +
+                    "\",\"object_id\":\"" + objectId + "\",\"building_id\":\"" + id +
+                    "\",\"kind\":\"" + kind + "\",\"adapter_anchors\":{\"gta5.shvdn\":\"" + kind +
+                    "\"},\"initial_state\":{}}";
+                post("/engine/v1/world/objects", objectBody);
+            }
+        }
+        engineWorldCatalogSent = true;
+        Log("da dang ky danh muc nha va vat dung voi Life Engine");
+    }
+
+    bool RequestEngineWorldInteraction(string targetKind, string targetId, string action)
+    {
+        if (!(AppDomain.CurrentDomain.GetData("GVL.Engine.Connected") is bool) ||
+            !(bool)AppDomain.CurrentDomain.GetData("GVL.Engine.Connected")) return false;
+        Action<string, string> post = AppDomain.CurrentDomain.GetData("GVL.Engine.WorldPost") as Action<string, string>;
+        if (post == null) return false;
+        string body = "{\"request_id\":\"" + Guid.NewGuid().ToString("N") +
+            "\",\"actor_id\":\"player.main\",\"target_kind\":\"" + WorldJsonEscape(targetKind) +
+            "\",\"target_id\":\"" + WorldJsonEscape(targetId) + "\",\"action\":\"" +
+            WorldJsonEscape(action) + "\",\"adapter_id\":\"gta5.shvdn\"}";
+        post("/engine/v1/world/interact", body);
+        return true;
+    }
+
+    void ProcessEngineWorldCommands(int now)
+    {
+        Queue<Dictionary<string, object>> queue = AppDomain.CurrentDomain.GetData("GVL.Engine.WorldCommands") as Queue<Dictionary<string, object>>;
+        if (queue == null) return;
+        int processed = 0;
+        while (processed < 4)
+        {
+            Dictionary<string, object> command = null;
+            lock (queue) { if (queue.Count > 0) command = queue.Dequeue(); }
+            if (command == null) break;
+            object idValue, typeValue, actorValue;
+            if (!command.TryGetValue("command_id", out idValue) || !command.TryGetValue("command_type", out typeValue))
+            { processed++; continue; }
+            string commandId = Convert.ToString(idValue, CultureInfo.InvariantCulture);
+            string commandType = Convert.ToString(typeValue, CultureInfo.InvariantCulture);
+            Dictionary<string, object> payload = command.ContainsKey("payload") ? command["payload"] as Dictionary<string, object> : null;
+            if (payload == null) { ReportWorldCommand(commandId, "rejected", "missing_payload"); processed++; continue; }
+            string targetId = Convert.ToString(payload.ContainsKey("target_id") ? payload["target_id"] : "");
+            string action = Convert.ToString(payload.ContainsKey("action") ? payload["action"] : "");
+            if (!string.IsNullOrEmpty(pendingWorldCommandId))
+            {
+                lock (queue) queue.Enqueue(command);
+                break;
+            }
+            if (commandType == "space.transition" && targetId.StartsWith("building.home.", StringComparison.Ordinal))
+            {
+                int idx;
+                if (!int.TryParse(targetId.Substring("building.home.".Length), out idx) || idx < 0 || idx >= Homes.Length)
+                { ReportWorldCommand(commandId, "unsupported", "home_id_not_mapped"); processed++; continue; }
+                if (!hasHome || homeIdx != idx)
+                { ReportWorldCommand(commandId, "rejected", "player_does_not_lease_target_home"); processed++; continue; }
+                Ped me = Game.Player.Character;
+                if (me == null || !me.Exists() || me.IsInVehicle())
+                { lock (queue) queue.Enqueue(command); break; }
+                if (action == "enter")
+                {
+                    if (insideHome) { ReportWorldCommand(commandId, "completed", "already_inside"); processed++; continue; }
+                    if (me.Position.DistanceTo(Homes[idx].Pos) > 25f)
+                    { lock (queue) queue.Enqueue(command); break; }
+                    EnterHome();
+                    pendingWorldCommandId = commandId; pendingWorldCommandAction = "enter";
+                    pendingWorldCommandDeadline = now + 15000;
+                    processed++;
+                    continue;
+                }
+                if (action == "exit")
+                {
+                    if (!insideHome) { ReportWorldCommand(commandId, "rejected", "player_not_inside_home"); processed++; continue; }
+                    ExitHome();
+                    pendingWorldCommandId = commandId; pendingWorldCommandAction = "exit";
+                    pendingWorldCommandDeadline = now + 15000;
+                    processed++;
+                    continue;
+                }
+                ReportWorldCommand(commandId, "unsupported", "home_action_not_supported");
+                processed++;
+                continue;
+            }
+            if (commandType == "interaction.use_object" && targetId.StartsWith("object.home.", StringComparison.Ordinal))
+            {
+                string[] parts = targetId.Split('.');
+                if (parts.Length < 4) { ReportWorldCommand(commandId, "unsupported", "object_id_invalid"); processed++; continue; }
+                int idx;
+                if (!int.TryParse(parts[2], out idx) || idx != homeIdx || parts[3] != nearFurn)
+                { lock (queue) queue.Enqueue(command); break; }
+                if (!insideHome) { ReportWorldCommand(commandId, "rejected", "object_requires_home_interior"); processed++; continue; }
+                UseFurniture();
+                ReportWorldCommand(commandId, "completed", "native_object_interaction_started");
+                processed++;
+                continue;
+            }
+            ReportWorldCommand(commandId, "unsupported", "world_command_not_mapped");
+            processed++;
+        }
+    }
+
+    void CompletePendingWorldTransition(int now)
+    {
+        if (string.IsNullOrEmpty(pendingWorldCommandId) || enterUntil > 0) return;
+        bool completed = pendingWorldCommandAction == "enter" ? insideHome :
+            pendingWorldCommandAction == "exit" ? !insideHome : false;
+        string id = pendingWorldCommandId;
+        if (completed) ReportWorldCommand(id, "completed", "player_space_transition_observed");
+        else if (now >= pendingWorldCommandDeadline) ReportWorldCommand(id, "failed", "space_transition_not_observed");
+        else return;
+        pendingWorldCommandId = "";
+        pendingWorldCommandAction = "";
+        pendingWorldCommandDeadline = 0;
+    }
+
+    void ReportWorldCommand(string commandId, string status, string reason)
+    {
+        Action<string, string, string> report = AppDomain.CurrentDomain.GetData("GVL.Engine.WorldAck") as Action<string, string, string>;
+        if (report != null) report(commandId, status, reason);
+    }
+
     bool IsSupportedEngineResidentActivity(Resident resident, string activity, string locationId)
     {
         if (resident == null) return false;
@@ -3979,12 +4141,12 @@ public class GtaVietLifeWorld : Script
             Notify("Cho dung cua nhan vien: huong " + (staffAngle + 1) + "/4 (F9 de xoay tiep)");
             Save();
         }
-        if (e.KeyCode == sitKey && !menuOpen && nearFurn.Length > 0 && Game.GameTime > doorCool) { doorCool = Game.GameTime + 700; UseFurniture(); return; }
+        if (e.KeyCode == sitKey && !menuOpen && nearFurn.Length > 0 && Game.GameTime > doorCool) { doorCool = Game.GameTime + 700; if (!RequestEngineWorldInteraction("object", "object.home." + Math.Max(0, homeIdx) + "." + nearFurn, "use")) UseFurniture(); return; }
         if (e.KeyCode == sitKey && !menuOpen && enterUntil <= 0 && Game.GameTime > doorCool && hasHome && homeIdx >= 0 && nearFurn.Length == 0 && !Game.Player.Character.IsInVehicle())
         {
             Vector3 pp = Game.Player.Character.Position;
-            if (!insideHome && pp.DistanceTo(Homes[homeIdx].Pos) < 12f) { EnterHome(); return; }
-            if (insideHome) { ExitHome(); return; }
+            if (!insideHome && pp.DistanceTo(Homes[homeIdx].Pos) < 12f) { if (!RequestEngineWorldInteraction("building", "building.home." + homeIdx, "enter")) EnterHome(); return; }
+            if (insideHome) { if (!RequestEngineWorldInteraction("building", "building.home." + homeIdx, "exit")) ExitHome(); return; }
         }
         if (e.KeyCode == stockKey && !menuOpen) { showStock = !showStock; Notify(showStock ? "Bang kho: ~g~bat~s~" : "Bang kho: ~y~tat~s~"); }
         if (e.KeyCode == sitKey && !menuOpen)
