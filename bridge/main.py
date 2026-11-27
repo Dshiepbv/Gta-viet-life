@@ -17,6 +17,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.environ.get("GVL_DATA_DIR", HERE)
+os.makedirs(DATA_DIR, exist_ok=True)
 
 
 class _Tee:
@@ -41,14 +43,14 @@ class _Tee:
 
 
 import sys
-sys.stdout = _Tee(sys.stdout, os.path.join(HERE, "bridge.log"))
+sys.stdout = _Tee(sys.stdout, os.path.join(DATA_DIR, "bridge.log"))
 sys.stderr = sys.stdout
 
 
 def load_config() -> dict:
-    path = os.path.join(HERE, "config.json")
+    path = os.path.join(DATA_DIR, "config.json")
     if not os.path.exists(path):
-        path = os.path.join(HERE, "config.example.json")
+        path = os.path.join(getattr(sys, "_MEIPASS", HERE), "config.example.json")
         print("[cfg] Chưa có config.json, đang dùng config.example.json")
     with open(path, encoding="utf-8") as f:
         return json.load(f)
@@ -73,13 +75,13 @@ class Bridge:
         if self.stt_mode == "groq" and not cfg.get("groq_api_key"):
             self.stt_mode = "gemini" if cfg.get("gemini_api_key") else "local"
         if self.stt_mode == "local":
-            self._get_stt()
+            print("[init] Whisper cục bộ sẽ được nạp khi có lượt thoại đầu tiên.")
         else:
             print("[init] Nghe bằng Gemini (không cần nạp Whisper). Whisper chỉ nạp khi Gemini lỗi.")
         self.brain = Brain(cfg)
         threading.Thread(target=self.brain.warmup_ollama, daemon=True).start()
         self.voice = Voice(cfg)
-        self.memory = Memory(os.path.join(HERE, cfg.get("memory_db", "memory.db")))
+        self.memory = Memory(os.path.join(DATA_DIR, cfg.get("memory_db", "memory.db")))
         from life import Life
         self.life = Life()
         from social import Social
@@ -264,6 +266,8 @@ def make_handler(bridge: Bridge):
             self.wfile.write(data)
 
         def do_GET(self):
+            if self.path == "/health":
+                return self._send(json.dumps({"service": "gta-viet-life-ai-bridge", "status": "healthy"}), 200)
             try:
                 if self.path == "/contacts":
                     return self._send(bridge.social.contacts())

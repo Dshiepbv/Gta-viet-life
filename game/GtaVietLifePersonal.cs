@@ -97,6 +97,9 @@ public class GtaVietLifePersonal : Script
     int calledIdx = -1;
 
     // ------------------------------------------------------------ sổ thu chi
+    readonly Dictionary<string, int> savedWallets = new Dictionary<string, int>();
+    string activeWalletKey = "";
+    bool walletReady;
     int lastMoney = int.MinValue;
     int lastModel;
     int inToday, outToday;
@@ -168,6 +171,7 @@ public class GtaVietLifePersonal : Script
         Ped me = Game.Player.Character;
         if (me == null || !me.Exists()) return;
         int now = Game.GameTime;
+        RestoreWallet(me);
 
         while (pending.Count > 0)
         {
@@ -295,6 +299,31 @@ public class GtaVietLifePersonal : Script
     float Discount { get { return 0.15f * skill[SkTalk] / 100f; } }
 
     // ------------------------------------------------------------ sổ thu chi (theo doi tien cua nhan vat dang choi)
+    // Per-character wallet snapshots close the gap before GTA's next native save.
+    void RestoreWallet(Ped me)
+    {
+        string key = CharPrefix(me);
+        if (string.IsNullOrEmpty(key) || activeWalletKey == key) return;
+        activeWalletKey = key;
+        int saved;
+        if (savedWallets.TryGetValue(key, out saved))
+        {
+            if (Game.Player.Money != saved) Game.Player.Money = saved;
+            lastMoney = saved;
+            lastModel = me.Model.Hash;
+            Log("wallet restore " + key + "=$" + saved);
+        }
+        else
+        {
+            savedWallets[key] = Game.Player.Money;
+            lastMoney = Game.Player.Money;
+            lastModel = me.Model.Hash;
+            Save();
+            Log("wallet baseline " + key + "=$" + Game.Player.Money);
+        }
+        walletReady = true;
+    }
+
     void TrackMoney(Ped me, int now)
     {
         int money = Game.Player.Money;
@@ -302,6 +331,11 @@ public class GtaVietLifePersonal : Script
         if (lastMoney == int.MinValue || model != lastModel) { lastMoney = money; lastModel = model; return; }
         int d = money - lastMoney;
         lastMoney = money;
+        if (d != 0 && walletReady && activeWalletKey == CharPrefix(me))
+        {
+            savedWallets[activeWalletKey] = money;
+            Save(); // persist immediately when cash changes
+        }
         if (d > 0) inToday += d; else if (d < 0) outToday -= d;
         int hour = World.CurrentTimeOfDay.Hours;
         if (lastHour >= 0 && hour < lastHour && lastHour - hour > 12)
@@ -1817,6 +1851,7 @@ public class GtaVietLifePersonal : Script
             l.Add("face=" + string.Join(",", Array.ConvertAll(face, x => x.ToString(ci))));
             l.Add("in=" + inToday);
             l.Add("out=" + outToday);
+            foreach (KeyValuePair<string, int> wallet in savedWallets) l.Add("wallet_" + wallet.Key + "=" + wallet.Value);
             foreach (int[] h in moneyHist) l.Add("mhist=" + h[0] + "," + h[1] + "," + h[2]);
             File.WriteAllLines(SaveFile, l.ToArray());
         }
@@ -1869,6 +1904,7 @@ public class GtaVietLifePersonal : Script
                     else if (k == "pet") { string[] q = v.Split(','); petModel = int.Parse(q[0]); petName = q.Length > 1 ? q[1] : ""; }
                     else if (k == "in") inToday = int.Parse(v);
                     else if (k == "out") outToday = int.Parse(v);
+                    else if (k == "wallet_SP0" || k == "wallet_SP1" || k == "wallet_SP2") savedWallets[k.Substring(7)] = Math.Max(0, int.Parse(v));
                     else if (k == "mhist") { string[] q = v.Split(','); moneyHist.Add(new int[] { int.Parse(q[0]), int.Parse(q[1]), int.Parse(q[2]) }); }
                 }
                 catch (Exception ex) { Log("load dong loi: " + line + " - " + ex.Message); }
