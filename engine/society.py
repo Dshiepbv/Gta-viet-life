@@ -304,6 +304,8 @@ class SocietySimulation:
             if not row:
                 raise KeyError("property_not_found")
             seller = row["owner_account_id"]
+            if seller == buyer_account_id:
+                raise ValueError("buyer_already_owns_property")
             result = self._post_transaction_locked(transaction_id, "property_purchase", property_id,
                 [{"account_id": buyer_account_id, "amount": -price}, {"account_id": seller, "amount": price}])
             if not result["duplicate"]:
@@ -318,10 +320,10 @@ class SocietySimulation:
         if isinstance(lease_minutes, bool) or not isinstance(lease_minutes, int) or not 1 <= lease_minutes <= 525600:
             raise ValueError("invalid_lease_duration")
         with self.lock, self.db:
-            row = self.db.execute("SELECT owner_account_id,tenant_account_id FROM world_properties WHERE property_id=?", (property_id,)).fetchone()
+            row = self.db.execute("SELECT owner_account_id,tenant_account_id,lease_until FROM world_properties WHERE property_id=?", (property_id,)).fetchone()
             if not row:
                 raise KeyError("property_not_found")
-            if row["tenant_account_id"] and row["tenant_account_id"] != tenant_account_id:
+            if row["tenant_account_id"] and row["lease_until"] > int(self.minute_provider()) and row["tenant_account_id"] != tenant_account_id:
                 raise ValueError("property_already_leased")
             result = self._post_transaction_locked(transaction_id, "property_rent", property_id,
                 [{"account_id": tenant_account_id, "amount": -rent}, {"account_id": row["owner_account_id"], "amount": rent}])
@@ -340,6 +342,9 @@ class SocietySimulation:
                 raise KeyError("owner_account_not_found")
             if not self.db.execute("SELECT 1 FROM world_accounts WHERE account_id=?", (cash_account_id,)).fetchone():
                 raise KeyError("cash_account_not_found")
+            property_owner = self.db.execute("SELECT owner_account_id FROM world_properties WHERE property_id=?", (property_id,)).fetchone()
+            if property_owner["owner_account_id"] != owner_account_id:
+                raise ValueError("business_owner_must_own_property")
             self.db.execute("""INSERT INTO world_businesses(business_id,property_id,owner_account_id,cash_account_id,category,inventory_json,employees_json)
                 VALUES(?,?,?,?,?,'{}','[]')""", (business_id, property_id, owner_account_id, cash_account_id, category))
         return {"business_id": business_id, "created": True}
@@ -424,7 +429,7 @@ class SocietySimulation:
             affected = 0
             if self.life_engine is not None:
                 for npc in self.life_engine.npcs.values():
-                    if npc.location_id == segment_id or npc.current_activity == "commute":
+                    if npc.location_id == segment_id:
                         npc.stress = self.life_engine._clamp(npc.stress + severity * 2.0)
                         affected += 1
                 if affected:
@@ -483,6 +488,20 @@ class SocietySimulation:
                                 {"account_id": "legacy:player_cash", "amount": sign},
                                 {"account_id": "system:legacy_counterparty", "amount": -sign}])
         return {"accepted": accepted, "duplicates": duplicates, "source": source_id}
+
+    def advance(self, minutes: int) -> None:
+        """Apply bounded time-based decay and lease expiry using the canonical simulation clock."""
+        if isinstance(minutes, bool) or not isinstance(minutes, int) or minutes < 0 or minutes > 10080:
+            raise ValueError("invalid_world_advance")
+        if minutes == 0:
+            return
+        now = int(self.minute_provider())
+        with self.lock, self.db:
+            self.db.execute("UPDATE world_traffic_segments SET congestion=MAX(0,congestion-?),updated_minute=?",
+                            (minutes * 0.5, now))
+            self.db.execute("UPDATE world_properties SET tenant_account_id=NULL,lease_until=0 "
+                            "WHERE tenant_account_id IS NOT NULL AND lease_until>0 AND lease_until<=?",
+                            (now,))
 
     def snapshot(self) -> dict:
         with self.lock:
