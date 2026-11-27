@@ -1,5 +1,7 @@
 #define MyAppName "GTA Viet Life"
-#define MyAppVersion "0.1.0"
+#ifndef MyAppVersion
+  #define MyAppVersion "0.1.0"
+#endif
 [Setup]
 AppId={{7D4A6E21-93C1-4D8E-A8F7-6F3A1C5D90B2}
 AppName={#MyAppName}
