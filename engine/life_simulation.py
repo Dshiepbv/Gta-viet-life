@@ -230,72 +230,6 @@ class SQLiteLifeStore:
                     (request_id, json.dumps(response, ensure_ascii=False)),
                 )
 
-    def record_dialogue_memory(self, npc_id: str, player_id: str,
-                               player_message: str, npc_reply: str,
-                               request_id: Optional[str] = None, affinity_delta: int = 0) -> dict:
-        """Persist the actual voice conversation without letting an LLM mutate canonical relationships."""
-        if not player_id or len(player_id) > 128:
-            raise ValueError("invalid_player_id")
-        if not isinstance(player_message, str) or not player_message.strip() or len(player_message) > 2000:
-            raise ValueError("invalid_player_message")
-        if not isinstance(npc_reply, str) or not npc_reply.strip() or len(npc_reply) > 2000:
-            raise ValueError("invalid_npc_reply")
-        if request_id is not None and (not request_id or len(request_id) > 128):
-            raise ValueError("invalid_request_id")
-        if isinstance(affinity_delta, bool) or not isinstance(affinity_delta, int) or not -2 <= affinity_delta <= 2:
-            raise ValueError("invalid_affinity_delta")
-        dedup_key = "dialogue_memory:" + request_id if request_id else None
-        with self._lock:
-            if dedup_key:
-                cached = self.store.get_request_result(dedup_key)
-                if cached is not None:
-                    return cached
-            state = self.npcs.get(npc_id)
-            if state is None:
-                raise KeyError("npc_not_found")
-            if affinity_delta:
-                state.affinity[player_id] = round(max(-100.0, min(100.0,
-                    state.affinity.get(player_id, 0.0) + affinity_delta * 5.0)), 3)
-            for kind, summary in (("player_dialogue", player_message), ("npc_dialogue", npc_reply)):
-                state.memories.append({
-                    "minute": self.simulation_minute, "kind": kind,
-                    "participant_id": player_id, "summary": summary[:500],
-                    "source": "voice_bridge", "confidence": 1.0,
-                })
-                state.memories = state.memories[-100:]
-                self._record(state, kind, {"participant_id": player_id, "summary": summary[:160]})
-            result = {"memory_recorded": True, "npc_id": npc_id, "memory_count": len(state.memories),
-                      "affinity": state.affinity.get(player_id, 0.0)}
-            self.store.save(self.simulation_minute, list(self.npcs.values()), self.events,
-                            (dedup_key, result) if dedup_key else None, self.commands)
-            return result
-
-    def dialogue_context(self, npc_id: str, player_id: str, topic: str = "") -> dict:
-        """Return bounded, provenance-aware facts for a cognition provider; never mutate state."""
-        if not isinstance(topic, str) or len(topic) > 500:
-            raise ValueError("invalid_dialogue_topic")
-        with self._lock:
-            state = self.npcs.get(npc_id)
-            if state is None:
-                raise KeyError("npc_not_found")
-            profile = state.profile
-            return {
-                "identity": {"npc_id": profile.npc_id, "name": profile.display_name,
-                             "age_years": profile.age_years, "occupation": profile.occupation,
-                             "household_id": profile.household_id, "biography": profile.biography,
-                             "traits": list(profile.traits), "skills": dict(profile.skills),
-                             "life_goal": profile.life_goal, "goal_progress": state.goal_progress},
-                "current_state": {"activity": state.current_activity, "location_id": state.location_id,
-                                  "needs": {"hunger": state.hunger, "energy": state.energy,
-                                            "social": state.social, "stress": state.stress},
-                                  "simulation_minute": self.simulation_minute},
-                "relationship": {"player_id": player_id, "affinity": state.affinity.get(player_id, 0.0)},
-                "known_facts": list(profile.knowledge),
-                "recent_memories": [dict(m) for m in state.memories[-10:]],
-                "topic": topic,
-                "knowledge_boundary": "Only known_facts and recent_memories are established knowledge. Do not claim unlisted events, unseen locations or private facts. Any proposed world action must be validated by the Engine.",
-            }
-
     def pending_commands(self, limit: int = 50) -> List[dict]:
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 200:
             raise ValueError("invalid_command_limit")
@@ -490,6 +424,72 @@ class LifeSimulationEngine:
             request_result = (dedup_key, result) if dedup_key else None
             self.store.save(self.simulation_minute, list(self.npcs.values()), self.events, request_result, self.commands)
             return result
+
+    def record_dialogue_memory(self, npc_id: str, player_id: str,
+                               player_message: str, npc_reply: str,
+                               request_id: Optional[str] = None, affinity_delta: int = 0) -> dict:
+        """Persist the actual voice conversation without letting an LLM mutate canonical relationships."""
+        if not player_id or len(player_id) > 128:
+            raise ValueError("invalid_player_id")
+        if not isinstance(player_message, str) or not player_message.strip() or len(player_message) > 2000:
+            raise ValueError("invalid_player_message")
+        if not isinstance(npc_reply, str) or not npc_reply.strip() or len(npc_reply) > 2000:
+            raise ValueError("invalid_npc_reply")
+        if request_id is not None and (not request_id or len(request_id) > 128):
+            raise ValueError("invalid_request_id")
+        if isinstance(affinity_delta, bool) or not isinstance(affinity_delta, int) or not -2 <= affinity_delta <= 2:
+            raise ValueError("invalid_affinity_delta")
+        dedup_key = "dialogue_memory:" + request_id if request_id else None
+        with self._lock:
+            if dedup_key:
+                cached = self.store.get_request_result(dedup_key)
+                if cached is not None:
+                    return cached
+            state = self.npcs.get(npc_id)
+            if state is None:
+                raise KeyError("npc_not_found")
+            if affinity_delta:
+                state.affinity[player_id] = round(max(-100.0, min(100.0,
+                    state.affinity.get(player_id, 0.0) + affinity_delta * 5.0)), 3)
+            for kind, summary in (("player_dialogue", player_message), ("npc_dialogue", npc_reply)):
+                state.memories.append({
+                    "minute": self.simulation_minute, "kind": kind,
+                    "participant_id": player_id, "summary": summary[:500],
+                    "source": "voice_bridge", "confidence": 1.0,
+                })
+                state.memories = state.memories[-100:]
+                self._record(state, kind, {"participant_id": player_id, "summary": summary[:160]})
+            result = {"memory_recorded": True, "npc_id": npc_id, "memory_count": len(state.memories),
+                      "affinity": state.affinity.get(player_id, 0.0)}
+            self.store.save(self.simulation_minute, list(self.npcs.values()), self.events,
+                            (dedup_key, result) if dedup_key else None, self.commands)
+            return result
+
+    def dialogue_context(self, npc_id: str, player_id: str, topic: str = "") -> dict:
+        """Return bounded, provenance-aware facts for a cognition provider; never mutate state."""
+        if not isinstance(topic, str) or len(topic) > 500:
+            raise ValueError("invalid_dialogue_topic")
+        with self._lock:
+            state = self.npcs.get(npc_id)
+            if state is None:
+                raise KeyError("npc_not_found")
+            profile = state.profile
+            return {
+                "identity": {"npc_id": profile.npc_id, "name": profile.display_name,
+                             "age_years": profile.age_years, "occupation": profile.occupation,
+                             "household_id": profile.household_id, "biography": profile.biography,
+                             "traits": list(profile.traits), "skills": dict(profile.skills),
+                             "life_goal": profile.life_goal, "goal_progress": state.goal_progress},
+                "current_state": {"activity": state.current_activity, "location_id": state.location_id,
+                                  "needs": {"hunger": state.hunger, "energy": state.energy,
+                                            "social": state.social, "stress": state.stress},
+                                  "simulation_minute": self.simulation_minute},
+                "relationship": {"player_id": player_id, "affinity": state.affinity.get(player_id, 0.0)},
+                "known_facts": list(profile.knowledge),
+                "recent_memories": [dict(m) for m in state.memories[-10:]],
+                "topic": topic,
+                "knowledge_boundary": "Only known_facts and recent_memories are established knowledge. Do not claim unlisted events, unseen locations or private facts. Any proposed world action must be validated by the Engine.",
+            }
 
     def interact(self, npc_id: str, player_id: str, interaction: str = "talk",
                  request_id: Optional[str] = None, message: str = "") -> dict:
