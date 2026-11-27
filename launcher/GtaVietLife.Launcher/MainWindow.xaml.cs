@@ -72,9 +72,30 @@ public partial class MainWindow:Window {
   }
  }
  void Export_Click(object s,RoutedEventArgs e){
+  var files=new List<string>{
+   Path.Combine(LauncherSettings.Dir,"launcher.log"),
+   Path.Combine(runtime.HostData,"engine-host.log"),
+   Path.Combine(runtime.BridgeData,"bridge.log")
+  };
+  var gameDir=Path.GetDirectoryName(settings.GameExecutable??"");
+  if(!string.IsNullOrWhiteSpace(gameDir)){
+   foreach(var name in new[]{"GtaVietLifeCore.log","ScriptHookV.log","ScriptHookVDotNet.log"})files.Add(Path.Combine(gameDir,name));
+   var scripts=Path.Combine(gameDir,"scripts");
+   if(Directory.Exists(scripts))files.AddRange(Directory.GetFiles(scripts,"GtaVietLife*.log"));
+  }
   var dest=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),"GtaVietLife-Diagnostics.txt");
-  using var w=new StreamWriter(dest,false);foreach(var p in new[]{Path.Combine(LauncherSettings.Dir,"launcher.log"),Path.Combine(runtime.HostData,"engine-host.log"),Path.Combine(runtime.BridgeData,"bridge.log")}){w.WriteLine("===== "+Path.GetFileName(p)+" =====");if(File.Exists(p))w.WriteLine(File.ReadAllText(p));}
-  MessageBox.Show("Đã xuất nhật ký: "+dest,"GTA Viet Life");
+  using(var w=new StreamWriter(dest,false, new System.Text.UTF8Encoding(false))){
+   foreach(var p in files.Distinct(StringComparer.OrdinalIgnoreCase)){
+    if(!File.Exists(p))continue;
+    w.WriteLine("===== "+Path.GetFileName(p)+" =====");
+    w.WriteLine(Redact(File.ReadAllText(p)));
+   }
+  }
+  MessageBox.Show("Đã xuất nhật ký: "+dest+"\nGói chẩn đoán không chứa file save hoặc cấu hình. Nhật ký có thể có nội dung tương tác; hãy kiểm tra trước khi chia sẻ.","GTA Viet Life");
+ }
+ static string Redact(string value){
+  value=Regex.Replace(value,@"(?i)(""?(?:api[_-]?key|token|password|secret|authorization|x-gvl-token)""?\s*[:=]\s*)(""[^""]*""|'[^']*'|[^,\s;]+)","$1[REDACTED]");
+  return Regex.Replace(value,@"(?i)\bBearer\s+[A-Za-z0-9._~+/-]+=*","Bearer [REDACTED]");
  }
  void Exit_Click(object s,RoutedEventArgs e)=>Close();
  void Set(string title,string detail){StatusTitle.Text=title;StatusDetail.Text=detail;bool positive=title.StartsWith("SẴN SÀNG",StringComparison.Ordinal)||title.StartsWith("ĐANG TRONG GAME",StringComparison.Ordinal);StatusTitle.Foreground=positive?System.Windows.Media.Brushes.LightGreen:System.Windows.Media.Brushes.White;}
