@@ -253,6 +253,21 @@ class SQLiteLifeStore:
             )
             return cur.rowcount == 1
 
+    def get_meta(self, key: str) -> Optional[str]:
+        if not isinstance(key, str) or not key or len(key) > 128:
+            raise ValueError("invalid_meta_key")
+        with self._lock:
+            row = self.connection.execute("SELECT value FROM schema_meta WHERE key=?", (key,)).fetchone()
+            return row["value"] if row else None
+
+    def set_meta(self, key: str, value: str) -> None:
+        if not isinstance(key, str) or not key or len(key) > 128:
+            raise ValueError("invalid_meta_key")
+        if not isinstance(value, str) or len(value) > 256:
+            raise ValueError("invalid_meta_value")
+        with self._lock, self.connection:
+            self.connection.execute("INSERT OR REPLACE INTO schema_meta(key,value) VALUES(?,?)", (key, value))
+
     def get_wallclock_epoch(self) -> Optional[float]:
         with self._lock:
             row = self.connection.execute("SELECT value FROM schema_meta WHERE key='last_wallclock_epoch'").fetchone()
