@@ -260,10 +260,17 @@ public class GtaVietLifeCore : Script
         try
         {
             int balance = Math.Max(0, Game.Player.Money);
-            string body = "{\"request_id\":\"" + Guid.NewGuid().ToString("N") +
+            string requestId = Guid.NewGuid().ToString("N");
+            string body = "{\"request_id\":\"" + requestId +
                 "\",\"account_id\":\"legacy:player_cash\",\"owner_id\":\"player.main\",\"opening_balance\":" +
                 balance.ToString(CultureInfo.InvariantCulture) + ",\"allow_negative\":true,\"currency\":\"USD\"}";
             PostWorldRequest("/engine/v1/world/accounts/ensure", body);
+            object bankValue = Get("GVL.Bank");
+            int bank = bankValue is int ? Math.Max(0, (int)bankValue) : 0;
+            string bankBody = "{\"request_id\":\"" + Guid.NewGuid().ToString("N") +
+                "\",\"account_id\":\"legacy:player_bank\",\"owner_id\":\"player.main\",\"opening_balance\":" +
+                bank.ToString(CultureInfo.InvariantCulture) + ",\"allow_negative\":true,\"currency\":\"USD\"}";
+            PostWorldRequest("/engine/v1/world/accounts/ensure", bankBody);
         }
         catch (Exception ex) { Log("dong bo so du tien mat voi life engine loi: " + ex.Message); }
     }
