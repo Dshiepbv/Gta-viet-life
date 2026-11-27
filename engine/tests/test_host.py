@@ -1,4 +1,4 @@
-import json,logging,threading,time,unittest
+import json,logging,threading,time,unittest,tempfile
 from http.server import ThreadingHTTPServer
 from urllib.request import Request,urlopen
 from urllib.error import HTTPError
@@ -43,6 +43,27 @@ class HostTests(unittest.TestCase):
  def test_protocol_rejected(self):
   code,r=self.req("/engine/v1/handshake",{"protocol":"bad","request_id":"req-bad","session_id":"s","adapter":{"id":"x","version":"1"}})
   self.assertEqual(code,400); self.assertEqual(r["error"],"protocol_mismatch")
+ def test_gta_game_clock_authority_survives_host_restart_without_wallclock_catchup(self):
+  with tempfile.TemporaryDirectory() as folder:
+   first=State("T"*48,folder)
+   hello={"protocol":PROTOCOL,"request_id":"persist-clock-hello","session_id":"persist-clock-1",
+          "adapter":{"id":"gta5.shvdn","version":"0.1.0"},"capabilities":["adapter.session"],
+          "world_minute":600}
+   self.assertTrue(first.handshake(hello)["accepted"])
+   self.assertTrue(first.uses_game_clock())
+   self.assertTrue(first.heartbeat("persist-clock-1",605))
+   self.assertEqual(first.simulation.simulation_minute,605)
+   self.assertTrue(first.close("persist-clock-1"))
+   first.simulation.store.close()
+   second=State("T"*48,folder)
+   try:
+    self.assertTrue(second.uses_game_clock())
+    self.assertTrue(second.handshake({**hello,"request_id":"persist-clock-hello-2",
+                                      "session_id":"persist-clock-2","world_minute":610})["accepted"])
+    self.assertEqual(second.simulation.simulation_minute,610)
+    self.assertEqual(second.simulation.store.get_meta("last_game_world_minute"),"610")
+   finally:
+    second.simulation.store.close()
  def test_stale_session(self):
   self.state.handshake({"protocol":PROTOCOL,"request_id":"req-stale","session_id":"s","adapter":{"id":"x","version":"1"},"capabilities":[]})
   self.state.session["last_heartbeat"]=time.time()-20; self.assertFalse(self.state.snapshot()["adapter_connected"])
