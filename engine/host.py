@@ -22,13 +22,13 @@ class State:
         self.last_world_minute = int(saved_game_minute) if saved_game_minute is not None else None
         self.society = SocietySimulation(self.simulation.store.connection, self.simulation.store._lock,
             lambda: self.simulation.simulation_minute, self.simulation)
+        self.society.process_pending_life_events()
     def auth(self, token): return bool(token) and secrets.compare_digest(self.token, token)
     def advance(self, minutes, request_id=None):
         cached = self.simulation.store.get_request_result("advance:" + request_id) if request_id else None
         result = self.simulation.advance(minutes, request_id)
+        self.society.process_pending_life_events()
         if cached is None:
-            for event in result.get("events", []):
-                self.society.process_life_event(event)
             self.society.advance(minutes)
         return result
     def handshake(self, p):
