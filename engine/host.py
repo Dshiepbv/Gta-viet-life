@@ -235,6 +235,10 @@ def handler_for(state, log):
                 if self.path=="/engine/v1/world/businesses/inventory":
                     return self.sendj(200,state.society.set_inventory(
                         p.get("business_id",""),p.get("inventory",{})))
+                if self.path=="/engine/v1/world/businesses/sync":
+                    return self.sendj(200,state.society.sync_business_state(
+                        rid,p.get("business_id",""),p.get("adapter_id",""),
+                        p.get("cash_balance",0),p.get("inventory",{}),p.get("is_open",True)))
                 if self.path=="/engine/v1/world/businesses/sell":
                     return self.sendj(200,state.society.sell_product(
                         p.get("transaction_id",""),p.get("business_id",""),p.get("buyer_account_id",""),
