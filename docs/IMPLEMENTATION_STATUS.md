@@ -150,3 +150,18 @@ The Engine Host now emits a durable semantic command whenever an NPC changes act
 **Important current boundary:** this is a working engine-to-adapter command queue, not yet an end-to-end in-world control path. The GTA V script has not yet polled these commands or executed them against resident Peds. Existing physical resident movement remains controlled by `GtaVietLifeWorld.cs`. Current resident locations are generated/derived by legacy gameplay code (home and lunch positions are randomized street locations); they are not yet a verified city-wide location registry. Do not describe NPCs as Engine-controlled in GTA until the adapter executor, location mapping and observed execution acknowledgement are implemented and runtime-verified.
 
 Automated verification is being added for command creation, persistence across restart, acknowledgement and duplicate acknowledgement. Live GTA V runtime acceptance remains unavailable in the current build environment.
+
+
+## GTA Adapter command execution increment
+
+The adapter path now includes an initial physical execution loop for resident activity commands:
+
+- GTA Core polls the authenticated Engine Host command outbox every two seconds and places unique command IDs into a shared in-process queue.
+- GTA World consumes commands on its main ScriptHookVDotNet tick, resolves the resident by canonical `res_<id>`, and maps only the known `.home`, `.work`, `.lunch` and `.leisure` semantic location IDs to the resident's actual saved GTA coordinates.
+- The adapter issues a nav-mesh movement task to the mapped destination, or a bounded wander task when already nearby. It acknowledges only after the task is issued.
+- Once the first Engine command is applied, the resident's old time-of-day movement controller is bypassed; Engine activity commands become the schedule authority for that resident. If the Ped is not materialized, the command remains pending until it is available.
+- On resident Ped respawn, the last Engine activity/location is reapplied.
+
+**Scope boundary:** this is the first physical command loop for the existing resident feature, not a complete NPC behavior system. Activity-specific animations/scenarios, path completion observation, command leases/expiry/failure taxonomy, robust handling for unknown IDs, city-wide location registry, interiors, vehicles, arbitrary ambient NPCs and off-screen population materialization remain future work. The adapter currently acknowledges successful task issuance, not proof that the Ped reached its destination. No live GTA V runtime test has been performed in this environment.
+
+Release CI now includes a separate compile-check project for `GtaVietLifeWorld.cs` against the same pinned SHVDN Enhanced API, rather than compiling only GTA Core. This closes a previous verification gap where the World script was staged in packages but not independently compiled by CI.
