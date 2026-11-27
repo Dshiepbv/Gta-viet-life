@@ -433,6 +433,57 @@ class SocietySimulation:
             return {"recorded": True, "duplicate": False, "incident_id": incident_id,
                     "congestion": congestion, "affected_npcs": affected}
 
+    def ingest_legacy_events(self, source_id: str, events: list) -> dict:
+        """Idempotently import the protected legacy GVL event stream into the canonical journal."""
+        source_id = _valid_id(source_id, "source_id")
+        if not isinstance(events, list) or len(events) > 100:
+            raise ValueError("invalid_event_batch")
+        accepted = 0
+        duplicates = 0
+        with self.lock, self.db:
+            self.db.execute("INSERT OR IGNORE INTO world_accounts(account_id,owner_id,balance,allow_negative,currency) VALUES('legacy:player_cash','player.main',0,1,'USD')")
+            self.db.execute("INSERT OR IGNORE INTO world_accounts(account_id,owner_id,balance,allow_negative,currency) VALUES('system:legacy_counterparty','system',0,1,'USD')")
+            for event in events:
+                if not isinstance(event, dict):
+                    raise ValueError("invalid_legacy_event")
+                seq = event.get("sequence")
+                if isinstance(seq, bool) or not isinstance(seq, int) or seq < 0:
+                    raise ValueError("invalid_event_sequence")
+                event_type = event.get("event_type")
+                if not isinstance(event_type, str) or not event_type or len(event_type) > 96:
+                    raise ValueError("invalid_event_type")
+                raw = event.get("data", "")
+                if not isinstance(raw, str) or len(raw) > 4000:
+                    raise ValueError("invalid_event_payload")
+                event_id = source_id + ":" + str(seq)
+                payload = {"sequence": seq, "data": raw, "source": source_id}
+                cur = self.db.execute("""INSERT OR IGNORE INTO world_event_journal
+                    (event_id,event_type,actor_id,payload_json,sim_minute) VALUES(?,?,?,?,?)""",
+                    (event_id, event_type, "player.main", json.dumps(payload, ensure_ascii=False),
+                     int(event.get("sim_minute", self.minute_provider()))))
+                if cur.rowcount == 0:
+                    duplicates += 1
+                    continue
+                accepted += 1
+                if event_type in ("ledger.income", "ledger.expense"):
+                    fields = {}
+                    for item in raw.split(";"):
+                        if "=" in item:
+                            key, value = item.split("=", 1)
+                            fields[key.strip()] = value.strip()
+                    try:
+                        amount = int(fields.get("amount", "0"))
+                    except ValueError:
+                        amount = 0
+                    if amount > 0:
+                        sign = amount if event_type == "ledger.income" else -amount
+                        tx_id = "legacy-ledger:" + source_id + ":" + str(seq)
+                        self._post_transaction_locked(tx_id, fields.get("cat", "legacy"),
+                            fields.get("note", event_type), [
+                                {"account_id": "legacy:player_cash", "amount": sign},
+                                {"account_id": "system:legacy_counterparty", "amount": -sign}])
+        return {"accepted": accepted, "duplicates": duplicates, "source": source_id}
+
     def snapshot(self) -> dict:
         with self.lock:
             buildings = [dict(r) for r in self.db.execute("SELECT building_id,category,name,revision FROM world_buildings ORDER BY building_id")]
