@@ -3293,8 +3293,10 @@ public class GtaVietLifeWorld : Script
                 post("/engine/v1/world/objects", objectBody);
             }
         }
+        string workBody = "{\"request_id\":\"" + Guid.NewGuid().ToString("N") + "\",\"building_id\":\"building.workplace\",\"category\":\"workplace\",\"name\":\"Los Santos Customs - Burton\",\"adapter_maps\":{\"gta5.shvdn\":{\"entrance\":\"work.gta.workspot\",\"interior\":\"work.gta.workspot\"}},\"interactions\":[\"enter\",\"inspect\"]}";
+        post("/engine/v1/world/buildings", workBody);
         engineWorldCatalogSent = true;
-        Log("da dang ky danh muc nha va vat dung voi Life Engine");
+        Log("da dang ky danh muc nha, vat dung va noi lam viec voi Life Engine");
     }
 
     bool RequestEngineWorldInteraction(string targetKind, string targetId, string action)
@@ -3335,6 +3337,22 @@ public class GtaVietLifeWorld : Script
             {
                 lock (queue) queue.Enqueue(command);
                 break;
+            }
+            if (commandType == "space.transition" && targetId == "building.workplace" && action == "enter")
+            {
+                Ped worker = Game.Player.Character;
+                int hour = World.CurrentTimeOfDay.Hours;
+                if (worker == null || !worker.Exists() || worker.IsInVehicle())
+                { lock (queue) queue.Enqueue(command); break; }
+                if (worker.Position.DistanceTo2D(WorkSpot) > 40f)
+                { lock (queue) queue.Enqueue(command); break; }
+                if (hour < 7 || hour >= 18)
+                { RememberWorldCommand(commandId); ReportWorldCommand(commandId, "rejected", "work_shift_outside_hours"); processed++; continue; }
+                StartWork();
+                RememberWorldCommand(commandId);
+                ReportWorldCommand(commandId, "completed", "work_shift_started_at_physical_workplace");
+                processed++;
+                continue;
             }
             if (commandType == "space.transition" && targetId.StartsWith("building.home.", StringComparison.Ordinal))
             {
@@ -4154,6 +4172,8 @@ public class GtaVietLifeWorld : Script
             Save();
         }
         if (e.KeyCode == sitKey && !menuOpen && nearFurn.Length > 0 && Game.GameTime > doorCool) { doorCool = Game.GameTime + 700; if (!RequestEngineWorldInteraction("object", "object.home." + Math.Max(0, homeIdx) + "." + nearFurn, "use")) UseFurniture(); return; }
+        if (e.KeyCode == sitKey && !menuOpen && enterUntil <= 0 && Game.GameTime > doorCool && nearFurn.Length == 0 && !insideHome && !Game.Player.Character.IsInVehicle() && Game.Player.Character.Position.DistanceTo2D(WorkSpot) < 8f)
+        { if (!RequestEngineWorldInteraction("building", "building.workplace", "enter")) StartWork(); return; }
         if (e.KeyCode == sitKey && !menuOpen && enterUntil <= 0 && Game.GameTime > doorCool && hasHome && homeIdx >= 0 && nearFurn.Length == 0 && !Game.Player.Character.IsInVehicle())
         {
             Vector3 pp = Game.Player.Character.Position;
