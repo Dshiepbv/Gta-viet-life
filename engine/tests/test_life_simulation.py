@@ -64,13 +64,13 @@ class LifeSimulationTests(unittest.TestCase):
         engine.register_npc(profile())
         first = engine.record_dialogue_memory(
             "npc.minh-an", "player.main", "Quán hôm nay đông không?",
-            "Cũng đông, nhưng giờ này đỡ hơn rồi.", "voice-turn-001"
+            "Cũng đông, nhưng giờ này đỡ hơn rồi.", "voice-turn-001", affinity_delta=1
         )
         self.assertTrue(first["memory_recorded"])
-        self.assertEqual(engine.npcs["npc.minh-an"].affinity.get("player.main", 0.0), 0.0)
+        self.assertEqual(engine.npcs["npc.minh-an"].affinity.get("player.main", 0.0), 5.0)
         replay = engine.record_dialogue_memory(
             "npc.minh-an", "player.main", "Quán hôm nay đông không?",
-            "Cũng đông, nhưng giờ này đỡ hơn rồi.", "voice-turn-001"
+            "Cũng đông, nhưng giờ này đỡ hơn rồi.", "voice-turn-001", affinity_delta=1
         )
         self.assertEqual(replay, first)
         memories = engine.npcs["npc.minh-an"].memories
