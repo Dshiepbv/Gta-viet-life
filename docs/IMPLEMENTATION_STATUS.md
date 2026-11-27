@@ -199,3 +199,29 @@ A Godot 4 reference adapter has been added under `adapters/godot/`. It uses the 
 A Host integration test now exercises the second adapter identity through handshake, profile registration, schedule transition, command poll/ack and interaction. This proves the Host contract is game-neutral at the HTTP/domain boundary and that the same domain path is reusable. Windows CI now downloads the pinned Godot 4.4.1 release, verifies its SHA-512 against the official release manifest and runs a headless editor import to parse the project/scripts. This validates project import and GDScript parsing, but it does not prove rendered gameplay, interactive input, HTTPRequest behavior against a live Host or an actual Godot-to-Host session; those remain runtime acceptance gates. M5 is therefore **implementation-complete as a second-adapter source/integration proof, but runtime acceptance remains pending**. Do not label the overall product release-ready until the Godot runtime gate and the separate GTA V live-game gate are completed.
 
 The Godot adapter is intentionally excluded from the GTA Windows installer; it is a developer portability reference and does not alter GTA save files or legacy `GVL.*` modules.
+
+
+## Consolidated M0–M5 implementation baseline (main, 2026-11-27)
+
+This section supersedes milestone shorthand in earlier incremental notes. All changes below are committed directly to main as requested. A source-level or CI pass is not a substitute for launching the game.
+
+| Milestone | Integrated implementation now present | Remaining acceptance boundary |
+|---|---|---|
+| **M0 — Engine foundation** | ADR-0001 selects one authoritative Python Host; SQLite shared state; additive world tables; deterministic and game-SDK import-boundary tests; 250-NPC × 360-minute load baseline. | The CI benchmark must run on Windows; scale budget must be recorded from the completed run. |
+| **M1 — GTA adapter and Host protocol** | Authenticated handshake/heartbeat; game-clock alignment; durable NPC command outbox; separately persisted GTA event outbox; cash/bank opening balance sync; command and result reporting. | No live GTA V session has been executed in this environment. |
+| **M2 — NPC life and cognition** | Validated resident identity, household, age, biography, skills, provenance-aware knowledge, needs, goals, schedules, off-screen NPC-to-NPC social interactions, bounded episodic memories, actual voice transcript/reply memory, Engine-validated affinity delta, dialogue context delivered to the Vietnamese cognition bridge, and GTA activity-specific scenario issuance after physical arrival. | Actual game dialogue, animation/scenario availability and long-session memory behavior require live-game acceptance. |
+| **M3 — Physical world interactions** | Versioned building/object catalog; adapter-local semantic mappings; durable world command outbox; GTA home entry/exit, bed/fridge/sofa interaction, mapped workplace shift start, and dynamic physical storefront registration/selection; Godot doors/interiors/objects also use the same Host world-command contract. | GTA interior collision, each home IPL, storefront prop/door geometry and physical interaction must be checked in the target game build. |
+| **M4 — Society, property, economy and traffic** | Double-entry idempotent ledger; separate cash/bank accounts; legacy GVL ledger event ingestion; property ownership/lease and expiry; business accounts/inventory/sales; traffic congestion, incidents, time-based recovery and stress consequences for NPCs on affected road segments. | Existing legacy business/property cash flows are not yet fully reconciled into every Engine business account; full live economy parity and traffic-to-GTA world feedback remain acceptance items. |
+| **M5 — Second-game portability** | Godot 4 reference adapter uses the same Host for NPC state, buildings, doors, objects, interaction commands, acknowledgements and conversation memory. Pinned Godot headless import/parse is in CI. | Actual Godot graphical session and Godot-to-Host runtime acceptance have not been executed by the current environment. |
+
+### Important implementation boundaries
+
+- The Engine Host is the sole owner of canonical NPC state, Engine-side relationship values, world catalog, Engine ledger, property/business records, traffic state and durable commands.
+- The cognition bridge may propose dialogue and a bounded affinity delta; the Host validates and applies it. It does not own canonical relationship state.
+- GTA V and Godot own native coordinates, collision, rendering, input and execution. They report physical outcomes; they do not duplicate simulation rules.
+- Legacy GTA modules remain active for compatibility. Their emitted income/expense events are durably forwarded into the Engine journal and ledger. Some legacy shop balances and property actions still need full bidirectional reconciliation before the Engine can be declared the sole owner of every in-game economy field.
+- No city-wide resident catalog, complete interior asset library, arbitrary ambient-Ped materialization or live GTA acceptance is claimed complete.
+
+### Current release gate
+
+M0–M5 source implementation is integrated on main. The integrated Windows CI run must pass all Host tests, Bridge context tests, Godot parser, pinned SHVDN C# compile targets, packaging and updater rollback before a final candidate can be considered. Even after CI passes, the target GTA V build and a Godot graphical session remain separate runtime acceptance gates. Do not hand out intermediate builds for user testing.
