@@ -96,7 +96,7 @@ public class GtaVietLifeEconomy : Script
         fuelPrice = ReadF("Fuel", "PricePerLiter", fuelPrice);
         fuelMul = ReadF("Fuel", "ConsumeMul", fuelMul);
         Load();
-        payFn = BusPay; earnFn = BusEarn;
+        payFn = BusPay; earnFn = BusEarn; payCashFn = BusPayCash; earnCashFn = BusEarnCash;
         try
         {
             if (modBank) foreach (Vector3 b in Banks) AddBlip(b, BlipColor.Green, "Ngan hang (gui/rut, vay)");
@@ -133,14 +133,28 @@ public class GtaVietLifeEconomy : Script
         if (amount <= 0) return;
         if (modBank && ModOn()) Deposit(amount, cat, note); else Cash(amount, cat, note);
     }
+    bool BusPayCash(int amount, string cat, string note)
+    {
+        if (amount <= 0) return true;
+        if (Game.Player.Money < amount) return false;
+        Game.Player.Money = Game.Player.Money - amount;
+        if (ModOn()) Post("cash", -amount, cat, note);
+        return true;
+    }
+    void BusEarnCash(int amount, string cat, string note)
+    {
+        if (amount <= 0) return;
+        if (ModOn()) Cash(amount, cat, note); else Game.Player.Money = Game.Player.Money + amount;
+    }
     static bool ModOn() { object o = Bus("GVL.Mod.Economy"); return !(o is bool) || (bool)o; }
     void RegisterPay()
     {
         object cur = Bus("GVL.Pay");
         if (cur != null && Bus("GVL.PayOwner") as string == "economy" && cur == payFn) return;
-        BusSet("GVL.Pay", payFn); BusSet("GVL.Earn", earnFn); BusSet("GVL.PayOwner", "economy");
+        BusSet("GVL.Pay", payFn); BusSet("GVL.Earn", earnFn);
+        BusSet("GVL.PayCash", payCashFn); BusSet("GVL.EarnCash", earnCashFn); BusSet("GVL.PayOwner", "economy");
     }
-    Func<int, string, string, bool> payFn; Action<int, string, string> earnFn;
+    Func<int, string, string, bool> payFn, payCashFn; Action<int, string, string> earnFn, earnCashFn;
 
     static void Emit(string type, string data)
     {
