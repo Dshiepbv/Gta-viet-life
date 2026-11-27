@@ -73,7 +73,7 @@ The Host now exposes authenticated NPC simulation endpoints:
 - `GET /engine/v1/adapter/commands` — retrieve pending semantic commands (optional `X-GVL-Limit`, 1–200; default 50).
 - `POST /engine/v1/adapter/commands/ack` — acknowledge a successfully executed command using `command_id` and `result.success=true`.
 
-Activity transitions currently create durable `actor.set_activity` commands in a SQLite outbox. Polling is at-least-once: commands remain pending until acknowledged, so adapters must deduplicate by `command_id`. Acknowledgement is currently success-only; failed or unsupported commands remain pending and must not be represented as completed.
+Activity transitions currently create durable `actor.set_activity` commands in a SQLite outbox. For each NPC and command type, a newer pending activity state supersedes the older pending state so reconnecting adapters do not replay a long backlog of obsolete destinations. Polling is at-least-once: commands remain pending until acknowledged, so adapters must deduplicate by `command_id`. Acknowledgement is currently success-only; failed or unsupported commands remain pending and must not be represented as completed.
 
 **Implementation boundary:** the Host now owns durable NPC simulation state and produces a durable semantic command stream, but the GTA game adapter does not yet poll or execute that stream. The existing GTA World module still executes the physical resident schedule. Real GTA location mapping, physical actor execution, reconciliation and result reporting remain outstanding.
 
