@@ -179,6 +179,7 @@ The same authenticated Host now exposes these game-neutral endpoints:
 - GET /engine/v1/world/commands — poll pending world commands. Each payload carries the intended adapter ID; adapters must ignore commands mapped for another game.
 - POST /engine/v1/world/commands/ack — report completed, failed, unsupported, rejected or cancelled execution. A successful object-use acknowledgement updates the canonical object's use state.
 - GET /engine/v1/world/snapshot — inspect the canonical building, object, property, business and traffic catalog.
+- POST /engine/v1/world/businesses/sync — reconcile a native adapter's authoritative business cash/inventory snapshot. Request IDs are idempotent; cash differences post balanced ledger entries against a system reconciliation account; inventory/open state update atomically. The adapter must have a mapping on the property's building.
 
 The GTA adapter maps its known residential entrances/interiors, furniture anchors, workplace and dynamic shop coordinates. It only reports a transition completed after the player is observed in the requested space. The Godot adapter maps its own scene coordinates and executes the same semantic command types. Semantic IDs are not coordinates; a missing adapter mapping fails closed.
 
