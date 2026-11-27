@@ -462,6 +462,7 @@ class SocietySimulation:
         duplicates = 0
         with self.lock, self.db:
             self.db.execute("INSERT OR IGNORE INTO world_accounts(account_id,owner_id,balance,allow_negative,currency) VALUES('legacy:player_cash','player.main',0,1,'USD')")
+            self.db.execute("INSERT OR IGNORE INTO world_accounts(account_id,owner_id,balance,allow_negative,currency) VALUES('legacy:player_bank','player.main',0,1,'USD')")
             self.db.execute("INSERT OR IGNORE INTO world_accounts(account_id,owner_id,balance,allow_negative,currency) VALUES('system:legacy_counterparty','system',0,1,'USD')")
             for event in events:
                 if not isinstance(event, dict):
@@ -498,9 +499,10 @@ class SocietySimulation:
                     if amount > 0:
                         sign = amount if event_type == "ledger.income" else -amount
                         tx_id = "legacy-ledger:" + source_id + ":" + str(seq)
+                        account_id = "legacy:player_bank" if fields.get("acct", "cash") == "bank" else "legacy:player_cash"
                         self._post_transaction_locked(tx_id, fields.get("cat", "legacy"),
                             fields.get("note", event_type), [
-                                {"account_id": "legacy:player_cash", "amount": sign},
+                                {"account_id": account_id, "amount": sign},
                                 {"account_id": "system:legacy_counterparty", "amount": -sign}])
         return {"accepted": accepted, "duplicates": duplicates, "source": source_id}
 
