@@ -230,4 +230,25 @@ class HostTests(unittest.TestCase):
   self.assertIn("hygiene",player["needs"])
   self.assertIn("bladder",player["needs"])
 
+ def test_confirmed_physical_object_use_changes_player_life_needs(self):
+  actor={"npc_id":"player.physical","display_name":"Player","home_location_id":"home.physical",
+         "occupation":"citizen","actor_kind":"player"}
+  self.assertEqual(self.req("/engine/v1/simulation/actors",{"request_id":"physical-player","npc":actor})[0],201)
+  self.state.simulation.npcs["player.physical"].bladder=95
+  self.assertEqual(self.req("/engine/v1/world/buildings",{"request_id":"physical-building","building_id":"home.physical",
+   "category":"residential","name":"Home","adapter_maps":{"godot4.reference":{"entrance":"door","interior":"room"}},
+   "interactions":["enter"]})[0],201)
+  self.assertEqual(self.req("/engine/v1/world/objects",{"request_id":"physical-toilet","object_id":"home.physical.toilet",
+   "building_id":"home.physical","kind":"toilet","adapter_anchors":{"godot4.reference":"toilet.anchor"}})[0],201)
+  code,result=self.req("/engine/v1/world/interact",{"request_id":"use-toilet","actor_id":"player.physical",
+   "target_kind":"object","target_id":"home.physical.toilet","action":"use","adapter_id":"godot4.reference"})
+  self.assertEqual(code,202)
+  command=self.req("/engine/v1/world/commands")[1]["commands"][0]
+  code,ack=self.req("/engine/v1/world/commands/ack",{"request_id":"toilet-ack","command_id":command["command_id"],
+   "result":{"success":True,"status":"completed"}})
+  self.assertEqual(code,200); self.assertTrue(ack["accepted"])
+  snapshot=self.req("/engine/v1/simulation/snapshot")[1]
+  player=next(x for x in snapshot["npcs"] if x["npc_id"]=="player.physical")
+  self.assertEqual(player["needs"]["bladder"],5.0)
+
 if __name__=="__main__":unittest.main()
