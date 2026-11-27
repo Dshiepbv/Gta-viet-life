@@ -170,6 +170,10 @@ def handler_for(state, log):
                 if self.path=="/engine/v1/world/commands/ack":
                     accepted=state.society.acknowledge_command(p.get("command_id",""),p.get("result",{}))
                     return self.sendj(200 if accepted else 409,{"accepted":accepted})
+                if self.path=="/engine/v1/world/accounts/ensure":
+                    return self.sendj(200,state.society.ensure_account(
+                        p.get("account_id",""),p.get("owner_id",""),p.get("opening_balance",0),
+                        p.get("allow_negative",True),p.get("currency","USD")))
                 if self.path=="/engine/v1/world/accounts":
                     return self.sendj(201,state.society.create_account(
                         p.get("account_id",""),p.get("owner_id",""),p.get("opening_balance",0),
