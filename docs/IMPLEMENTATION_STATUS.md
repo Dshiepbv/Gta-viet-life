@@ -174,3 +174,11 @@ Release CI now includes a separate compile-check project for `GtaVietLifeWorld.c
 - Windows verification is now triggered by pushes and pull requests targeting `main`, as well as manual dispatch and version tags.
 - The GTA Core reports an absolute in-game world minute in the adapter handshake and heartbeat. While a clock-aware adapter is live, the Engine Host pauses its wall-clock worker and advances NPC simulation only by observed positive GTA clock deltas. A paused GTA clock therefore does not advance NPC needs; a backward clock correction never rewinds persisted NPC history. Heartbeats refresh the offline checkpoint. Legacy adapters without the clock field retain wall-clock behavior.
 - This clock policy is internally covered by Host tests; actual GTA pause/sleep/time-jump behavior still requires live-game acceptance and is not claimed verified.
+
+
+## Adapter clock and command-result integration — 2026-11-27
+
+- The GTA Core now schedules Engine Host heartbeats with `Stopwatch.GetTimestamp()` (monotonic process time), not `Game.GameTime`, so the heartbeat cadence is independent of a paused game clock.
+- Clock-aware adapter sessions pause the Host wall-clock worker; heartbeat deltas drive NPC simulation. The first live observation aligns an empty Engine database to the GTA world minute. Persisted NPC history is never rewound by a backward clock correction.
+- Adapter command reports now persist terminal outcomes (`completed`, `failed`, `unsupported`, `rejected`, `cancelled`). Unknown command types and unmapped resident activity/location combinations are reported as `unsupported` instead of being silently discarded or retried forever. Temporarily unavailable NPCs remain deferred.
+- These paths are covered by Engine Host tests and compile checks. Actual pause behavior and in-world command outcomes remain unverified until live GTA V acceptance.
