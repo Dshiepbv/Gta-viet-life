@@ -342,6 +342,22 @@ class SocietySimulation:
             row = self.db.execute("SELECT owner_account_id FROM world_properties WHERE property_id=?", (property_id,)).fetchone()
             if not row:
                 raise KeyError("property_not_found")
+            existing = self.db.execute(
+                "SELECT source,description FROM world_transactions WHERE transaction_id=?", (transaction_id,)
+            ).fetchone()
+            if existing:
+                prior = self.db.execute(
+                    "SELECT account_id,amount FROM world_ledger_entries WHERE transaction_id=? ORDER BY entry_id",
+                    (transaction_id,)
+                ).fetchall()
+                expected = [(buyer_account_id, -price)]
+                expected.extend((entry["account_id"], entry["amount"]) for entry in prior[1:2])
+                if (existing["source"] != "property_purchase" or existing["description"] != property_id
+                        or len(prior) != 2 or prior[0]["account_id"] != buyer_account_id
+                        or prior[0]["amount"] != -price or prior[1]["amount"] != price
+                        or row["owner_account_id"] != buyer_account_id):
+                    raise ValueError("transaction_id_conflict")
+                return {"posted": True, "duplicate": True, "transaction_id": transaction_id}
             seller = row["owner_account_id"]
             if seller == buyer_account_id:
                 raise ValueError("buyer_already_owns_property")
