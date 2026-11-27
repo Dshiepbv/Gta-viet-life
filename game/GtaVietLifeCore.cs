@@ -497,10 +497,10 @@ public class GtaVietLifeCore : Script
                 }
             }
             catch (Exception ex) { Log("ack lenh life engine loi: " + ex.Message); }
-            if (accepted)
-            {
-                lock (EngineCommandLock) queuedEngineCommandIds.Remove(commandId);
-            }
+            // Always release the local dedup key. If the acknowledgement was lost or the
+            // command was superseded, the Host's pending state is authoritative and polling
+            // will safely redeliver it when necessary.
+            lock (EngineCommandLock) queuedEngineCommandIds.Remove(commandId);
         });
     }
 
