@@ -53,7 +53,7 @@ class State:
             self.session["last_heartbeat"]=time.time(); return True
     def adapter_is_connected(self):
         with self.lock:
-            return bool(self.session and time.time()-self.session["last_heartbeat"]<=15)
+            return bool(self.session and self.last_world_minute is not None and time.time()-self.session["last_heartbeat"]<=15)
     def close(self,sid):
         with self.lock:
             if self.session and self.session["session_id"]==sid:
