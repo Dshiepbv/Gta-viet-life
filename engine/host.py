@@ -3,10 +3,18 @@ import argparse, json, logging, secrets, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+try:
+    from .life_simulation import LifeSimulationEngine, NPCProfile, ScheduleBlock, SQLiteLifeStore
+except ImportError:  # PyInstaller entry-point execution
+    from life_simulation import LifeSimulationEngine, NPCProfile, ScheduleBlock, SQLiteLifeStore
+
 PROTOCOL="gvl-engine/1"; BUILD="0.1.0"; MAX_BODY=65536
 class State:
-    def __init__(self, token):
+    def __init__(self, token, data_dir=None):
         self.token=token; self.lock=threading.RLock(); self.session=None; self.started=time.time()
+        self.data_dir = Path(data_dir) if data_dir else None
+        db_path = str(self.data_dir / "life-simulation.sqlite3") if self.data_dir else ":memory:"
+        self.simulation = LifeSimulationEngine(SQLiteLifeStore(db_path))
     def auth(self, token): return bool(token) and secrets.compare_digest(self.token, token)
     def handshake(self, p):
         rid=p.get("request_id")
@@ -54,6 +62,9 @@ def handler_for(state, log):
             if self.path=="/engine/v1/status":
                 if not state.auth(self.headers.get("X-GVL-Token")): return self.sendj(401,{"error":"unauthorized"})
                 return self.sendj(200,state.snapshot())
+            if self.path=="/engine/v1/simulation/snapshot":
+                if not state.auth(self.headers.get("X-GVL-Token")): return self.sendj(401,{"error":"unauthorized"})
+                return self.sendj(200,state.simulation.snapshot())
             return self.sendj(404,{"error":"not_found"})
         def do_POST(self):
             if not state.auth(self.headers.get("X-GVL-Token")): return self.sendj(401,{"error":"unauthorized"})
@@ -62,6 +73,27 @@ def handler_for(state, log):
                 rid=p.get("request_id")
                 if not isinstance(rid,str) or not rid: raise ValueError("request_id_required")
                 if self.path=="/engine/v1/handshake": return self.sendj(200,state.handshake(p))
+                if self.path=="/engine/v1/simulation/advance":
+                    result=state.simulation.advance(p.get("minutes"))
+                    return self.sendj(200,result)
+                if self.path=="/engine/v1/simulation/npcs":
+                    raw=p.get("npc")
+                    if not isinstance(raw,dict): raise ValueError("npc_object_required")
+                    schedule=raw.get("schedule",[])
+                    if not isinstance(schedule,list) or any(not isinstance(item,dict) for item in schedule):
+                        raise ValueError("schedule_array_required")
+                    blocks=[ScheduleBlock(**item) for item in schedule]
+                    profile=NPCProfile(
+                        npc_id=raw.get("npc_id",""), display_name=raw.get("display_name",""),
+                        home_location_id=raw.get("home_location_id",""), occupation=raw.get("occupation",""),
+                        traits=tuple(raw.get("traits",[])), schedule=tuple(blocks),
+                        life_goal=raw.get("life_goal","career"))
+                    state.simulation.register_npc(profile)
+                    return self.sendj(201,{"registered":True,"npc_id":profile.npc_id})
+                if self.path=="/engine/v1/simulation/interact":
+                    result=state.simulation.interact(
+                        p.get("npc_id",""),p.get("player_id",""),p.get("interaction","talk"))
+                    return self.sendj(200,result)
                 if self.path=="/engine/v1/heartbeat":
                     ok=state.heartbeat(str(p.get("session_id",""))); return self.sendj(200 if ok else 409,{"accepted":ok})
                 if self.path=="/engine/v1/close":
@@ -69,7 +101,8 @@ def handler_for(state, log):
                 if self.path=="/engine/v1/shutdown":
                     self.sendj(200,{"stopping":True}); threading.Thread(target=self.server.shutdown,daemon=True).start(); return
                 return self.sendj(404,{"error":"not_found"})
-            except (ValueError,json.JSONDecodeError) as e: return self.sendj(400,{"error":str(e)})
+            except KeyError as e: return self.sendj(404,{"error":str(e).strip("'")})
+            except (ValueError,TypeError,json.JSONDecodeError) as e: return self.sendj(400,{"error":str(e)})
             except Exception:
                 log.exception("request failed"); return self.sendj(500,{"error":"internal_error"})
     return H
@@ -82,8 +115,32 @@ def main():
     if len(token)<32: raise SystemExit("invalid local token")
     d=Path(a.data_dir); d.mkdir(parents=True,exist_ok=True)
     logging.basicConfig(filename=str(d/"engine-host.log"),level=logging.INFO,format="%(asctime)s %(levelname)s %(message)s",encoding="utf-8")
-    log=logging.getLogger("gvl.engine"); s=ThreadingHTTPServer((a.host,a.port),handler_for(State(token),log)); s.daemon_threads=True
+    log=logging.getLogger("gvl.engine")
+    state=State(token,d)
+    try:
+        last_epoch=state.simulation.store.get_wallclock_epoch()
+        elapsed=max(0.0,time.time()-last_epoch) if last_epoch is not None else 0.0
+        catchup=min(int(elapsed/2.0),10080)
+        if catchup:
+            state.simulation.advance(catchup)
+            log.info("Recovered %s offline simulation minutes (cap 10080)",catchup)
+        else:
+            state.simulation.store.save(state.simulation.simulation_minute,[],[])
+    except (ValueError,TypeError) as exc:
+        log.warning("Offline simulation clock recovery skipped: %s",exc)
+    stop=threading.Event()
+    def simulation_worker():
+        while not stop.wait(2.0):
+            try:
+                state.simulation.advance(1)
+            except Exception:
+                log.exception("background life simulation tick failed")
+    worker=threading.Thread(target=simulation_worker,name="gvl-life-simulation",daemon=True)
+    worker.start()
+    s=ThreadingHTTPServer((a.host,a.port),handler_for(state,log)); s.daemon_threads=True
     log.info("Engine Host %s listening on %s:%s",BUILD,a.host,a.port)
     try: s.serve_forever(poll_interval=.25)
-    finally: s.server_close(); log.info("Engine Host stopped")
+    finally:
+        stop.set(); worker.join(timeout=3)
+        s.server_close(); log.info("Engine Host stopped")
 if __name__=="__main__": main()

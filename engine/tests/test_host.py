@@ -27,4 +27,15 @@ class HostTests(unittest.TestCase):
  def test_stale_session(self):
   self.state.handshake({"protocol":PROTOCOL,"request_id":"req-stale","session_id":"s","adapter":{"id":"x","version":"1"},"capabilities":[]})
   self.state.session["last_heartbeat"]=time.time()-20; self.assertFalse(self.state.snapshot()["adapter_connected"])
+ def test_life_simulation_api_register_advance_and_interact(self):
+  npc={"npc_id":"npc.api","display_name":"Lan","home_location_id":"home.api","occupation":"teacher",
+       "schedule":[{"start_minute":0,"end_minute":1440,"activity":"work","location_id":"school.api"}]}
+  code,r=self.req("/engine/v1/simulation/npcs",{"request_id":"npc-1","npc":npc})
+  self.assertEqual(code,201); self.assertTrue(r["registered"])
+  code,r=self.req("/engine/v1/simulation/advance",{"request_id":"tick-1","minutes":5})
+  self.assertEqual(code,200); self.assertEqual(r["simulation_minute"],5)
+  code,r=self.req("/engine/v1/simulation/interact",{"request_id":"talk-1","npc_id":"npc.api","player_id":"player.1"})
+  self.assertEqual(code,200); self.assertTrue(r["memory_recorded"])
+  code,r=self.req("/engine/v1/simulation/snapshot")
+  self.assertEqual(code,200); self.assertEqual(r["npc_count"],1)
 if __name__=="__main__":unittest.main()

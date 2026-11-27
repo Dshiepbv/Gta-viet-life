@@ -105,3 +105,28 @@ The Launcher is the single player-facing orchestrator. It manages installation, 
 ### Implementation status
 
 **Architecture approved; product implementation not yet delivered.** No working Launcher EXE, installer, automatic updater, packaged Engine Host or complete GTA Adapter handshake is claimed by this documentation change. Technology choices remain subject to verification against the actual Windows baseline, GTA V build and mod-runtime API. User-facing alpha testing remains prohibited under the delivery policy.
+
+
+## M2 implementation increment — deterministic NPC life kernel
+
+Date: 2026-11-27
+
+The branch now contains the first persistent NPC life-simulation implementation in `engine/life_simulation.py`:
+
+- Game-neutral NPC profiles with stable IDs, occupation, home location, traits and validated non-overlapping daily schedule blocks.
+- Deterministic minute-step needs for hunger, energy, social connection and stress, plus career/health/social life goals with bounded progress.
+- Schedule-driven activities and need-driven overrides (eating, sleeping and socializing).
+- Durable relationship affinity and bounded episodic memory for player conversations.
+- SQLite schema version 1, transactional NPC snapshots, simulation clock and idempotent event IDs.
+- Authenticated Host endpoints to register NPC profiles, advance simulation time, interact with an NPC and inspect a canonical snapshot.
+- Host background clock advances one simulated minute per two wall-clock seconds while the Host is running. On restart it recovers at most 10,080 simulated minutes (seven in-game days) from the persisted wall-clock checkpoint.
+
+### Honest boundary
+
+This is the first engine-side NPC vertical-slice foundation, not a completed GTA gameplay slice. No production resident catalog is seeded by default. The GTA Core/Adapter does not yet submit NPC profiles, map semantic home/work locations to verified GTA locations, poll semantic actor commands or report physical execution outcomes. NPCs therefore exist in the independent simulation store and are not yet guaranteed to appear or act as physical GTA entities. Dialogue generation is also not wired; conversation currently records a deterministic interaction/memory and returns bounded context only.
+
+### Verification required
+
+- Engine unit tests cover schedule validation, needs, activity selection, relationship changes, persistence/reload and Host API flow.
+- Windows CI must compile Python modules and execute the full engine test suite before this increment is considered internally verified.
+- Live GTA acceptance remains blocked until the Adapter's observation/command/result path and verified location mappings are implemented.
