@@ -231,6 +231,10 @@ def handler_for(state, log):
                     return self.sendj(200,state.society.lease_property(
                         p.get("transaction_id",""),p.get("property_id",""),
                         p.get("tenant_account_id",""),p.get("rent",0),p.get("lease_minutes",0)))
+                if self.path=="/engine/v1/world/social/relationships":
+                    return self.sendj(200,state.society.set_social_relationship(
+                        p.get("actor_id",""),p.get("target_id",""),p.get("relation_type",""),
+                        p.get("strength",0.0),p.get("status","active")))
                 if self.path=="/engine/v1/world/employment/contracts":
                     return self.sendj(201,state.society.create_employment_contract(
                         p.get("contract_id",""),p.get("employee_id",""),p.get("employee_account_id",""),
