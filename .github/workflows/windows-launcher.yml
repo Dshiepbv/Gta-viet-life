@@ -22,6 +22,24 @@ jobs:
         with: { dotnet-version: '8.0.x' }
       - uses: actions/setup-python@v5
         with: { python-version: '3.11' }
+      - name: Validate Godot 4 second-game adapter
+        shell: pwsh
+        run: |
+          $release="4.4.1-stable"
+          $archive="Godot_v4.4.1-stable_win64.exe.zip"
+          $base="https://github.com/godotengine/godot/releases/download/$release"
+          Invoke-WebRequest -Uri "$base/$archive" -OutFile godot.zip
+          Invoke-WebRequest -Uri "$base/SHA512-SUMS.txt" -OutFile godot-sums.txt
+          $line=Get-Content godot-sums.txt | Where-Object { $_ -match [regex]::Escape($archive) } | Select-Object -First 1
+          if(!$line){throw "Pinned Godot archive is missing from the official SHA512 manifest."}
+          $expected=($line.Trim() -split '\\s+')[0].ToLower()
+          $actual=(Get-FileHash godot.zip -Algorithm SHA512).Hash.ToLower()
+          if($actual -ne $expected){throw "Godot 4.4.1 archive checksum mismatch."}
+          Expand-Archive godot.zip godot-runtime -Force
+          $godot=Get-ChildItem godot-runtime -Recurse -Filter "Godot_v4.4.1-stable_win64.exe" | Select-Object -First 1
+          if(!$godot){throw "Pinned Godot executable not found."}
+          & $godot.FullName --headless --editor --path adapters/godot --quit
+          if($LASTEXITCODE -ne 0){throw "Godot headless project import/script parse failed."}
       - name: Set release version
         shell: pwsh
         run: |
