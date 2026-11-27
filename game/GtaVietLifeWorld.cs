@@ -1172,6 +1172,7 @@ public class GtaVietLifeWorld : Script
             sh.Blip.Name = "Quan cua Sep (" + ModeName[sh.Mode] + ")";
         }
         catch (Exception ex) { Log("blip loi: " + ex.Message); }
+        RegisterEngineShopCatalog(sh);
     }
 
     void SyncOut()
@@ -2356,6 +2357,7 @@ public class GtaVietLifeWorld : Script
     float[][] curCands; int candIdx;
     bool insideHome; int enterMinAt; int doorCool;
     bool engineWorldCatalogSent;
+    readonly HashSet<string> engineShopCatalogSentIds = new HashSet<string>();
     string pendingWorldCommandId = "", pendingWorldCommandAction = "";
     int pendingWorldCommandDeadline;
     readonly HashSet<string> processedWorldCommandIds = new HashSet<string>();
@@ -3295,8 +3297,63 @@ public class GtaVietLifeWorld : Script
         }
         string workBody = "{\"request_id\":\"" + Guid.NewGuid().ToString("N") + "\",\"building_id\":\"building.workplace\",\"category\":\"workplace\",\"name\":\"Los Santos Customs - Burton\",\"adapter_maps\":{\"gta5.shvdn\":{\"entrance\":\"work.gta.workspot\",\"interior\":\"work.gta.workspot\"}},\"interactions\":[\"enter\",\"inspect\"]}";
         post("/engine/v1/world/buildings", workBody);
+        foreach (Shop shop in shops) RegisterEngineShopCatalog(shop);
         engineWorldCatalogSent = true;
-        Log("da dang ky danh muc nha, vat dung va noi lam viec voi Life Engine");
+        Log("da dang ky danh muc nha, vat dung, noi lam viec va cua hang voi Life Engine");
+    }
+
+    string ShopEngineId(Shop shop)
+    {
+        if (shop == null) return "";
+        int x = (int)Math.Round(shop.Pos.X * 10f);
+        int y = (int)Math.Round(shop.Pos.Y * 10f);
+        return "shop." + x.ToString(CultureInfo.InvariantCulture) + "." + y.ToString(CultureInfo.InvariantCulture);
+    }
+
+    void RegisterEngineShopCatalog(Shop shop)
+    {
+        if (shop == null || !(AppDomain.CurrentDomain.GetData("GVL.Engine.Connected") is bool) ||
+            !(bool)AppDomain.CurrentDomain.GetData("GVL.Engine.Connected")) return;
+        Action<string, string> post = AppDomain.CurrentDomain.GetData("GVL.Engine.WorldPost") as Action<string, string>;
+        if (post == null) return;
+        string id = ShopEngineId(shop);
+        if (string.IsNullOrEmpty(id) || engineShopCatalogSentIds.Contains(id)) return;
+        string buildingId = "building." + id;
+        string propertyId = "property." + id;
+        string businessId = "business." + id;
+        string cashAccountId = "legacy:" + id + ".cash";
+        string anchor = "shop.gta." + id + ".anchor";
+        string body = "{\"request_id\":\"" + Guid.NewGuid().ToString("N") +
+            "\",\"building_id\":\"" + buildingId + "\",\"category\":\"retail_business\",\"name\":\"" +
+            WorldJsonEscape(ZoneName(shop.Pos) + " - cua hang") + "\",\"adapter_maps\":{\"gta5.shvdn\":{\"entrance\":\"" +
+            anchor + "\",\"interior\":\"" + anchor + "\"}},\"interactions\":[\"open\",\"close\",\"inspect\"]}";
+        post("/engine/v1/world/buildings", body);
+        int playerCash = Math.Max(0, Game.Player.Money);
+        string ownerBody = "{\"request_id\":\"" + Guid.NewGuid().ToString("N") +
+            "\",\"account_id\":\"legacy:player_cash\",\"owner_id\":\"player.main\",\"opening_balance\":" +
+            playerCash.ToString(CultureInfo.InvariantCulture) + ",\"allow_negative\":true,\"currency\":\"USD\"}";
+        post("/engine/v1/world/accounts/ensure", ownerBody);
+        string cashBody = "{\"request_id\":\"" + Guid.NewGuid().ToString("N") +
+            "\",\"account_id\":\"" + cashAccountId + "\",\"owner_id\":\"" + businessId +
+            "\",\"opening_balance\":" + Math.Max(0, shop.Cash).ToString(CultureInfo.InvariantCulture) +
+            ",\"allow_negative\":true,\"currency\":\"USD\"}";
+        post("/engine/v1/world/accounts/ensure", cashBody);
+        string propertyBody = "{\"request_id\":\"" + Guid.NewGuid().ToString("N") +
+            "\",\"property_id\":\"" + propertyId + "\",\"building_id\":\"" + buildingId +
+            "\",\"owner_account_id\":\"legacy:player_cash\",\"value\":" +
+            Math.Max(0, shop.Paid).ToString(CultureInfo.InvariantCulture) + ",\"rent\":" +
+            Math.Max(0, shop.Rent).ToString(CultureInfo.InvariantCulture) + "}";
+        post("/engine/v1/world/properties", propertyBody);
+        string businessBody = "{\"request_id\":\"" + Guid.NewGuid().ToString("N") +
+            "\",\"business_id\":\"" + businessId + "\",\"property_id\":\"" + propertyId +
+            "\",\"owner_account_id\":\"legacy:player_cash\",\"cash_account_id\":\"" + cashAccountId +
+            "\",\"category\":\"" + WorldJsonEscape(Types[TIdx(shop.Type)].Name) + "\"}";
+        post("/engine/v1/world/businesses", businessBody);
+        string inventoryBody = "{\"request_id\":\"" + Guid.NewGuid().ToString("N") +
+            "\",\"business_id\":\"" + businessId + "\",\"inventory\":{\"stock\":" +
+            Math.Max(0, shop.Stock).ToString(CultureInfo.InvariantCulture) + "}}";
+        post("/engine/v1/world/businesses/inventory", inventoryBody);
+        engineShopCatalogSentIds.Add(id);
     }
 
     bool RequestEngineWorldInteraction(string targetKind, string targetId, string action)
@@ -3337,6 +3394,23 @@ public class GtaVietLifeWorld : Script
             {
                 lock (queue) queue.Enqueue(command);
                 break;
+            }
+            if (commandType == "space.transition" && targetId.StartsWith("building.shop.", StringComparison.Ordinal) && action == "open")
+            {
+                string shopId = targetId.Substring("building.".Length);
+                int shopIndex = -1;
+                for (int si = 0; si < shops.Count; si++)
+                    if (ShopEngineId(shops[si]) == shopId) { shopIndex = si; break; }
+                if (shopIndex < 0)
+                { RememberWorldCommand(commandId); ReportWorldCommand(commandId, "rejected", "shop_no_longer_exists"); processed++; continue; }
+                Ped customer = Game.Player.Character;
+                if (customer == null || !customer.Exists() || customer.Position.DistanceTo2D(shops[shopIndex].Pos) > 35f)
+                { lock (queue) queue.Enqueue(command); break; }
+                ActivateShop(shopIndex);
+                RememberWorldCommand(commandId);
+                ReportWorldCommand(commandId, "completed", "physical_storefront_selected");
+                processed++;
+                continue;
             }
             if (commandType == "space.transition" && targetId == "building.workplace" && action == "enter")
             {
