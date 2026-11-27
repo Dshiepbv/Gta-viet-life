@@ -208,6 +208,7 @@ class SocietySimulation:
         status = "completed" if result.get("success") is True else result.get("status")
         if status not in ("completed", "failed", "unsupported", "rejected", "cancelled"):
             raise ValueError("invalid_command_result")
+        physical_effect = None
         with self.lock, self.db:
             row = self.db.execute("SELECT command_type,payload_json FROM world_command_outbox WHERE command_id=? AND status='pending'",
                                   (command_id,)).fetchone()
@@ -218,7 +219,7 @@ class SocietySimulation:
             if cur.rowcount == 1 and status == "completed" and row["command_type"] == "interaction.use_object":
                 payload = json.loads(row["payload_json"])
                 target_id = payload.get("target_id", "")
-                object_row = self.db.execute("SELECT state_json FROM world_objects WHERE object_id=?", (target_id,)).fetchone()
+                object_row = self.db.execute("SELECT state_json,kind FROM world_objects WHERE object_id=?", (target_id,)).fetchone()
                 if object_row:
                     state = json.loads(object_row["state_json"])
                     state["uses"] = int(state.get("uses", 0)) + 1
@@ -226,7 +227,10 @@ class SocietySimulation:
                     state["last_actor_id"] = payload.get("actor_id", "")
                     self.db.execute("UPDATE world_objects SET state_json=? WHERE object_id=?",
                                     (json.dumps(state), target_id))
-            return cur.rowcount == 1
+                    physical_effect = (payload.get("actor_id", ""), object_row["kind"])
+        if physical_effect and self.life_engine is not None:
+            self.life_engine.apply_physical_interaction(*physical_effect)
+        return cur.rowcount == 1
 
     def create_account(self, account_id: str, owner_id: str, opening_balance: int = 0,
                        allow_negative: bool = False, currency: str = "USD") -> dict:
