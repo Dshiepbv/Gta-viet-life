@@ -109,7 +109,7 @@ Logs must support filtering and export. Sensitive credentials, tokens and privat
 
 ## 8. Compatibility and release discipline
 
-- Work on a dedicated feature branch and keep changes reviewable.
+- For this project, the owner has explicitly selected direct integration on `main`; all implementation, tests and merges must therefore be performed on `main` without feature branches. Keep commits small, auditable and regression-tested.
 - Preserve existing GTA V Enhanced support and user saves unless a documented migration explicitly changes them.
 - Do not silently change legacy keys, event semantics or module contracts.
 - Keep the final handoff consolidated; do not ask the user to cherry-pick commits or assemble partial packages.
