@@ -17,8 +17,8 @@ The supported installation and daily workflow is:
 5. Launcher starts or attaches to the local Life Simulation Engine Host.
 6. GTA V Adapter is loaded by the supported GTA mod runtime when the game starts.
 7. Adapter connects to the Engine Host, negotiates protocol version and capabilities, and reports a healthy game session.
-8. Launcher reports **READY / SẴN SÀNG** only after all required readiness gates pass.
-9. Player launches GTA V from Launcher or opens GTA V after Launcher reports readiness, according to the supported mod-runtime integration.
+8. Launcher reports **READY TO LAUNCH / SẴN SÀNG KHỞI CHẠY** after local preflight, script installation, Engine Host health and AI bridge health pass. This is not proof of a live game connection.
+9. Player opens GTA V from Launcher. After the in-game Adapter loads, Launcher reports **IN GAME / CONNECTED** only after authenticated handshake and heartbeat succeed.
 10. On exit, the system flushes durable state, records shutdown status and closes managed processes cleanly.
 
 No intermediate/alpha build is offered to the player. This workflow is for the final integrated release only.
@@ -75,7 +75,7 @@ Launcher must expose explicit states, not a single optimistic spinner:
 - **PREFLIGHT** — checking OS, game path, mod runtime, dependencies, storage and versions.
 - **UPDATE_REQUIRED** — a compatible update is available.
 - **DOWNLOADING** — update payload is being downloaded to staging.
-- **VERIFYING** — manifest, hashes, signature, compatibility and package contents are checked.
+- **VERIFYING** — manifest, hashes, compatibility and package contents are checked.
 - **INSTALLING** — verified payload is applied transactionally with rollback data retained.
 - **STARTING_ENGINE** — Engine Host process is starting.
 - **WAITING_FOR_GAME** — Host is healthy; waiting for GTA V and Adapter.
@@ -130,7 +130,7 @@ Manifest schema is canonical in this GitHub repository. Production signing keys 
 
 1. Retrieve manifest over HTTPS from the configured official release endpoint.
 2. Validate manifest schema, release channel and compatibility.
-3. Verify publisher signature using a trusted public key embedded in the installed Launcher.
+3. Verify the SHA-256 digest against the checksum asset from the official GitHub release. Publisher signature/code-signing verification remains a production hardening gate.
 4. Download all required packages into a version-specific staging directory.
 5. Verify size and SHA-256 for every file; reject missing, unexpected or modified files.
 6. Check free disk space and ensure backups can be written.
