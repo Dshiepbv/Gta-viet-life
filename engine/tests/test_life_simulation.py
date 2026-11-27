@@ -35,6 +35,22 @@ class LifeSimulationTests(unittest.TestCase):
         self.assertGreater(state.goal_progress, 0)
         self.assertGreater(len(result["events"]), 0)
 
+    def test_offscreen_socializing_builds_npc_to_npc_relationships_and_memories(self):
+        engine = LifeSimulationEngine()
+        for npc_id, name in (("npc.social.a", "An"), ("npc.social.b", "Binh")):
+            engine.register_npc(NPCProfile(
+                npc_id=npc_id, display_name=name, home_location_id="home.social",
+                occupation="neighbor", household_id="household.shared",
+                schedule=(ScheduleBlock(0, 1440, "socialize", "park.shared"),),
+            ))
+        engine.advance(15)
+        a = engine.npcs["npc.social.a"]
+        b = engine.npcs["npc.social.b"]
+        self.assertEqual(a.affinity["npc.social.b"], 2.0)
+        self.assertEqual(b.affinity["npc.social.a"], 2.0)
+        self.assertEqual(a.memories[-1]["participant_id"], "npc.social.b")
+        self.assertEqual(a.memories[-1]["source"], "autonomous_social_simulation")
+
     def test_talk_changes_relationship_and_persists_memory(self):
         engine = LifeSimulationEngine()
         engine.register_npc(profile())
