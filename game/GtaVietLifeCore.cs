@@ -31,7 +31,7 @@ public class GtaVietLifeCore : Script
     volatile bool hostConnected;
     bool hostConnecting, residentSyncing;
     long nextHostHeartbeatTicks;
-    int nextResidentSync, nextEngineCommandPoll, nextWorldCommandPoll;
+    int nextResidentSync, nextEngineCommandPoll, nextWorldCommandPoll, nextWalletBaselineSync;
     bool engineCommandPolling, worldCommandPolling;
     readonly object EngineCommandLock = new object();
     readonly object WorldPostQueueLock = new object();
@@ -253,6 +253,19 @@ public class GtaVietLifeCore : Script
                 lock (OutboxLock) forwarding = false;
             }
         });
+    }
+
+    void SyncPlayerWalletBaseline()
+    {
+        try
+        {
+            int balance = Math.Max(0, Game.Player.Money);
+            string body = "{\"request_id\":\"" + Guid.NewGuid().ToString("N") +
+                "\",\"account_id\":\"legacy:player_cash\",\"owner_id\":\"player.main\",\"opening_balance\":" +
+                balance.ToString(CultureInfo.InvariantCulture) + ",\"allow_negative\":true,\"currency\":\"USD\"}";
+            PostWorldRequest("/engine/v1/world/accounts/ensure", body);
+        }
+        catch (Exception ex) { Log("dong bo so du tien mat voi life engine loi: " + ex.Message); }
     }
 
     // A separate durable outbox feeds the canonical Life Engine journal.
