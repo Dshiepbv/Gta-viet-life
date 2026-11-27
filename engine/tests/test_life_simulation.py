@@ -115,6 +115,31 @@ class LifeSimulationTests(unittest.TestCase):
                 second.store.close()
                 first.store.close()
 
+    def test_pending_activity_commands_coalesce_to_latest_npc_state(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store = SQLiteLifeStore(Path(folder) / "coalesce.sqlite3")
+            engine = LifeSimulationEngine(store)
+            p = NPCProfile(
+                npc_id="npc.coalesce", display_name="Lan", home_location_id="home.coalesce",
+                occupation="worker", schedule=(
+                    ScheduleBlock(0, 1, "work", "work.coalesce"),
+                    ScheduleBlock(1, 2, "leisure", "leisure.coalesce"),
+                    ScheduleBlock(2, 3, "sleep", "home.coalesce"),
+                )
+            )
+            engine.register_npc(p)
+            engine.advance(3)
+            pending = engine.pending_commands()
+            self.assertEqual(len(pending), 1)
+            self.assertEqual(pending[0]["payload"]["activity"], "sleep")
+            statuses = store.connection.execute(
+                "SELECT status,COUNT(*) AS n FROM command_outbox GROUP BY status"
+            ).fetchall()
+            counts = {row["status"]: row["n"] for row in statuses}
+            self.assertEqual(counts.get("pending"), 1)
+            self.assertEqual(counts.get("superseded"), 2)
+            store.close()
+
     def test_command_ack_requires_success(self):
         engine = LifeSimulationEngine()
         with self.assertRaises(ValueError):
