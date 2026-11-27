@@ -27,6 +27,14 @@ class GodotAdapterContractTests(unittest.TestCase):
             "actor.set_activity",
             '"GVL_ENGINE_TOKEN"',
             '"destination_reached"',
+            '" /engine/v1/world/buildings"',
+            '" /engine/v1/world/objects"',
+            '" /engine/v1/world/interact"',
+            '" /engine/v1/world/commands"',
+            '" /engine/v1/world/commands/ack"',
+            '"space.transition"',
+            '"interaction.use_object"',
+            '" /engine/v1/world/buildings"',
         ):
             self.assertIn(required, source + (GODOT / "README.md").read_text(encoding="utf-8"))
 
