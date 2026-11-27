@@ -122,12 +122,15 @@ class SocietySimulationTests(unittest.TestCase):
              "data": "amount=250;cat=business;note=retail sale;acct=cash", "sim_minute": 12},
             {"sequence": 11, "event_type": "ledger.expense",
              "data": "amount=40;cat=food;note=lunch;acct=cash", "sim_minute": 13},
+            {"sequence": 12, "event_type": "ledger.income",
+             "data": "amount=70;cat=deposit;note=bank deposit;acct=bank", "sim_minute": 14},
         ]
         result = self.society.ingest_legacy_events("gta5.shvdn", batch)
         self.assertEqual(result["accepted"], 2)
         replay = self.society.ingest_legacy_events("gta5.shvdn", batch)
         self.assertEqual(replay["duplicates"], 2)
         self.assertEqual(self.society.account("legacy:player_cash")["balance"], 210)
+        self.assertEqual(self.society.account("legacy:player_bank")["balance"], 70)
         unbalanced = self.store.connection.execute(
             "SELECT SUM(e.amount) FROM world_ledger_entries e JOIN world_transactions t USING(transaction_id) "
             "WHERE t.transaction_id LIKE 'legacy-ledger:%' GROUP BY t.transaction_id"
