@@ -1,0 +1,7 @@
+# CPU-compatible bridge bundle; optional CUDA wheels are not shipped by default.
+faster-whisper>=1.1
+sounddevice>=0.4
+numpy>=1.24
+edge-tts>=6.1.10
+pygame>=2.5
+gTTS>=2.5

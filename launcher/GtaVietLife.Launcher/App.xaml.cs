@@ -1,0 +1,1 @@
+using System.Windows; namespace GtaVietLife.Launcher; public partial class App : Application { }
