@@ -362,7 +362,7 @@ public class GtaVietLifePersonal : Script
         qty = Math.Min(qty, room);
         int cost = PriceOf(d) * qty + ShipFee;
         if (Game.Player.Money < cost) { Notify("Khong du tien ($" + cost + ")."); return; }
-        Game.Player.Money = Game.Player.Money - cost;
+        if (!PayCash(cost, "shopping", "mua " + d.Name)) { Notify("Giao dich mua hang khong thanh cong."); return; }
         bag[d.Id] = Have(d.Id) + qty;
         Notify("Da mua " + qty + " " + d.Name + " (-$" + cost + ", gom ship $" + ShipFee + "). Tui: " + BagCount() + "/" + BagCap);
         Save();
@@ -556,7 +556,7 @@ public class GtaVietLifePersonal : Script
         Vehicle v = World.CreateVehicle(m, pos, me.Heading);
         m.MarkAsNoLongerNeeded();
         if (v == null || !v.Exists()) { Notify("Khong tao duoc xe o day, ra cho rong hon."); return; }
-        Game.Player.Money = Game.Player.Money - CallCarFee;
+        if (!PayCash(CallCarFee, "transport", "phi giao xe")) { v.Delete(); Notify("Khong the thu phi giao xe."); return; }
         try
         {
             v.Mods.PrimaryColor = (VehicleColor)r.Prim; v.Mods.SecondaryColor = (VehicleColor)r.Sec;
@@ -644,6 +644,16 @@ public class GtaVietLifePersonal : Script
         if (amount <= 0) return true;
         Func<int, string, string, bool> f = Bus("GVL.Pay") as Func<int, string, string, bool>;
         if (f != null) { try { return f(amount, cat, note); } catch { } }
+        if (Game.Player.Money < amount) return false;
+        Game.Player.Money = Game.Player.Money - amount;
+        return true;
+    }
+
+    static bool PayCash(int amount, string cat, string note)
+    {
+        if (amount <= 0) return true;
+        Func<int, string, string, bool> f = Bus("GVL.PayCash") as Func<int, string, string, bool>;
+        if (f != null) { try { return f(amount, cat, note); } catch { return false; } }
         if (Game.Player.Money < amount) return false;
         Game.Player.Money = Game.Player.Money - amount;
         return true;
@@ -1602,7 +1612,8 @@ public class GtaVietLifePersonal : Script
         if (!hasBackpack) Item("Mua ba lo  (-$" + BackpackPrice + ", tui len " + BagBig + " mon)", delegate
         {
             if (Game.Player.Money < BackpackPrice) Notify("Khong du tien ($" + BackpackPrice + ").");
-            else { Game.Player.Money = Game.Player.Money - BackpackPrice; hasBackpack = true; Notify("Da co ba lo: tui chua " + BagBig + " mon."); Save(); }
+            else if (PayCash(BackpackPrice, "shopping", "mua ba lo")) { hasBackpack = true; Notify("Da co ba lo: tui chua " + BagBig + " mon."); Save(); }
+            else Notify("Giao dich mua ba lo khong thanh cong.");
             ShowBag();
         });
         Item("Quay lai", delegate { ShowMain(); });
