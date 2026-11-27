@@ -16,10 +16,16 @@ var resident: Variant
 var player: Node2D
 var locations := {
 	"home.godot": Vector2(170, 400),
+	"home.interior.godot": Vector2(240, 260),
 	"work.godot": Vector2(690, 190),
-	"park.godot": Vector2(470, 420)
+	"work.interior.godot": Vector2(760, 300),
+	"park.godot": Vector2(470, 420),
+	"bed.anchor.godot": Vector2(300, 260),
+	"fridge.anchor.godot": Vector2(210, 310),
+	"counter.anchor.godot": Vector2(740, 320)
 }
-var labels := {"home.godot": "HOME", "work.godot": "WORK", "park.godot": "PARK"}
+var labels := {"home.godot": "HOME DOOR", "home.interior.godot": "HOME INTERIOR", "work.godot": "CAFE DOOR", "work.interior.godot": "CAFE INTERIOR", "park.godot": "PARK"}
+var world_target_points := {"home.godot": "building.home.godot", "work.godot": "building.cafe.godot", "bed.anchor.godot": "object.bed.godot", "fridge.anchor.godot": "object.fridge.godot", "counter.anchor.godot": "object.counter.godot"}
 var http: HTTPRequest
 var status_text := "Waiting for Engine Host…"
 var nearby := false
@@ -39,6 +45,10 @@ func _ready() -> void:
 	set_process(true)
 	_boot.call_deferred()
 
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_E and not busy:
+		_interact_nearest_world_target.call_deferred()
+
 func _process(_delta: float) -> void:
 	var movement := Input.get_vector("ui_left", "ui_right", "ui_up", "ui_down")
 	player.position += movement * 190.0 * _delta
@@ -48,10 +58,12 @@ func _process(_delta: float) -> void:
 		_interact.call_deferred()
 
 func _draw() -> void:
-	for location_id in locations:
+	for location_id in labels:
 		var p: Vector2 = locations[location_id]
 		draw_rect(Rect2(p - Vector2(35, 25), Vector2(70, 50)), Color(0.18, 0.22, 0.27), true)
-		draw_string(ThemeDB.fallback_font, p + Vector2(-25, 42), labels[location_id], HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color.WHITE)
+		draw_string(ThemeDB.fallback_font, p + Vector2(-34, 42), labels[location_id], HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color.WHITE)
+	for anchor in ["bed.anchor.godot", "fridge.anchor.godot", "counter.anchor.godot"]:
+		draw_circle(locations[anchor], 7.0, Color(0.2, 0.75, 0.85))
 	draw_circle(player.position, 85.0, Color(0.2, 0.8, 0.5, 0.08))
 	draw_circle(player.position, 10.0, Color(0.95, 0.72, 0.15))
 	draw_string(ThemeDB.fallback_font, Vector2(20, 35), "GTA VIET LIFE — GODOT SECOND ADAPTER", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color.WHITE)
@@ -122,17 +134,103 @@ func _boot() -> void:
 	if profile.is_empty() or not profile.get("registered", false):
 		status_text = "NPC registration failed (identity conflict or Host logs)."
 		return
-	status_text = "Connected — same game-neutral NPC kernel; Godot renders and executes."
+	if not await _register_world_catalog():
+		status_text = "World catalog registration failed."
+		return
+	status_text = "Connected — NPC, building, door and object commands use the canonical Host."
 	_run_adapter_loop.call_deferred()
 
 func _run_adapter_loop() -> void:
 	while is_inside_tree():
 		await _heartbeat()
 		await _poll_commands()
+		await _poll_world_commands()
 		await get_tree().create_timer(POLL_SECONDS).timeout
 
 func _heartbeat() -> void:
 	await _request("/engine/v1/heartbeat", {"request_id": _next_request_id("heartbeat"), "session_id": session_id})
+
+func _register_world_catalog() -> bool:
+	var home := await _request("/engine/v1/world/buildings", {
+		"request_id": _next_request_id("building-home"),
+		"building_id": "building.home.godot", "category": "residential", "name": "Minh An home",
+		"adapter_maps": {ADAPTER_ID: {"entrance": "home.godot", "interior": "home.interior.godot"}},
+		"interactions": ["enter", "exit", "inspect"]
+	})
+	if home.is_empty() or not home.get("registered", false):
+		return false
+	var cafe := await _request("/engine/v1/world/buildings", {
+		"request_id": _next_request_id("building-cafe"),
+		"building_id": "building.cafe.godot", "category": "workplace", "name": "Neighborhood cafe",
+		"adapter_maps": {ADAPTER_ID: {"entrance": "work.godot", "interior": "work.interior.godot"}},
+		"interactions": ["enter", "exit", "inspect", "open", "close"]
+	})
+	if cafe.is_empty() or not cafe.get("registered", false):
+		return false
+	for item in [
+		{"id": "object.bed.godot", "building": "building.home.godot", "kind": "bed", "anchor": "bed.anchor.godot"},
+		{"id": "object.fridge.godot", "building": "building.home.godot", "kind": "fridge", "anchor": "fridge.anchor.godot"},
+		{"id": "object.counter.godot", "building": "building.cafe.godot", "kind": "counter", "anchor": "counter.anchor.godot"}
+	]:
+		var result := await _request("/engine/v1/world/objects", {
+			"request_id": _next_request_id("object"),
+			"object_id": item["id"], "building_id": item["building"], "kind": item["kind"],
+			"adapter_anchors": {ADAPTER_ID: item["anchor"]}, "initial_state": {"uses": 0}
+		})
+		if result.is_empty() or not result.get("registered", false):
+			return false
+	return true
+
+func _interact_nearest_world_target() -> void:
+	var best_id := ""
+	var best_kind := ""
+	var best_action := ""
+	var best_distance := 58.0
+	for semantic in world_target_points:
+		var d: float = player.global_position.distance_to(locations[semantic])
+		if d < best_distance:
+			best_distance = d
+			best_id = world_target_points[semantic]
+			best_kind = "building" if best_id.begins_with("building.") else "object"
+			best_action = "enter" if best_kind == "building" else "use"
+	if best_id == "":
+		return
+	var response := await _request("/engine/v1/world/interact", {
+		"request_id": _next_request_id("world-interaction"),
+		"actor_id": PLAYER_ID, "target_kind": best_kind, "target_id": best_id,
+		"action": best_action, "adapter_id": ADAPTER_ID
+	})
+	if response.get("accepted", false):
+		status_text = "World action queued: " + best_action + " " + best_id
+	else:
+		status_text = "World interaction rejected by Engine Host."
+
+func _poll_world_commands() -> void:
+	var result := await _request("/engine/v1/world/commands")
+	for command in result.get("commands", []):
+		var payload: Dictionary = command.get("payload", {})
+		if payload.get("adapter_id", "") != ADAPTER_ID:
+			continue
+		var action: String = str(payload.get("action", ""))
+		var semantic: String = str(payload.get("semantic_target", ""))
+		var success := locations.has(semantic)
+		var outcome := "unsupported"
+		if success and command.get("command_type", "") == "space.transition":
+			player.position = locations[semantic]
+			outcome = "entered_or_exited_space"
+			status_text = "Physical space transition completed: " + semantic
+		elif success and command.get("command_type", "") == "interaction.use_object":
+			player.position = locations[semantic]
+			outcome = "object_interaction_executed"
+			status_text = "Used world object: " + str(payload.get("target_id", ""))
+		else:
+			success = false
+		await _request("/engine/v1/world/commands/ack", {
+			"request_id": _next_request_id("world-ack"),
+			"command_id": command.get("command_id", ""),
+			"result": {"success": success, "status": "completed" if success else "unsupported",
+				"outcome": outcome, "adapter_id": ADAPTER_ID}
+		})
 
 func _poll_commands() -> void:
 	var result := await _request("/engine/v1/adapter/commands")
