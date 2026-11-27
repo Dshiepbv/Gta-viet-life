@@ -22,6 +22,12 @@ public class GtaVietLifeCore : Script
     static readonly object SaveLock = new object();
 
     string server = "http://127.0.0.1:5577";
+    string hostServer = "http://127.0.0.1:5580";
+    string hostSessionId = Guid.NewGuid().ToString("N");
+    string hostToken = "";
+    readonly object HostLock = new object();
+    bool hostConnected, hostConnecting;
+    int nextHostHeartbeat;
     bool forward = true, logEvents = true, forwarding;
     long gameDay, lastSeenSeq;
     int lastMinute = -1, nextPublish, nextForward, nextSave;
@@ -32,6 +38,9 @@ public class GtaVietLifeCore : Script
     {
         int port = Settings.GetValue("Bridge", "Port", 5577);
         server = "http://127.0.0.1:" + port;
+        int enginePort = Settings.GetValue("Engine", "Port", 5580);
+        hostServer = "http://127.0.0.1:" + enginePort;
+        hostToken = ReadHostToken();
         forward = Settings.GetValue("Core", "ForwardEventsToBridge", true);
         logEvents = Settings.GetValue("Core", "LogEvents", true);
         foreach (string m in Modules) Set("GVL.Mod." + m, Settings.GetValue("Modules", m, true));
@@ -48,7 +57,8 @@ public class GtaVietLifeCore : Script
         }
         Set("GVL.CoreVersion", 2);
         Tick += OnTick;
-        Aborted += delegate { Save(); };
+        Aborted += delegate { CloseHostSession(); Save(); };
+        Task.Run(delegate { RegisterHostSession(); });
     }
 
     static object Get(string k) { try { return AppDomain.CurrentDomain.GetData(k); } catch { return null; } }
@@ -89,6 +99,7 @@ public class GtaVietLifeCore : Script
     void OnTick(object sender, EventArgs e)
     {
         int now = Game.GameTime;
+        MaintainHostSession(now);
         TimeSpan t = World.CurrentTimeOfDay;
         int minute = t.Hours * 60 + t.Minutes;
         if (lastMinute >= 0 && minute < lastMinute && lastMinute - minute > 600)
@@ -258,6 +269,90 @@ public class GtaVietLifeCore : Script
             return true;
         }
         catch (Exception ex) { Log("load " + path + " loi: " + ex.Message); return false; }
+    }
+
+    string ReadHostToken()
+    {
+        try
+        {
+            string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "GtaVietLife", "host.token");
+            return File.Exists(path) ? File.ReadAllText(path, Encoding.UTF8).Trim() : "";
+        }
+        catch { return ""; }
+    }
+
+    void MaintainHostSession(int now)
+    {
+        if (now < nextHostHeartbeat) return;
+        nextHostHeartbeat = now + 5000;
+        lock (HostLock)
+        {
+            if (hostConnecting) return;
+            hostConnecting = true;
+        }
+        Task.Run(delegate
+        {
+            try
+            {
+                if (!hostConnected) RegisterHostSession();
+                else SendHostHeartbeat();
+            }
+            catch (Exception ex) { hostConnected = false; Log("engine host heartbeat loi: " + ex.Message); }
+            finally { lock (HostLock) hostConnecting = false; }
+        });
+    }
+
+    void RegisterHostSession()
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(hostToken)) hostToken = ReadHostToken();
+            if (string.IsNullOrEmpty(hostToken)) throw new Exception("khong tim thay host.token");
+            string body = "{\"protocol\":\"gvl-engine/1\",\"session_id\":\"" + hostSessionId +
+                "\",\"adapter\":{\"id\":\"gta5.shvdn\",\"version\":\"0.1.0\",\"base_game\":\"gta5\",\"base_game_build\":\"unknown\"},\"capabilities\":[\"adapter.session\"]}";
+            using (WebClient wc = new WebClient())
+            {
+                wc.Proxy = null; wc.Encoding = Encoding.UTF8;
+                wc.Headers[HttpRequestHeader.ContentType] = "application/json; charset=utf-8";
+                wc.Headers["X-GVL-Token"] = hostToken;
+                string response = wc.UploadString(hostServer + "/engine/v1/handshake", "POST", body);
+                if (response.IndexOf("\"accepted\":true", StringComparison.OrdinalIgnoreCase) < 0)
+                    throw new Exception("host tu choi handshake: " + response);
+            }
+            hostConnected = true;
+            Log("engine host handshake thanh cong, session=" + hostSessionId);
+        }
+        catch (Exception ex) { hostConnected = false; Log("engine host handshake chua thanh cong: " + ex.Message); }
+    }
+
+    void SendHostHeartbeat()
+    {
+        string body = "{\"session_id\":\"" + hostSessionId + "\"}";
+        using (WebClient wc = new WebClient())
+        {
+            wc.Proxy = null; wc.Encoding = Encoding.UTF8;
+            wc.Headers[HttpRequestHeader.ContentType] = "application/json; charset=utf-8";
+            wc.Headers["X-GVL-Token"] = hostToken;
+            string response = wc.UploadString(hostServer + "/engine/v1/heartbeat", "POST", body);
+            if (response.IndexOf("\"accepted\":true", StringComparison.OrdinalIgnoreCase) < 0)
+                throw new Exception("host heartbeat bi tu choi: " + response);
+        }
+    }
+
+    void CloseHostSession()
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(hostToken)) return;
+            using (WebClient wc = new WebClient())
+            {
+                wc.Proxy = null; wc.Encoding = Encoding.UTF8;
+                wc.Headers[HttpRequestHeader.ContentType] = "application/json; charset=utf-8";
+                wc.Headers["X-GVL-Token"] = hostToken;
+                wc.UploadString(hostServer + "/engine/v1/close", "POST", "{\"session_id\":\"" + hostSessionId + "\"}");
+            }
+        }
+        catch { }
     }
 
     static void Log(string msg)
