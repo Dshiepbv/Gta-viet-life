@@ -35,7 +35,7 @@ public class GtaVietLifeCore : Script
     readonly object EngineCommandLock = new object();
     readonly HashSet<string> queuedEngineCommandIds = new HashSet<string>();
     bool forward = true, logEvents = true, forwarding;
-    long gameDay, lastSeenSeq;
+    long gameDay, lastSeenSeq, currentWorldMinute;
     int lastMinute = -1, nextPublish, nextForward, nextSave;
     readonly List<string> outbox = new List<string>();
     readonly long[] clock = new long[6];
@@ -106,9 +106,6 @@ public class GtaVietLifeCore : Script
     void OnTick(object sender, EventArgs e)
     {
         int now = Game.GameTime;
-        MaintainHostSession(now);
-        if (hostConnected && now > nextResidentSync) { nextResidentSync = now + 10000; SyncResidentProfiles(); }
-        if (hostConnected && now > nextEngineCommandPoll) { nextEngineCommandPoll = now + 2000; PollEngineCommands(); }
         TimeSpan t = World.CurrentTimeOfDay;
         int minute = t.Hours * 60 + t.Minutes;
         if (lastMinute >= 0 && minute < lastMinute && lastMinute - minute > 600)
@@ -118,6 +115,10 @@ public class GtaVietLifeCore : Script
             Save();
         }
         lastMinute = minute;
+        currentWorldMinute = gameDay * 1440L + minute;
+        MaintainHostSession(now);
+        if (hostConnected && now > nextResidentSync) { nextResidentSync = now + 10000; SyncResidentProfiles(); }
+        if (hostConnected && now > nextEngineCommandPoll) { nextEngineCommandPoll = now + 2000; PollEngineCommands(); }
 
         if (now > nextPublish)
         {
@@ -344,7 +345,7 @@ public class GtaVietLifeCore : Script
             }
             catch { }
             string body = "{\"protocol\":\"gvl-engine/1\",\"request_id\":\"" + Guid.NewGuid().ToString("N") + "\",\"session_id\":\"" + hostSessionId +
-                "\",\"adapter\":{\"id\":\"gta5.shvdn\",\"version\":\"0.1.0\",\"base_game\":\"" + gameEdition + "\",\"base_game_build\":\"" + gameVersion +
+                "\",\"world_minute\":" + currentWorldMinute.ToString(CultureInfo.InvariantCulture) + ",\"adapter\":{\"id\":\"gta5.shvdn\",\"version\":\"0.1.0\",\"base_game\":\"" + gameEdition + "\",\"base_game_build\":\"" + gameVersion +
                 "\"},\"capabilities\":[\"adapter.session\",\"adapter.command_poll\",\"adapter.actor_activity\"]}";
             using (WebClient wc = new HostWebClient())
             {
@@ -504,7 +505,8 @@ public class GtaVietLifeCore : Script
 
     void SendHostHeartbeat()
     {
-        string body = "{\"request_id\":\"" + Guid.NewGuid().ToString("N") + "\",\"session_id\":\"" + hostSessionId + "\"}";
+        string body = "{\"request_id\":\"" + Guid.NewGuid().ToString("N") + "\",\"session_id\":\"" + hostSessionId +
+            "\",\"world_minute\":" + currentWorldMinute.ToString(CultureInfo.InvariantCulture) + "}";
         using (WebClient wc = new HostWebClient())
         {
             wc.Proxy = null; wc.Encoding = Encoding.UTF8;
