@@ -190,7 +190,14 @@ public class GtaVietLife : Script
         Task.Run(() =>
         {
             string resp;
-            try { resp = Post("/stop", ctx); }
+            try
+            {
+                string engineNpcId = ctx["engine_npc_id"];
+                Func<string, string, string> readEngineContext = AppDomain.CurrentDomain.GetData("GVL.Engine.Context") as Func<string, string, string>;
+                if (!string.IsNullOrEmpty(engineNpcId) && readEngineContext != null)
+                    ctx["engine_context"] = readEngineContext(engineNpcId, "player.main");
+                resp = Post("/stop", ctx);
+            }
             catch (Exception ex)
             {
                 Log("/stop loi: " + ex);
@@ -256,7 +263,7 @@ public class GtaVietLife : Script
         c["following"] = followers.Contains(p.Handle) ? "1" : "0";
         c["weapon"] = me.Weapons.Current != null && me.Weapons.Current.Hash != WeaponHash.Unarmed ? "1" : "0";
         string[] ri = ResidentInfo(p);
-        if (ri != null) { c["name"] = ri[1]; c["res_activity"] = ri[2]; }
+        if (ri != null) { c["name"] = ri[1]; c["res_activity"] = ri[2]; c["engine_npc_id"] = ri[0]; }
         return c;
     }
 
