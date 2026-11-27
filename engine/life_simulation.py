@@ -44,6 +44,11 @@ class NPCProfile:
     traits: Sequence[str] = ()
     schedule: Sequence[ScheduleBlock] = ()
     life_goal: str = "career"
+    household_id: str = ""
+    age_years: int = 30
+    biography: str = ""
+    skills: Dict[str, float] = field(default_factory=dict)
+    knowledge: Sequence[dict] = ()
 
     def __post_init__(self) -> None:
         if not self.npc_id or len(self.npc_id) > 128:
@@ -52,6 +57,22 @@ class NPCProfile:
             raise ValueError("display_name and home_location_id are required")
         if self.life_goal not in ("career", "health", "social"):
             raise ValueError("unsupported_life_goal")
+        if isinstance(self.age_years, bool) or not isinstance(self.age_years, int) or not 0 <= self.age_years <= 120:
+            raise ValueError("invalid_age_years")
+        if len(self.biography) > 2000 or len(self.household_id) > 128:
+            raise ValueError("profile_text_too_long")
+        if len(self.skills) > 64 or any(not isinstance(k, str) or not k or not isinstance(v, (int, float)) or isinstance(v, bool) or not 0 <= v <= 100 for k, v in self.skills.items()):
+            raise ValueError("invalid_skill_profile")
+        if len(self.knowledge) > 128:
+            raise ValueError("too_many_knowledge_facts")
+        for fact in self.knowledge:
+            if not isinstance(fact, dict) or not isinstance(fact.get("fact"), str) or not fact["fact"] or len(fact["fact"]) > 500:
+                raise ValueError("invalid_knowledge_fact")
+            if not isinstance(fact.get("source", ""), str) or len(fact.get("source", "")) > 128:
+                raise ValueError("invalid_knowledge_source")
+            confidence = fact.get("confidence", 1.0)
+            if isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not 0 <= confidence <= 1:
+                raise ValueError("invalid_knowledge_confidence")
         if len(self.schedule) > 32:
             raise ValueError("too_many_schedule_blocks")
         ordered = sorted(self.schedule, key=lambda block: block.start_minute)
@@ -135,7 +156,9 @@ class SQLiteLifeStore:
                     home_location_id=p["home_location_id"], occupation=p["occupation"],
                     traits=tuple(p.get("traits", ())),
                     schedule=tuple(ScheduleBlock(**b) for b in p.get("schedule", ())),
-                    life_goal=p.get("life_goal", "career"),
+                    life_goal=p.get("life_goal", "career"), household_id=p.get("household_id", ""),
+                    age_years=p.get("age_years", 30), biography=p.get("biography", ""),
+                    skills=p.get("skills", {}), knowledge=p.get("knowledge", ()),
                 )
                 s = json.loads(row["state_json"])
                 result.append(NPCState(
@@ -206,6 +229,33 @@ class SQLiteLifeStore:
                     "INSERT OR IGNORE INTO request_dedup(request_id,response_json) VALUES(?,?)",
                     (request_id, json.dumps(response, ensure_ascii=False)),
                 )
+
+    def dialogue_context(self, npc_id: str, player_id: str, topic: str = "") -> dict:
+        """Return bounded, provenance-aware facts for a cognition provider; never mutate state."""
+        if not isinstance(topic, str) or len(topic) > 500:
+            raise ValueError("invalid_dialogue_topic")
+        with self._lock:
+            state = self.npcs.get(npc_id)
+            if state is None:
+                raise KeyError("npc_not_found")
+            profile = state.profile
+            return {
+                "identity": {"npc_id": profile.npc_id, "name": profile.display_name,
+                             "age_years": profile.age_years, "occupation": profile.occupation,
+                             "household_id": profile.household_id, "biography": profile.biography,
+                             "traits": list(profile.traits), "skills": dict(profile.skills),
+                             "life_goal": profile.life_goal, "goal_progress": state.goal_progress},
+                "current_state": {"activity": state.current_activity, "location_id": state.location_id,
+                                  "needs": {"hunger": state.hunger, "energy": state.energy,
+                                            "social": state.social, "stress": state.stress},
+                                  "simulation_minute": self.simulation_minute},
+                "relationship": {"player_id": player_id, "affinity": state.affinity.get(player_id, 0.0)},
+                "known_facts": list(profile.knowledge),
+                "recent_memories": [dict(m) for m in state.memories[-10:]
+                                    if m.get("participant_id") in (None, player_id)],
+                "topic": topic,
+                "knowledge_boundary": "Only known_facts and recent_memories are established knowledge. Do not claim unlisted events, unseen locations or private facts. Any proposed world action must be validated by the Engine.",
+            }
 
     def pending_commands(self, limit: int = 50) -> List[dict]:
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 200:
@@ -375,11 +425,13 @@ class LifeSimulationEngine:
             return result
 
     def interact(self, npc_id: str, player_id: str, interaction: str = "talk",
-                 request_id: Optional[str] = None) -> dict:
+                 request_id: Optional[str] = None, message: str = "") -> dict:
         if interaction != "talk":
             raise ValueError("unsupported_interaction")
         if not player_id or len(player_id) > 128:
             raise ValueError("invalid_player_id")
+        if not isinstance(message, str) or len(message) > 2000:
+            raise ValueError("invalid_player_message")
         if request_id is not None and (not request_id or len(request_id) > 128):
             raise ValueError("invalid_request_id")
         with self._lock:
@@ -395,15 +447,14 @@ class LifeSimulationEngine:
             state.affinity[player_id] = self._clamp(old + 2.0)
             state.social = self._clamp(state.social + 12.0)
             memory = {"minute": self.simulation_minute, "kind": "player_conversation",
-                      "participant_id": player_id, "summary": "Player spoke with NPC"}
+                      "participant_id": player_id, "summary": message[:500] if message else "Player spoke with NPC",
+                      "source": "direct_player_interaction", "confidence": 1.0}
             state.memories.append(memory)
             state.memories = state.memories[-100:]
             self.events = []
             result = {"npc_id": npc_id, "interaction": interaction, "affinity": state.affinity[player_id],
                       "social_need": state.social, "memory_recorded": True,
-                      "response_context": {"name": state.profile.display_name,
-                                           "occupation": state.profile.occupation,
-                                           "activity": state.current_activity}}
+                      "response_context": self.dialogue_context(npc_id, player_id, message)}
             self._record(state, "conversation", {"player_id": player_id, "interaction": interaction})
             request_result = (dedup_key, result) if dedup_key else None
             self.store.save(self.simulation_minute, [state], self.events, request_result)
