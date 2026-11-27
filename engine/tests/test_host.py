@@ -96,6 +96,29 @@ class HostTests(unittest.TestCase):
   state=self.state.simulation.npcs["npc.voice"]
   self.assertEqual(state.memories[-2]["summary"],"Quán đông không?")
   self.assertEqual(state.memories[-1]["summary"],"Cũng hơi đông.")
+ def test_native_business_snapshot_sync_endpoint(self):
+  self.assertEqual(self.req("/engine/v1/world/buildings",{
+   "request_id":"sync-building","building_id":"building.sync","category":"commercial","name":"Sync shop",
+   "adapter_maps":{"gta5.shvdn":{"entrance":"shop.sync.door"}},"interactions":["enter"]})[0],201)
+  self.req("/engine/v1/world/accounts/ensure",{"request_id":"sync-owner","account_id":"account.sync.owner",
+   "owner_id":"player.main","opening_balance":0,"allow_negative":True})
+  self.req("/engine/v1/world/accounts/ensure",{"request_id":"sync-cash","account_id":"account.sync.cash",
+   "owner_id":"business.sync","opening_balance":50,"allow_negative":True})
+  self.assertEqual(self.req("/engine/v1/world/properties",{"request_id":"sync-property","property_id":"property.sync",
+   "building_id":"building.sync","owner_account_id":"account.sync.owner","value":500,"rent":0})[0],201)
+  self.assertEqual(self.req("/engine/v1/world/businesses",{"request_id":"sync-business","business_id":"business.sync",
+   "property_id":"property.sync","owner_account_id":"account.sync.owner","cash_account_id":"account.sync.cash",
+   "category":"retail"})[0],201)
+  payload={"request_id":"sync-state-1","business_id":"business.sync","adapter_id":"gta5.shvdn",
+           "cash_balance":75,"inventory":{"stock":12},"is_open":True}
+  code,result=self.req("/engine/v1/world/businesses/sync",payload)
+  self.assertEqual(code,200); self.assertEqual(result["cash_delta"],25)
+  code,replay=self.req("/engine/v1/world/businesses/sync",payload)
+  self.assertEqual(code,200); self.assertEqual(replay,result)
+  self.assertEqual(self.state.society.account("account.sync.cash")["balance"],75)
+  code,snapshot=self.req("/engine/v1/world/snapshot")
+  self.assertEqual(code,200)
+  self.assertEqual(snapshot["businesses"][0]["inventory"]["stock"],12)
  def test_context_endpoint_exposes_bounded_canonical_facts(self):
   npc={"npc_id":"npc.context-api","display_name":"Mai","home_location_id":"home.api","occupation":"nurse",
        "age_years":29,"household_id":"household.1","biography":"Works at the clinic.",
