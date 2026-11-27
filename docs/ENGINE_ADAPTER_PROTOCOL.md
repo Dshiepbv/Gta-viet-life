@@ -11,7 +11,7 @@ The in-process `engine.adapters.GameAdapter` abstraction is for the engine host 
 
 ## 2. Transport
 
-Initial GTA implementation: localhost HTTP on the existing bridge service, bound only to `127.0.0.1`. The transport is replaceable; message semantics are not tied to HTTP. A future adapter may use named pipes or another local IPC transport.
+Initial GTA implementation: a dedicated Engine Host HTTP service on `127.0.0.1:5580`. The legacy AI/voice bridge remains a separate service on `127.0.0.1:5577` and is not the authority for this protocol. The transport is replaceable; message semantics are not tied to HTTP. A future adapter may use named pipes or another local IPC transport.
 
 All requests use JSON UTF-8, include `protocol: "gvl-engine/1"`, and carry a unique `request_id`. The server rejects unknown major protocol versions. Commands are idempotent by `command_id`.
 
@@ -50,7 +50,24 @@ Request:
 
 The engine responds with the accepted protocol, required capabilities, negotiated limits and any unsupported capability list. Capability claims must reflect tested implementation, not planned features.
 
-## 4. Observation submission
+## 4. Bootstrap and health endpoints
+
+The current Launcher/Host/Adapter bootstrap implements these endpoints:
+
+- `GET /health` — unauthenticated process health only; loopback binding is mandatory.
+- `GET /engine/v1/status` — authenticated runtime and active adapter-session status.
+- `POST /engine/v1/handshake` — authenticated session registration.
+- `POST /engine/v1/heartbeat` — authenticated liveness renewal.
+- `POST /engine/v1/close` — authenticated session close.
+- `POST /engine/v1/shutdown` — authenticated graceful Host shutdown.
+
+Every POST body must contain a non-empty unique `request_id`. Authenticated requests use the `X-GVL-Token` header. The Launcher creates a random per-user token at `%LOCALAPPDATA%/GtaVietLife/host.token`; the game Adapter reads the same token. The Host rejects non-loopback bind addresses.
+
+The current GTA Core reports only the capability `adapter.session`. It does not claim actor observation, spawning, navigation, interiors or vehicle control. Those capabilities remain unavailable until the corresponding in-world command/result path is implemented and verified.
+
+**Implementation boundary:** the current Host keeps one active adapter session in memory and provides lifecycle/connection status. It is not yet the complete authoritative NPC/world simulation or durable domain store.
+
+## 5. Observation submission
 
 `POST /engine/v1/observe`
 
@@ -64,7 +81,7 @@ A request contains:
 
 Native entity handles, model hashes and native pointers must never become canonical engine IDs. The adapter maps them to stable session-scoped IDs and retains the native mapping privately.
 
-## 5. Command polling and results
+## 6. Command polling and results
 
 `GET /engine/v1/commands?adapter_id=...`
 
@@ -93,7 +110,7 @@ The adapter must return a result for every accepted command:
 
 A result distinguishes `completed`, `rejected`, `failed`, `cancelled` and `unsupported`. A command is not successful merely because it was queued. The adapter reports the observed physical outcome.
 
-## 6. Identity and location mapping
+## 7. Identity and location mapping
 
 - Engine actor IDs are stable across sessions.
 - Native entity handles are transient and must be remapped after game reload.
@@ -101,7 +118,7 @@ A result distinguishes `completed`, `rejected`, `failed`, `cancelled` and `unsup
 - Adapter-owned mapping tables are disposable and rebuildable.
 - Coordinates must include a declared coordinate-space ID and unit. No cross-game coordinate is comparable without an explicit mapping.
 
-## 7. Failure semantics
+## 8. Failure semantics
 
 - Duplicate request or command IDs must not duplicate state changes.
 - Expired commands are rejected with a reason.
@@ -110,7 +127,7 @@ A result distinguishes `completed`, `rejected`, `failed`, `cancelled` and `unsup
 - On reconnect, the adapter sends a fresh observation and mapping revision; the engine reconciles canonical state before issuing physical commands.
 - The engine never assumes a spawn, animation, door transition or movement completed until the adapter reports the result.
 
-## 8. Security
+## 9. Security
 
 - Bind local transport to loopback only.
 - Do not expose the engine control endpoint to LAN or public internet by default.
@@ -118,6 +135,6 @@ A result distinguishes `completed`, `rejected`, `failed`, `cancelled` and `unsup
 - Do not accept arbitrary script, native function names or executable code from AI output.
 - Keep AI-generated plans separate from validated engine commands.
 
-## 9. Compatibility policy
+## 10. Compatibility policy
 
 Minor protocol additions are backward-compatible and capability-negotiated. Breaking semantic changes require a new major protocol version. Each adapter must publish the exact base-game build and adapter version used for acceptance tests.
