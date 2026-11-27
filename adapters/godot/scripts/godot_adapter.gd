@@ -108,7 +108,7 @@ func _boot() -> void:
 		"protocol": PROTOCOL,
 		"session_id": session_id,
 		"adapter": {"id": ADAPTER_ID, "version": ADAPTER_VERSION, "base_game": "Godot 4", "base_game_build": Engine.get_version_info().get("string", "unknown")},
-		"capabilities": ["adapter.session", "adapter.command_poll", "adapter.actor_activity", "adapter.actor_interaction"]
+		"capabilities": ["adapter.session", "adapter.command_poll", "adapter.actor_activity", "adapter.actor_interaction", "adapter.world_interaction", "adapter.space_transition", "adapter.object_interaction"]
 	})
 	if not hello.get("accepted", false):
 		status_text = "Engine Host handshake failed."
