@@ -26,7 +26,6 @@ var locations := {
 }
 var labels := {"home.godot": "HOME DOOR", "home.interior.godot": "HOME INTERIOR", "work.godot": "CAFE DOOR", "work.interior.godot": "CAFE INTERIOR", "park.godot": "PARK"}
 var world_target_points := {"home.godot": "building.home.godot", "home.interior.godot": "building.home.godot", "work.godot": "building.cafe.godot", "work.interior.godot": "building.cafe.godot", "bed.anchor.godot": "object.bed.godot", "fridge.anchor.godot": "object.fridge.godot", "counter.anchor.godot": "object.counter.godot"}
-var http: HTTPRequest
 var status_text := "Waiting for Engine Host…"
 var nearby := false
 var busy := false
@@ -34,8 +33,6 @@ var busy := false
 func _ready() -> void:
 	token = OS.get_environment("GVL_ENGINE_TOKEN").strip_edges()
 	session_id = "godot-" + str(Time.get_ticks_usec())
-	http = HTTPRequest.new()
-	add_child(http)
 	resident = ResidentScript.new()
 	resident.position = locations["home.godot"]
 	add_child(resident)
@@ -46,7 +43,7 @@ func _ready() -> void:
 	_boot.call_deferred()
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_E and not busy:
+	if event is InputEventKey and event.pressed and not event.echo and (event.keycode == KEY_E or event.physical_keycode == KEY_E) and not busy:
 		_interact_nearest_world_target.call_deferred()
 
 func _process(_delta: float) -> void:
@@ -80,15 +77,19 @@ func _request(path: String, payload: Dictionary = {}) -> Dictionary:
 	if token.length() < 32:
 		status_text = "Set GVL_ENGINE_TOKEN to the local Engine Host token."
 		return {}
+	var request := HTTPRequest.new()
+	add_child(request)
 	var headers := PackedStringArray(["Content-Type: application/json", "X-GVL-Token: " + token])
 	var body := ""
 	if not payload.is_empty():
 		body = JSON.stringify(payload)
-	var err := http.request(HOST + path, headers, HTTPClient.METHOD_GET if payload.is_empty() else HTTPClient.METHOD_POST, body)
+	var err := request.request(HOST + path, headers, HTTPClient.METHOD_GET if payload.is_empty() else HTTPClient.METHOD_POST, body)
 	if err != OK:
 		status_text = "HTTP request could not start: " + str(err)
+		request.queue_free()
 		return {}
-	var response: Array = await http.request_completed
+	var response: Array = await request.request_completed
+	request.queue_free()
 	var code: int = response[1]
 	if code < 200 or code >= 300:
 		status_text = "Engine Host returned HTTP " + str(code)
@@ -182,6 +183,7 @@ func _register_world_catalog() -> bool:
 	return true
 
 func _interact_nearest_world_target() -> void:
+	busy = true
 	var best_id := ""
 	var best_kind := ""
 	var best_action := ""
@@ -194,6 +196,7 @@ func _interact_nearest_world_target() -> void:
 			best_kind = "building" if best_id.begins_with("building.") else "object"
 			best_action = ("exit" if semantic.ends_with(".interior.godot") else "enter") if best_kind == "building" else "use"
 	if best_id == "":
+		busy = false
 		return
 	var response := await _request("/engine/v1/world/interact", {
 		"request_id": _next_request_id("world-interaction"),
@@ -204,6 +207,7 @@ func _interact_nearest_world_target() -> void:
 		status_text = "World action queued: " + best_action + " " + best_id
 	else:
 		status_text = "World interaction rejected by Engine Host."
+	busy = false
 
 func _poll_world_commands() -> void:
 	var result := await _request("/engine/v1/world/commands")
