@@ -3151,11 +3151,16 @@ public class GtaVietLifeWorld : Script
     {
         Queue<Dictionary<string, object>> queue = AppDomain.CurrentDomain.GetData("GVL.Engine.Commands") as Queue<Dictionary<string, object>>;
         if (queue == null) return;
-        for (int processed = 0; processed < 8; processed++)
+        int available;
+        lock (queue) available = queue.Count;
+        int processed = 0;
+        int examined = 0;
+        while (processed < 8 && examined < available)
         {
             Dictionary<string, object> command = null;
-            lock (queue) { if (queue.Count > 0) command = queue.Peek(); }
+            lock (queue) { if (queue.Count > 0) command = queue.Dequeue(); }
             if (command == null) return;
+            examined++;
             try
             {
                 string type = Convert.ToString(command.ContainsKey("command_type") ? command["command_type"] : "");
@@ -3165,23 +3170,38 @@ public class GtaVietLifeWorld : Script
                 if (type != "actor.set_activity" || payload == null || string.IsNullOrEmpty(npcId) || string.IsNullOrEmpty(commandId))
                 {
                     Log("bo qua lenh engine khong ho tro: " + commandId + " / " + type);
-                    lock (queue) if (queue.Count > 0 && object.ReferenceEquals(queue.Peek(), command)) queue.Dequeue();
                     continue;
                 }
                 Resident resident = null;
                 foreach (Resident item in residents) if ("res_" + item.Id == npcId) { resident = item; break; }
-                if (resident == null || resident.P == null || !resident.P.Exists()) return; // chua materialize: giu lenh cho den khi NPC hien dien
+                if (resident == null || resident.P == null || !resident.P.Exists())
+                {
+                    lock (queue) queue.Enqueue(command);
+                    continue; // NPC chua materialize: hoan lenh, khong chan cac NPC khac
+                }
                 bool followingPlayer = false;
                 try { followingPlayer = Game.Player.Character.PedGroup.Contains(resident.P); } catch { }
-                if (resident.P.IsPositionFrozen || followingPlayer) return; // khong cat ngang hoi thoai/di theo nguoi choi
+                if (resident.P.IsPositionFrozen || followingPlayer)
+                {
+                    lock (queue) queue.Enqueue(command);
+                    continue; // khong cat ngang hoi thoai/di theo nguoi choi
+                }
                 string activity = Convert.ToString(payload.ContainsKey("activity") ? payload["activity"] : "");
                 string locationId = Convert.ToString(payload.ContainsKey("location_id") ? payload["location_id"] : "");
-                if (!ApplyEngineResidentActivity(resident, activity, locationId, now)) return;
-                lock (queue) if (queue.Count > 0 && object.ReferenceEquals(queue.Peek(), command)) queue.Dequeue();
+                if (!ApplyEngineResidentActivity(resident, activity, locationId, now))
+                {
+                    lock (queue) queue.Enqueue(command);
+                    continue;
+                }
                 Action<string> ack = AppDomain.CurrentDomain.GetData("GVL.Engine.Ack") as Action<string>;
                 if (ack != null) ack(commandId);
+                processed++;
             }
-            catch (Exception ex) { Log("thuc thi lenh NPC tu engine loi: " + ex.Message); return; }
+            catch (Exception ex)
+            {
+                Log("thuc thi lenh NPC tu engine loi: " + ex.Message);
+                lock (queue) queue.Enqueue(command);
+            }
         }
     }
 
