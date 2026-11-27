@@ -20,7 +20,8 @@ class HostTests(unittest.TestCase):
  def test_handshake_heartbeat(self):
   p={"protocol":PROTOCOL,"request_id":"req-1","session_id":"s1","adapter":{"id":"gta5.shvdn","version":"0.1.0"},"capabilities":["adapter.session"]}
   code,r=self.req("/engine/v1/handshake",p); self.assertEqual(code,200); self.assertTrue(r["accepted"])
-  self.assertTrue(self.state.snapshot()["adapter_connected"]); self.assertTrue(self.state.heartbeat("s1"))
+  self.assertTrue(self.state.snapshot()["adapter_connected"]); self.assertFalse(self.state.adapter_is_connected())
+  self.assertTrue(self.state.heartbeat("s1"))
  def test_game_clock_drives_simulation_and_pauses_background_clock(self):
   p={"protocol":PROTOCOL,"request_id":"clock-handshake","session_id":"clock-session",
      "adapter":{"id":"gta5.shvdn","version":"0.1.0"},"capabilities":["adapter.session"],"world_minute":600}
