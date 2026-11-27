@@ -54,7 +54,12 @@ public partial class MainWindow:Window {
     finally{recovering=false;}
     return;
    }
-   if(connected)Set("ĐANG TRONG GAME · ĐÃ KẾT NỐI","Adapter đã bắt tay và gửi heartbeat tới Engine Host.");
+   if(connected){
+    var session=root.GetProperty("adapter_session");
+    var edition=session.GetProperty("base_game").GetString()??"gta5";
+    var build=session.GetProperty("base_game_build").GetString()??"unknown";
+    Set("ĐANG TRONG GAME · ĐÃ KẾT NỐI","Adapter đã bắt tay. Phiên bản game: "+edition+" / "+build+".");
+   }
    else if(ready)Set("SẴN SÀNG KHỞI CHẠY","Dịch vụ hoạt động. Mở GTA V để Adapter kết nối.");
   }catch(Exception ex){
    HostState.Text="Mất kết nối";Log("Poll "+ex.Message);

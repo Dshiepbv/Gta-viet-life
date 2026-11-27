@@ -29,11 +29,11 @@ public sealed class RuntimeManager:IDisposable {
   if(!HasNet48())return(false,"Máy chưa phát hiện .NET Framework 4.8 trở lên, là yêu cầu của ScriptHookVDotNet Enhanced.",sd);
   if(!HasVcRuntime())return(false,"Máy chưa phát hiện Microsoft Visual C++ Redistributable x64 (v14), là yêu cầu của ScriptHookVDotNet Enhanced.",sd);
   var shLog=Path.Combine(gd,"ScriptHookV.log");
-  if(File.Exists(shLog)){
-   var logText=File.ReadAllText(shLog);
-   if(logText.IndexOf("Unknown game version",StringComparison.OrdinalIgnoreCase)>=0)
-    return(false,"Script Hook V báo Unknown game version cho bản GTA hiện tại. Không thể báo sẵn sàng; cần chờ upstream hỗ trợ đúng bản game.",sd);
-  }
+  string scriptHookLog=File.Exists(shLog)?File.ReadAllText(shLog):"";
+  if(scriptHookLog.IndexOf("Unknown game version",StringComparison.OrdinalIgnoreCase)>=0)
+   return(false,"Script Hook V báo Unknown game version cho GTA build "+gameVersion+". Không thể báo sẵn sàng; cần chờ upstream hỗ trợ đúng bản game.",sd);
+  bool hookBuildConfirmed=scriptHookLog.Split(new[]{'\\r','\\n'},StringSplitOptions.RemoveEmptyEntries)
+   .Any(line=>line.IndexOf("Success",StringComparison.OrdinalIgnoreCase)>=0&&line.IndexOf(gameVersion,StringComparison.OrdinalIgnoreCase)>=0);
   var src=Path.Combine(root,"game");if(!Directory.Exists(src))return(false,"Thiếu gói module game trong bộ cài.",sd);
   Directory.CreateDirectory(sd);var backup=Path.Combine(data,"Backups",DateTime.Now.ToString("yyyyMMdd-HHmmss")+"-"+Guid.NewGuid().ToString("N"));
   foreach(var f in Directory.GetFiles(src,"GtaVietLife*.*")){
@@ -59,7 +59,7 @@ public sealed class RuntimeManager:IDisposable {
     Directory.CreateDirectory(Path.GetDirectoryName(dest)!);File.Copy(icon,dest,true);
    }
   }
-  string logState=File.Exists(shLog)&&File.ReadAllText(shLog).IndexOf("Success",StringComparison.OrdinalIgnoreCase)>=0?"Script Hook V đã ghi log thành công":"chưa có log xác nhận Script Hook V cho phiên game này";
+  string logState=hookBuildConfirmed?"Script Hook V đã xác nhận đúng build trong log":"chưa có log Success khớp chính xác build này; tương thích thực tế vẫn chưa được xác nhận";
   return(true,"GTA build "+gameVersion+"; đã phát hiện đủ bộ Script Hook V/ScriptHookVDotNet Enhanced và .NET/VC++ runtime; "+logState+". Kết nối Adapter trong game là bước xác nhận cuối. Save game và mod khác được giữ nguyên.",sd);
  }
  static bool HasNet48(){
