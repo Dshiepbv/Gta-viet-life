@@ -37,12 +37,10 @@ jobs:
           if($hash -ne "f10da8819fa6814fb0a04553567d2516934eac96b16af06ad8f315f0da00473a"){throw "SHVDN Enhanced pinned release checksum mismatch."}
           Expand-Archive shvdne.zip shvdne -Force
           $api3=Get-ChildItem shvdne -Recurse -Filter ScriptHookVDotNet3.dll | Select-Object -First 1
-          $api2=Get-ChildItem shvdne -Recurse -Filter ScriptHookVDotNet2.dll | Select-Object -First 1
-          if(!$api3 -or !$api2){throw "Pinned SHVDN Enhanced package does not contain the expected API assemblies."}
+          if(!$api3){throw "Pinned SHVDN Enhanced package does not contain ScriptHookVDotNet3.dll."}
           "SHVDN_API3=$($api3.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          "SHVDN_API2=$($api2.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - name: Compile modified GTA V Core against pinned SHVDN Enhanced API
-        run: dotnet build game/compile/GtaVietLifeCore.Compile.csproj -c Release -p:ShvdnApi3="${{ env.SHVDN_API3 }}" -p:ShvdnApi2="${{ env.SHVDN_API2 }}"
+        run: dotnet build game/compile/GtaVietLifeCore.Compile.csproj -c Release -p:ShvdnApi3="${{ env.SHVDN_API3 }}"
       - name: Publish Launcher
         run: dotnet publish launcher/GtaVietLife.Launcher/GtaVietLife.Launcher.csproj -c Release -r win-x64 --self-contained true -p:Version=${{ env.GVL_VERSION }} -p:AssemblyVersion=${{ env.GVL_VERSION }}.0 -p:FileVersion=${{ env.GVL_VERSION }}.0 -o publish/launcher
       - name: Publish updater
