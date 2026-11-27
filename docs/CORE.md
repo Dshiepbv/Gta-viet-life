@@ -8,7 +8,7 @@ Thread **Cá nhân** sở hữu tài liệu này và `game/GtaVietLifeCore.cs`. 
 2. **Không đổi định dạng save cũ.** Mỗi module có file `.sav` riêng (dạng `key=value`, số thập phân luôn dùng `CultureInfo.InvariantCulture`, vì máy Sếp dùng dấu phẩy).
 3. **Thiếu lõi vẫn chạy.** Mọi lệnh đọc bus phải chịu được giá trị `null`.
 4. **Mỗi module bật/tắt được** trong `GtaVietLifeCore.ini` mục `[Modules]`.
-5. **SQLite chỉ ở cầu nối Python** (`memory.db`, đã có sẵn). Trong game chỉ dùng file `key=value`.
+5. **SQLite chỉ ở các dịch vụ Python** (cầu nối AI và Engine Host). Trong game chỉ dùng file `key=value`; không nhúng SQLite vào các script SHVDN.
 
 ## Bus: AppDomain data
 
