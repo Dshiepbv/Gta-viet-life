@@ -148,6 +148,13 @@ def handler_for(state, log):
                     result=state.simulation.interact(
                         p.get("npc_id",""),p.get("player_id",""),p.get("interaction","talk"),rid,p.get("message",""))
                     return self.sendj(200,result)
+                if self.path=="/engine/v1/simulation/memory":
+                    dialogue=p.get("dialogue",{})
+                    if not isinstance(dialogue,dict): raise ValueError("dialogue_object_required")
+                    result=state.simulation.record_dialogue_memory(
+                        p.get("npc_id",""),p.get("player_id","player.main"),
+                        dialogue.get("player_message",""),dialogue.get("npc_reply",""),rid)
+                    return self.sendj(200,result)
                 if self.path=="/engine/v1/simulation/context":
                     result=state.simulation.dialogue_context(
                         p.get("npc_id",""),p.get("player_id",""),p.get("topic",""))
