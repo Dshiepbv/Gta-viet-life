@@ -274,4 +274,21 @@ class HostTests(unittest.TestCase):
   self.req("/engine/v1/simulation/advance",{"request_id":"work-hour-1","minutes":60})
   self.assertEqual(self.state.society.account("pay.employee")["balance"],50)
 
+ def test_family_and_social_relationships_are_canonical_for_player_and_npc(self):
+  player={"npc_id":"player.family","display_name":"Player","home_location_id":"home.family",
+          "occupation":"citizen","actor_kind":"player","household_id":"household.family"}
+  npc={"npc_id":"npc.family","display_name":"Relative","home_location_id":"home.family",
+       "occupation":"teacher","household_id":"household.family"}
+  self.req("/engine/v1/simulation/actors",{"request_id":"family-player","npc":player})
+  self.req("/engine/v1/simulation/actors",{"request_id":"family-npc","npc":npc})
+  code,relationship=self.req("/engine/v1/world/social/relationships",{"request_id":"family-link",
+       "actor_id":"player.family","target_id":"npc.family","relation_type":"sibling","strength":85})
+  self.assertEqual(code,200); self.assertEqual(relationship["relation_type"],"sibling")
+  snapshot=self.req("/engine/v1/world/snapshot")[1]
+  self.assertEqual(snapshot["relationships"][0]["actor_id"],"player.family")
+  player_state=self.state.simulation.npcs["player.family"]
+  npc_state=self.state.simulation.npcs["npc.family"]
+  self.assertEqual(player_state.affinity["npc.family"],85.0)
+  self.assertEqual(npc_state.affinity["player.family"],85.0)
+
 if __name__=="__main__":unittest.main()
