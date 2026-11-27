@@ -45,9 +45,12 @@ public sealed class RuntimeManager:IDisposable {
   return(true,"Đã phát hiện tệp ScriptHookVDotNet và cài module GTA Viet Life. Phiên bản runtime/game sẽ được xác nhận qua phiên Adapter; save game và mod khác được giữ nguyên.",sd);
  }
  public async Task StartAsync(CancellationToken ct){
-  StartHost();await WaitAsync("http://127.0.0.1:5580/health",30,ct);
-  StartBridge();await WaitAsync("http://127.0.0.1:5577/ping",180,ct);
+  if(!await HealthyAsync("http://127.0.0.1:5580/health",ct))StartHost();
+  await WaitAsync("http://127.0.0.1:5580/health",30,ct);
+  if(!await HealthyAsync("http://127.0.0.1:5577/ping",ct))StartBridge();
+  await WaitAsync("http://127.0.0.1:5577/ping",180,ct);
  }
+ async Task<bool> HealthyAsync(string url,CancellationToken ct){try{using var r=await http.GetAsync(url,ct);return r.IsSuccessStatusCode;}catch{return false;}}
  void StartHost(){
   var exe=Path.Combine(root,"runtime","engine","GtaVietLifeEngine.exe");if(!File.Exists(exe))throw new FileNotFoundException("Thiếu Engine Host đã đóng gói.",exe);
   if(host is{HasExited:false})return;

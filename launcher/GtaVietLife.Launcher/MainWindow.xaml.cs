@@ -7,7 +7,7 @@ using GtaVietLife.Launcher.Services;
 namespace GtaVietLife.Launcher;
 public partial class MainWindow:Window {
  readonly LauncherSettings settings=LauncherSettings.Load();readonly RuntimeManager runtime=new();
- readonly DispatcherTimer timer=new(){Interval=TimeSpan.FromSeconds(3)};bool busy,ready;CancellationTokenSource? cts;
+ readonly DispatcherTimer timer=new(){Interval=TimeSpan.FromSeconds(3)};bool busy,ready,recovering;CancellationTokenSource? cts;
  public MainWindow(){
   InitializeComponent();GamePathBox.Text=settings.GameExecutable;timer.Tick+=Poll;
   Loaded+=async(_,_)=>{
@@ -46,7 +46,15 @@ public partial class MainWindow:Window {
    HostState.Text="Hoạt động";BridgeState.Text=await runtime.BridgeHealthyAsync()?"Hoạt động":"Mất kết nối";AdapterState.Text=connected?"Đã bắt tay":"Chưa vào game / chưa kết nối";
    if(connected)Set("ĐANG TRONG GAME · ĐÃ KẾT NỐI","Adapter đã bắt tay và gửi heartbeat tới Engine Host.");
    else if(ready)Set("SẴN SÀNG KHỞI CHẠY","Dịch vụ hoạt động. Mở GTA V để Adapter kết nối.");
-  }catch(Exception ex){HostState.Text="Mất kết nối";Log("Poll "+ex.Message);}
+  }catch(Exception ex){
+   HostState.Text="Mất kết nối";Log("Poll "+ex.Message);
+   if(ready&&!busy&&!recovering){
+    recovering=true;Set("ĐANG KHÔI PHỤC DỊCH VỤ","Phát hiện dịch vụ cục bộ bị gián đoạn; Launcher đang khởi động lại.");
+    try{await runtime.StopAsync();await runtime.StartAsync(CancellationToken.None);HostState.Text="Hoạt động";BridgeState.Text="Hoạt động";Set("SẴN SÀNG KHỞI CHẠY","Dịch vụ đã được khôi phục. Mở GTA V hoặc tiếp tục phiên chơi.");}
+    catch(Exception recovery){Log("Recovery failed: "+recovery);Set("CẦN KHẮC PHỤC",recovery.Message);}
+    finally{recovering=false;}
+   }
+  }
  }
  void Export_Click(object s,RoutedEventArgs e){
   var dest=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),"GtaVietLife-Diagnostics.txt");
