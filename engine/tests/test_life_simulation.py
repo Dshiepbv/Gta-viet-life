@@ -227,5 +227,65 @@ class LifeSimulationTests(unittest.TestCase):
         self.assertEqual(npc.current_activity, "eat")
 
 
+    def test_player_and_npcs_share_human_needs_without_steering_player(self):
+        engine = LifeSimulationEngine()
+        player = NPCProfile(
+            npc_id="player.main", display_name="Player", home_location_id="home.player",
+            occupation="citizen", actor_kind="player",
+        )
+        npc = NPCProfile(
+            npc_id="npc.human", display_name="Mai", home_location_id="home.npc",
+            occupation="worker", schedule=(ScheduleBlock(0, 1440, "free_time", "home.npc"),),
+        )
+        player_state = engine.register_npc(player)
+        npc_state = engine.register_npc(npc)
+        player_state.bladder = 95
+        player_state.hygiene = 90
+        engine.advance(1)
+        self.assertEqual(player_state.current_activity, "toilet")
+        self.assertLess(player_state.bladder, 95)
+        self.assertEqual(player_state.profile.actor_kind, "player")
+        self.assertEqual(npc_state.profile.actor_kind, "npc")
+        # Player needs are simulated canonically, but the engine never issues NPC navigation commands for the player.
+        self.assertFalse(any(c["npc_id"] == "player.main" for c in engine.pending_commands()))
+
+    def test_human_life_domains_persist_and_expose_life_stage(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "human-life.sqlite3"
+            store = SQLiteLifeStore(path)
+            engine = LifeSimulationEngine(store)
+            state = engine.register_npc(NPCProfile(
+                npc_id="npc.life-stage", display_name="Bao", home_location_id="home.stage",
+                occupation="student", age_years=17,
+            ))
+            state.health = 73
+            state.hygiene = 42
+            state.fitness = 66
+            state.mood = 51
+            state.age_minutes = 525600
+            store.save(engine.simulation_minute, [state], [])
+            store.close()
+            restored = LifeSimulationEngine(SQLiteLifeStore(path))
+            snapshot = restored.snapshot()["npcs"][0]
+            self.assertEqual(snapshot["age_years"], 18)
+            self.assertEqual(snapshot["life_stage"], "young_adult")
+            self.assertEqual(snapshot["health"], 73)
+            self.assertEqual(snapshot["needs"]["hygiene"], 42)
+            self.assertEqual(snapshot["fitness"], 66)
+            self.assertEqual(snapshot["mood"], 51)
+
+    def test_hygiene_need_triggers_shower_and_recovers(self):
+        engine = LifeSimulationEngine()
+        state = engine.register_npc(NPCProfile(
+            npc_id="npc.hygiene", display_name="An", home_location_id="home.hygiene",
+            occupation="worker",
+        ))
+        state.hygiene = 7
+        engine.advance(1)
+        self.assertEqual(state.current_activity, "shower")
+        self.assertGreater(state.hygiene, 7)
+
+
+
 if __name__ == "__main__":
     unittest.main()
