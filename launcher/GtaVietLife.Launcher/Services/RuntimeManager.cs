@@ -18,7 +18,7 @@ public sealed class RuntimeManager:IDisposable {
   bool dll=File.Exists(Path.Combine(gd,"ScriptHookVDotNet3.dll"))||File.Exists(Path.Combine(gd,"ScriptHookVDotNet2.dll"))||File.Exists(Path.Combine(sd,"ScriptHookVDotNet3.dll"));
   if(!asi||!dll)return(false,"Chưa phát hiện đầy đủ ScriptHookVDotNet. Cần cài runtime tương thích trước; Launcher không tự thay thế mod loader.",sd);
   var src=Path.Combine(root,"game");if(!Directory.Exists(src))return(false,"Thiếu gói module game trong bộ cài.",sd);
-  Directory.CreateDirectory(sd);var backup=Path.Combine(data,"Backups",DateTime.Now.ToString("yyyyMMdd-HHmmss"));
+  Directory.CreateDirectory(sd);var backup=Path.Combine(data,"Backups",DateTime.Now.ToString("yyyyMMdd-HHmmss")+"-"+Guid.NewGuid().ToString("N"));
   foreach(var f in Directory.GetFiles(src,"GtaVietLife*.*")){
    var n=Path.GetFileName(f);if(!n.EndsWith(".cs",StringComparison.OrdinalIgnoreCase)&&!n.EndsWith(".ini",StringComparison.OrdinalIgnoreCase))continue;
    var t=Path.Combine(sd,n);
@@ -54,6 +54,7 @@ public sealed class RuntimeManager:IDisposable {
  void StartHost(){
   var exe=Path.Combine(root,"runtime","engine","GtaVietLifeEngine.exe");if(!File.Exists(exe))throw new FileNotFoundException("Thiếu Engine Host đã đóng gói.",exe);
   if(host is{HasExited:false})return;
+  KillNamed("GtaVietLifeEngine");
   var p=new ProcessStartInfo(exe){UseShellExecute=false,CreateNoWindow=true,WorkingDirectory=Path.GetDirectoryName(exe)!};
   p.ArgumentList.Add("--host");p.ArgumentList.Add("127.0.0.1");p.ArgumentList.Add("--port");p.ArgumentList.Add("5580");p.ArgumentList.Add("--token-file");p.ArgumentList.Add(tokenPath);p.ArgumentList.Add("--data-dir");p.ArgumentList.Add(HostData);
   host=Process.Start(p)??throw new InvalidOperationException("Không khởi động được Engine Host.");Track(host,"engine");
@@ -63,6 +64,7 @@ public sealed class RuntimeManager:IDisposable {
   var sample=Path.Combine(root,"runtime","bridge","config.example.json");var userConfig=Path.Combine(BridgeData,"config.json");
   if(!File.Exists(userConfig)&&File.Exists(sample))File.Copy(sample,userConfig);
   if(bridge is{HasExited:false})return;
+  KillNamed("GtaVietLifeBridge");
   var p=new ProcessStartInfo(exe){UseShellExecute=false,CreateNoWindow=true,WorkingDirectory=Path.GetDirectoryName(exe)!};p.Environment["GVL_DATA_DIR"]=BridgeData;
   bridge=Process.Start(p)??throw new InvalidOperationException("Không khởi động được cầu nối AI.");Track(bridge,"bridge");
  }
@@ -80,6 +82,11 @@ public sealed class RuntimeManager:IDisposable {
   using var r=await http.SendAsync(q,ct);r.EnsureSuccessStatusCode();return JsonDocument.Parse(await r.Content.ReadAsStringAsync(ct));
  }
  public async Task<bool> BridgeHealthyAsync(){try{using var r=await http.GetAsync("http://127.0.0.1:5577/ping");return r.IsSuccessStatusCode;}catch{return false;}}
+ public async Task RestartBridgeAsync(CancellationToken ct){
+  Kill(bridge);bridge=null;KillNamed("GtaVietLifeBridge");StartBridge();
+  await WaitAsync("http://127.0.0.1:5577/ping",180,ct);
+ }
+ static void KillNamed(string name){foreach(var p in Process.GetProcessesByName(name)){try{p.Kill(true);p.WaitForExit(3000);}catch{}}}
  public void Launch(string exe){Process.Start(new ProcessStartInfo(exe){UseShellExecute=true,WorkingDirectory=Path.GetDirectoryName(exe)!});}
  public async Task StopAsync(){
   try{using var q=new HttpRequestMessage(HttpMethod.Post,"http://127.0.0.1:5580/engine/v1/shutdown");q.Headers.Add("X-GVL-Token",Token);q.Content=new StringContent(System.Text.Json.JsonSerializer.Serialize(new{request_id=Guid.NewGuid().ToString("N")}),System.Text.Encoding.UTF8,"application/json");using var r=await http.SendAsync(q);}catch{}

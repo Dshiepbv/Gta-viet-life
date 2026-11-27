@@ -43,7 +43,17 @@ public partial class MainWindow:Window {
  void Play_Click(object s,RoutedEventArgs e){try{runtime.Launch(GamePathBox.Text.Trim());Set("ĐANG CHỜ ADAPTER","GTA V đã mở. Chờ ScriptHookVDotNet nạp và kết nối Engine Host.");}catch(Exception ex){Set("KHÔNG MỞ ĐƯỢC GAME",ex.Message);}}
  async void Poll(object? s,EventArgs e){
   try{using var d=await runtime.StatusAsync(CancellationToken.None);bool connected=d.RootElement.GetProperty("adapter_connected").GetBoolean();
-   HostState.Text="Hoạt động";BridgeState.Text=await runtime.BridgeHealthyAsync()?"Hoạt động":"Mất kết nối";AdapterState.Text=connected?"Đã bắt tay":"Chưa vào game / chưa kết nối";
+   HostState.Text="Hoạt động";
+   bool bridgeHealthy=await runtime.BridgeHealthyAsync();
+   BridgeState.Text=bridgeHealthy?"Hoạt động":"Mất kết nối";
+   AdapterState.Text=connected?"Đã bắt tay":"Chưa vào game / chưa kết nối";
+   if(!bridgeHealthy&&ready&&!recovering){
+    recovering=true;Set("ĐANG KHÔI PHỤC CẦU NỐI AI","Cầu nối AI bị gián đoạn; Launcher đang khởi động lại thành phần này.");
+    try{await runtime.RestartBridgeAsync(CancellationToken.None);BridgeState.Text="Hoạt động";Set("SẴN SÀNG KHỞI CHẠY","Cầu nối AI đã được khôi phục.");}
+    catch(Exception recovery){Log("Bridge recovery failed: "+recovery);Set("CHẾ ĐỘ HẠN CHẾ",recovery.Message);}
+    finally{recovering=false;}
+    return;
+   }
    if(connected)Set("ĐANG TRONG GAME · ĐÃ KẾT NỐI","Adapter đã bắt tay và gửi heartbeat tới Engine Host.");
    else if(ready)Set("SẴN SÀNG KHỞI CHẠY","Dịch vụ hoạt động. Mở GTA V để Adapter kết nối.");
   }catch(Exception ex){
