@@ -187,6 +187,13 @@ class SQLiteLifeStore:
             )
             for command in commands:
                 self.connection.execute(
+                    """UPDATE command_outbox SET status='superseded',
+                    result_json=?,completed_at=CURRENT_TIMESTAMP
+                    WHERE npc_id=? AND command_type=? AND status='pending'""",
+                    (json.dumps({"success": False, "reason": "superseded_by_newer_state"}),
+                     command["npc_id"], command["command_type"]),
+                )
+                self.connection.execute(
                     """INSERT OR IGNORE INTO command_outbox
                     (command_id,npc_id,command_type,payload_json,created_minute,status)
                     VALUES(?,?,?,?,?,'pending')""",
