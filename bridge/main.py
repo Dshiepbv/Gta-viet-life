@@ -255,7 +255,7 @@ class Bridge:
             print(f"[{npc['name']}] {timing} | "
                   f"Bạn: {text} → {result['reply']} ({result['action']})")
             dialogue = base64.b64encode(json.dumps(
-                {"player_message": text, "npc_reply": result["reply"]}, ensure_ascii=False
+                {"player_message": text, "npc_reply": result["reply"], "affinity_delta": result["affinity_delta"]}, ensure_ascii=False
             ).encode("utf-8")).decode("ascii")
             return f"{result['action']}\n{ms}\n{ascii_name(npc['name'])}\n{dialogue}"
 
