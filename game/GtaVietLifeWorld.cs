@@ -273,6 +273,7 @@ public class GtaVietLifeWorld : Script
         if (sleepAt > 0 && now > sleepAt) { sleepAt = 0; FinishSleep(); }
         if (sleepAt > 0) return;
         UpdateClock();
+        ProcessEngineCommands(now);
         UpdateNeeds(me, now);
         UpdateWanted(me);
         UpdateDelivery(me, now);
@@ -3045,6 +3046,9 @@ public class GtaVietLifeWorld : Script
         public Vector3 Home, Work, Lunch;
         public int Phase = -1;
         public int LastCmd;
+        public bool EngineControlled;
+        public string EngineActivity = "";
+        public string EngineLocation = "";
         public Blip B;
     }
     readonly List<Resident> residents = new List<Resident>();
@@ -3143,6 +3147,68 @@ public class GtaVietLifeWorld : Script
         Save();
     }
 
+    void ProcessEngineCommands(int now)
+    {
+        Queue<Dictionary<string, object>> queue = AppDomain.CurrentDomain.GetData("GVL.Engine.Commands") as Queue<Dictionary<string, object>>;
+        if (queue == null) return;
+        for (int processed = 0; processed < 8; processed++)
+        {
+            Dictionary<string, object> command = null;
+            lock (queue) { if (queue.Count > 0) command = queue.Peek(); }
+            if (command == null) return;
+            try
+            {
+                string type = Convert.ToString(command.ContainsKey("command_type") ? command["command_type"] : "");
+                string npcId = Convert.ToString(command.ContainsKey("npc_id") ? command["npc_id"] : "");
+                string commandId = Convert.ToString(command.ContainsKey("command_id") ? command["command_id"] : "");
+                Dictionary<string, object> payload = command.ContainsKey("payload") ? command["payload"] as Dictionary<string, object> : null;
+                if (type != "actor.set_activity" || payload == null || string.IsNullOrEmpty(npcId) || string.IsNullOrEmpty(commandId))
+                {
+                    Log("bo qua lenh engine khong ho tro: " + commandId + " / " + type);
+                    lock (queue) if (queue.Count > 0 && object.ReferenceEquals(queue.Peek(), command)) queue.Dequeue();
+                    continue;
+                }
+                Resident resident = null;
+                foreach (Resident item in residents) if ("res_" + item.Id == npcId) { resident = item; break; }
+                if (resident == null || resident.P == null || !resident.P.Exists()) return; // chua materialize: giu lenh cho den khi NPC hien dien
+                string activity = Convert.ToString(payload.ContainsKey("activity") ? payload["activity"] : "");
+                string locationId = Convert.ToString(payload.ContainsKey("location_id") ? payload["location_id"] : "");
+                if (!ApplyEngineResidentActivity(resident, activity, locationId, now)) return;
+                lock (queue) if (queue.Count > 0 && object.ReferenceEquals(queue.Peek(), command)) queue.Dequeue();
+                Action<string> ack = AppDomain.CurrentDomain.GetData("GVL.Engine.Ack") as Action<string>;
+                if (ack != null) ack(commandId);
+            }
+            catch (Exception ex) { Log("thuc thi lenh NPC tu engine loi: " + ex.Message); return; }
+        }
+    }
+
+    bool ApplyEngineResidentActivity(Resident resident, string activity, string locationId, int now)
+    {
+        if (resident == null || resident.P == null || !resident.P.Exists()) return false;
+        Vector3 target;
+        if (locationId == "res_" + resident.Id + ".home" || locationId == "res_" + resident.Id + ".leisure") target = resident.Home;
+        else if (locationId == "res_" + resident.Id + ".work") target = resident.Work;
+        else if (locationId == "res_" + resident.Id + ".lunch") target = resident.Lunch;
+        else return false; // khong tu y gan toa do cho semantic location chua duoc xac minh
+        Ped ped = resident.P;
+        resident.EngineControlled = true;
+        resident.EngineActivity = activity;
+        resident.EngineLocation = locationId;
+        resident.Phase = -1;
+        float distance = ped.Position.DistanceTo2D(target);
+        if (distance > 12f)
+        {
+            float speed = distance > 250f ? 2.0f : 1.0f;
+            Function.Call(Hash.TASK_FOLLOW_NAV_MESH_TO_COORD, ped, target.X, target.Y, target.Z, speed, -1, 2.0f, false, 0f);
+        }
+        else
+        {
+            float radius = activity == "sleep" ? 2.5f : activity == "work" ? 5f : activity == "eat" ? 4f : 8f;
+            Function.Call(Hash.TASK_WANDER_IN_AREA, ped, target.X, target.Y, target.Z, radius, 2f, 6f);
+        }
+        return true;
+    }
+
     void UpdateResidents(int now)
     {
         if (now < nextResidentCheck || residents.Count == 0) return;
@@ -3172,6 +3238,7 @@ public class GtaVietLifeWorld : Script
                 bool inGroup = false;
                 try { inGroup = me.PedGroup.Contains(p); } catch { }
                 if (inGroup) continue;   // dang di theo Sep
+                if (r.EngineControlled) continue; // Engine la nguon quyet dinh lich hoat dong cua cu dan nay
                 float d = p.Position.DistanceTo2D(spot);
                 if (d > rad + 10f)
                 {
@@ -3207,6 +3274,8 @@ public class GtaVietLifeWorld : Script
                 r.P = np; r.LastCmd = 0; r.Phase = ph;
                 AttachResBlip(r);
                 Function.Call(Hash.TASK_WANDER_IN_AREA, np, spot.X, spot.Y, spot.Z, rad, 2f, 6f);
+                if (r.EngineControlled && !string.IsNullOrEmpty(r.EngineActivity))
+                    ApplyEngineResidentActivity(r, r.EngineActivity, r.EngineLocation, now);
                 changed = true;
             }
         }
