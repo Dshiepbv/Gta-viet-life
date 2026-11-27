@@ -30,7 +30,8 @@ public class GtaVietLifeCore : Script
     readonly object HostLock = new object();
     volatile bool hostConnected;
     bool hostConnecting, residentSyncing;
-    int nextHostHeartbeat, nextResidentSync, nextEngineCommandPoll;
+    long nextHostHeartbeatTicks;
+    int nextResidentSync, nextEngineCommandPoll;
     bool engineCommandPolling;
     readonly object EngineCommandLock = new object();
     readonly HashSet<string> queuedEngineCommandIds = new HashSet<string>();
@@ -116,7 +117,7 @@ public class GtaVietLifeCore : Script
         }
         lastMinute = minute;
         currentWorldMinute = gameDay * 1440L + minute;
-        MaintainHostSession(now);
+        MaintainHostSession(Stopwatch.GetTimestamp());
         if (hostConnected && now > nextResidentSync) { nextResidentSync = now + 10000; SyncResidentProfiles(); }
         if (hostConnected && now > nextEngineCommandPoll) { nextEngineCommandPoll = now + 2000; PollEngineCommands(); }
 
@@ -303,10 +304,11 @@ public class GtaVietLifeCore : Script
         catch { return ""; }
     }
 
-    void MaintainHostSession(int now)
+    // Use a monotonic wall clock: Game.GameTime can stop while GTA is paused.
+    void MaintainHostSession(long nowTicks)
     {
-        if (now < nextHostHeartbeat) return;
-        nextHostHeartbeat = now + 5000;
+        if (nowTicks < nextHostHeartbeatTicks) return;
+        nextHostHeartbeatTicks = nowTicks + Stopwatch.Frequency * 5L;
         lock (HostLock)
         {
             if (hostConnecting) return;
