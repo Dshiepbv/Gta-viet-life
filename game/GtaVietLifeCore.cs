@@ -8,6 +8,7 @@ using System.Collections.Specialized;
 using System.Globalization;
 using System.IO;
 using System.Net;
+using System.Diagnostics;
 using System.Text;
 using System.Threading.Tasks;
 using GTA;
@@ -320,8 +321,20 @@ public class GtaVietLifeCore : Script
         {
             if (string.IsNullOrEmpty(hostToken)) hostToken = ReadHostToken();
             if (string.IsNullOrEmpty(hostToken)) throw new Exception("khong tim thay host.token");
+            string gamePath = "";
+            string gameVersion = "unknown";
+            string gameEdition = "gta5-legacy";
+            try
+            {
+                gamePath = Process.GetCurrentProcess().MainModule.FileName;
+                gameVersion = FileVersionInfo.GetVersionInfo(gamePath).FileVersion ?? "unknown";
+                if (Path.GetFileName(gamePath).IndexOf("Enhanced", StringComparison.OrdinalIgnoreCase) >= 0)
+                    gameEdition = "gta5-enhanced";
+            }
+            catch { }
             string body = "{\"protocol\":\"gvl-engine/1\",\"request_id\":\"" + Guid.NewGuid().ToString("N") + "\",\"session_id\":\"" + hostSessionId +
-                "\",\"adapter\":{\"id\":\"gta5.shvdn\",\"version\":\"0.1.0\",\"base_game\":\"gta5\",\"base_game_build\":\"unknown\"},\"capabilities\":[\"adapter.session\"]}";
+                "\",\"adapter\":{\"id\":\"gta5.shvdn\",\"version\":\"0.1.0\",\"base_game\":\"" + gameEdition + "\",\"base_game_build\":\"" + gameVersion +
+                "\"},\"capabilities\":[\"adapter.session\"]}";
             using (WebClient wc = new HostWebClient())
             {
                 wc.Proxy = null; wc.Encoding = Encoding.UTF8;
