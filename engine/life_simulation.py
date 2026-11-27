@@ -230,6 +230,40 @@ class SQLiteLifeStore:
                     (request_id, json.dumps(response, ensure_ascii=False)),
                 )
 
+    def record_dialogue_memory(self, npc_id: str, player_id: str,
+                               player_message: str, npc_reply: str,
+                               request_id: Optional[str] = None) -> dict:
+        """Persist the actual voice conversation without letting an LLM mutate canonical relationships."""
+        if not player_id or len(player_id) > 128:
+            raise ValueError("invalid_player_id")
+        if not isinstance(player_message, str) or not player_message.strip() or len(player_message) > 2000:
+            raise ValueError("invalid_player_message")
+        if not isinstance(npc_reply, str) or not npc_reply.strip() or len(npc_reply) > 2000:
+            raise ValueError("invalid_npc_reply")
+        if request_id is not None and (not request_id or len(request_id) > 128):
+            raise ValueError("invalid_request_id")
+        dedup_key = "dialogue_memory:" + request_id if request_id else None
+        with self._lock:
+            if dedup_key:
+                cached = self.store.get_request_result(dedup_key)
+                if cached is not None:
+                    return cached
+            state = self.npcs.get(npc_id)
+            if state is None:
+                raise KeyError("npc_not_found")
+            for kind, summary in (("player_dialogue", player_message), ("npc_dialogue", npc_reply)):
+                state.memories.append({
+                    "minute": self.simulation_minute, "kind": kind,
+                    "participant_id": player_id, "summary": summary[:500],
+                    "source": "voice_bridge", "confidence": 1.0,
+                })
+                state.memories = state.memories[-100:]
+                self._record(state, kind, {"participant_id": player_id, "summary": summary[:160]})
+            result = {"memory_recorded": True, "npc_id": npc_id, "memory_count": len(state.memories)}
+            self.store.save(self.simulation_minute, list(self.npcs.values()), self.events,
+                            (dedup_key, result) if dedup_key else None, self.commands)
+            return result
+
     def dialogue_context(self, npc_id: str, player_id: str, topic: str = "") -> dict:
         """Return bounded, provenance-aware facts for a cognition provider; never mutate state."""
         if not isinstance(topic, str) or len(topic) > 500:
