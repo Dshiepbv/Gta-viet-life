@@ -207,6 +207,12 @@ public class GtaVietLifeWorld : Script
         SyncPersonalBus();
         TickEnterHome(me, now);
         SyncEngineWorldCatalog();
+        if (now > nextEngineBusinessSync)
+        {
+            nextEngineBusinessSync = now + 10000;
+            SyncOut();
+            foreach (Shop nativeShop in shops) SyncEngineShopState(nativeShop);
+        }
         if (now > nextEconBus) { nextEconBus = now + 2000; EconBus(); }
         if (!caughtUp) { ApplyPhoneCmds(); CatchUpOffline(); }
         else if (now > nextCmdCheck) { nextCmdCheck = now + 10000; ApplyPhoneCmds(); }
@@ -960,7 +966,7 @@ public class GtaVietLifeWorld : Script
     }
 
     // cau noi voi file Kinh te (GtaVietLifeEconomy.cs): cong bo tong gia tri BDS de the chap, nhan lenh phat mai khi bi siet no
-    int nextEconBus;
+    int nextEconBus, nextEngineBusinessSync;
     void EconBus()
     {
         try
@@ -3354,6 +3360,22 @@ public class GtaVietLifeWorld : Script
             Math.Max(0, shop.Stock).ToString(CultureInfo.InvariantCulture) + "}}";
         post("/engine/v1/world/businesses/inventory", inventoryBody);
         engineShopCatalogSentIds.Add(id);
+    }
+
+    void SyncEngineShopState(Shop shop)
+    {
+        if (shop == null || !(AppDomain.CurrentDomain.GetData("GVL.Engine.Connected") is bool) ||
+            !(bool)AppDomain.CurrentDomain.GetData("GVL.Engine.Connected")) return;
+        Action<string, string> post = AppDomain.CurrentDomain.GetData("GVL.Engine.WorldPost") as Action<string, string>;
+        if (post == null) return;
+        string id = ShopEngineId(shop);
+        if (string.IsNullOrEmpty(id) || !engineShopCatalogSentIds.Contains(id)) return;
+        string body = "{\"request_id\":\"" + Guid.NewGuid().ToString("N") +
+            "\",\"business_id\":\"business." + id + "\",\"adapter_id\":\"gta5.shvdn\",\"cash_balance\":" +
+            Math.Max(0, shop.Cash).ToString(CultureInfo.InvariantCulture) +
+            ",\"inventory\":{\"stock\":" + Math.Max(0, shop.Stock).ToString(CultureInfo.InvariantCulture) +
+            "},\"is_open\":" + (shop.Staff > 0 ? "true" : "false") + "}";
+        post("/engine/v1/world/businesses/sync", body);
     }
 
     bool RequestEngineWorldInteraction(string targetKind, string targetId, string action)
