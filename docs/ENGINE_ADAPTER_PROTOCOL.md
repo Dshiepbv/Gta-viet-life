@@ -187,3 +187,10 @@ M4 endpoints provide double-entry transactions, accounts, property purchase/leas
 ## Cognition bridge boundary (M2)
 
 POST /engine/v1/simulation/context returns bounded identity, current needs/activity, relationship, provenance-aware known facts and recent episodic memories. POST /engine/v1/simulation/memory records actual player speech and NPC reply. The Host accepts only an affinity delta in [-2, 2], scales and clamps it, and applies it to canonical relationship state. The bridge cannot write needs, money, property, traffic or arbitrary NPC state.
+
+### Authoritative clock and restart behavior
+
+- gta5.shvdn sends the GTA world minute in handshake and heartbeat. The Host persists both the clock mode and last accepted GTA minute in SQLite.
+- While GTA is the configured clock source, the Host background worker does not advance simulation from wall time, including while GTA is closed. This prevents the game world from drifting forward merely because the launcher or Host remained open.
+- On reconnect, the Host advances only by the positive difference between the newly observed GTA minute and the last persisted GTA minute. A backward in-game time adjustment never rewinds NPC history; the new observation becomes the baseline for subsequent forward progress.
+- Adapters without a game-clock feed, including the Godot reference adapter, continue to use the Host clock.
