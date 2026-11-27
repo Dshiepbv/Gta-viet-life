@@ -104,6 +104,18 @@ class SocietySimulationTests(unittest.TestCase):
         self.assertTrue(duplicate["duplicate"])
         self.assertEqual(self.society.snapshot()["traffic"][0]["congestion"], 36.0)
 
+    def test_wallet_baseline_is_idempotent_and_never_resets_live_balance(self):
+        first = self.society.ensure_account("legacy:player_cash", "player.main", 1000)
+        self.assertEqual(first["balance"], 1000)
+        self.society.ingest_legacy_events("gta5.shvdn", [
+            {"sequence": 1, "event_type": "ledger.expense",
+             "data": "amount=125;cat=shopping;note=food;acct=cash", "sim_minute": 1}
+        ])
+        before = self.society.account("legacy:player_cash")["balance"]
+        replay = self.society.ensure_account("legacy:player_cash", "player.main", 9000)
+        self.assertEqual(replay["balance"], before)
+        self.assertEqual(before, 875)
+
     def test_legacy_cash_events_import_once_into_balanced_ledger(self):
         batch = [
             {"sequence": 10, "event_type": "ledger.income",
