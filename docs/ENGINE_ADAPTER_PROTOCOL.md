@@ -195,3 +195,10 @@ POST /engine/v1/simulation/context returns bounded identity, current needs/activ
 - While GTA is the configured clock source, the Host background worker does not advance simulation from wall time, including while GTA is closed. This prevents the game world from drifting forward merely because the launcher or Host remained open.
 - On reconnect, the Host advances only by the positive difference between the newly observed GTA minute and the last persisted GTA minute. A backward in-game time adjustment never rewinds NPC history; the new observation becomes the baseline for subsequent forward progress.
 - Adapters without a game-clock feed, including the Godot reference adapter, continue to use the Host clock.
+
+
+## Shared human-life actor model
+
+The canonical simulation treats the player character and NPCs as human-life actors in the same domain model. Register either through `POST /engine/v1/simulation/actors` (or the backward-compatible NPC route) with `actor_kind: "player" | "npc"`. Both actor kinds share needs, health, hygiene, bladder, fitness, mood, aging and life-stage progression. The engine never steers the player character with autonomous NPC navigation commands; the game adapter remains responsible for player input and physical presentation. NPC activity commands remain adapter-executed.
+
+The current life-needs slice includes hunger, energy, social connection, stress, hygiene and bladder pressure, plus health, fitness, mood and age progression. Supported semantic activities include eating, sleeping, work, commute, socializing, leisure, showering, bathroom use, exercise and study. This is a foundation, not a claim that all human systems (medical treatment, family formation, education, employment contracts, full body animation or every life stage) are complete.
