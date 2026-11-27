@@ -271,6 +271,18 @@ public class GtaVietLifeCore : Script
         catch (Exception ex) { Log("load " + path + " loi: " + ex.Message); return false; }
     }
 
+    sealed class HostWebClient : WebClient
+    {
+        protected override WebRequest GetWebRequest(Uri address)
+        {
+            WebRequest request = base.GetWebRequest(address);
+            request.Timeout = 3000;
+            HttpWebRequest http = request as HttpWebRequest;
+            if (http != null) http.ReadWriteTimeout = 3000;
+            return request;
+        }
+    }
+
     string ReadHostToken()
     {
         try
@@ -310,7 +322,7 @@ public class GtaVietLifeCore : Script
             if (string.IsNullOrEmpty(hostToken)) throw new Exception("khong tim thay host.token");
             string body = "{\"protocol\":\"gvl-engine/1\",\"request_id\":\"" + Guid.NewGuid().ToString("N") + "\",\"session_id\":\"" + hostSessionId +
                 "\",\"adapter\":{\"id\":\"gta5.shvdn\",\"version\":\"0.1.0\",\"base_game\":\"gta5\",\"base_game_build\":\"unknown\"},\"capabilities\":[\"adapter.session\"]}";
-            using (WebClient wc = new WebClient())
+            using (WebClient wc = new HostWebClient())
             {
                 wc.Proxy = null; wc.Encoding = Encoding.UTF8;
                 wc.Headers[HttpRequestHeader.ContentType] = "application/json; charset=utf-8";
@@ -328,7 +340,7 @@ public class GtaVietLifeCore : Script
     void SendHostHeartbeat()
     {
         string body = "{\"request_id\":\"" + Guid.NewGuid().ToString("N") + "\",\"session_id\":\"" + hostSessionId + "\"}";
-        using (WebClient wc = new WebClient())
+        using (WebClient wc = new HostWebClient())
         {
             wc.Proxy = null; wc.Encoding = Encoding.UTF8;
             wc.Headers[HttpRequestHeader.ContentType] = "application/json; charset=utf-8";
@@ -344,7 +356,7 @@ public class GtaVietLifeCore : Script
         try
         {
             if (string.IsNullOrEmpty(hostToken)) return;
-            using (WebClient wc = new WebClient())
+            using (WebClient wc = new HostWebClient())
             {
                 wc.Proxy = null; wc.Encoding = Encoding.UTF8;
                 wc.Headers[HttpRequestHeader.ContentType] = "application/json; charset=utf-8";
