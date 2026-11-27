@@ -25,7 +25,7 @@ var locations := {
 	"counter.anchor.godot": Vector2(740, 320)
 }
 var labels := {"home.godot": "HOME DOOR", "home.interior.godot": "HOME INTERIOR", "work.godot": "CAFE DOOR", "work.interior.godot": "CAFE INTERIOR", "park.godot": "PARK"}
-var world_target_points := {"home.godot": "building.home.godot", "work.godot": "building.cafe.godot", "bed.anchor.godot": "object.bed.godot", "fridge.anchor.godot": "object.fridge.godot", "counter.anchor.godot": "object.counter.godot"}
+var world_target_points := {"home.godot": "building.home.godot", "home.interior.godot": "building.home.godot", "work.godot": "building.cafe.godot", "work.interior.godot": "building.cafe.godot", "bed.anchor.godot": "object.bed.godot", "fridge.anchor.godot": "object.fridge.godot", "counter.anchor.godot": "object.counter.godot"}
 var http: HTTPRequest
 var status_text := "Waiting for Engine Host…"
 var nearby := false
@@ -192,7 +192,7 @@ func _interact_nearest_world_target() -> void:
 			best_distance = d
 			best_id = world_target_points[semantic]
 			best_kind = "building" if best_id.begins_with("building.") else "object"
-			best_action = "enter" if best_kind == "building" else "use"
+			best_action = ("exit" if semantic.ends_with(".interior.godot") else "enter") if best_kind == "building" else "use"
 	if best_id == "":
 		return
 	var response := await _request("/engine/v1/world/interact", {
