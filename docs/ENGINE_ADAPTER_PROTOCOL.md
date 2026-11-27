@@ -209,3 +209,8 @@ The current life-needs slice includes hunger, energy, social connection, stress,
 A completed `interaction.use_object` command is not merely a visual acknowledgement. When the registered object's canonical kind has a human-life mapping, the Host applies the consequence to the actor after the adapter reports `success=true`. Current mappings include food/meal/fridge, bed, toilet, shower, gym equipment, computer/book, hobby and social seating. The result is persisted in the same canonical actor snapshot for both `actor_kind=player` and `actor_kind=npc`.
 
 The engine deliberately does not apply a need change when a command is only queued, rejected, unsupported or failed. This preserves the rule that physical actions must be observed by the game adapter before their life consequences become canonical. Unknown object kinds still record the physical object use but return no life-domain effect until an explicit mapping is implemented.
+
+
+## Employment and earned income
+
+The shared life clock now tracks completed canonical work hours. An active employment contract links an actor to a business, the employee's deposit account and an hourly wage through `POST /engine/v1/world/employment/contracts`. Every 60 simulated minutes in the actor's `work` activity emits a durable `work_hour_completed` event. Engine Host converts that event into a balanced business-to-employee ledger transaction. Payroll transaction IDs are deterministic per contract and simulation minute, so request replay cannot pay twice. This first payroll slice covers hourly wages; hiring/firing workflows, attendance exceptions, taxes, benefits, promotions and richer labor-market simulation remain future scope.
