@@ -114,6 +114,7 @@ class NPCState:
     fitness: float = 50.0
     mood: float = 70.0
     age_minutes: int = 0
+    work_minutes: int = 0
 
     def __post_init__(self) -> None:
         if not self.location_id:
@@ -191,6 +192,7 @@ class SQLiteLifeStore:
                     health=s.get("health", 100.0), hygiene=s.get("hygiene", 85.0),
                     bladder=s.get("bladder", 10.0), fitness=s.get("fitness", 50.0),
                     mood=s.get("mood", 70.0), age_minutes=s.get("age_minutes", 0),
+                    work_minutes=s.get("work_minutes", 0),
                 ))
             return minute, result
 
@@ -215,7 +217,7 @@ class SQLiteLifeStore:
                     "goal_progress": state.goal_progress, "health": state.health,
                     "hygiene": state.hygiene, "bladder": state.bladder,
                     "fitness": state.fitness, "mood": state.mood,
-                    "age_minutes": state.age_minutes,
+                    "age_minutes": state.age_minutes, "work_minutes": state.work_minutes,
                 }
                 self.connection.execute(
                     """INSERT INTO npc_state(npc_id,profile_json,state_json,updated_at)
@@ -471,6 +473,10 @@ class LifeSimulationEngine:
         # Basic autonomic needs apply equally to the player avatar and every NPC.
         if state.hunger >= 98 or state.energy <= 2 or state.hygiene <= 1 or state.bladder >= 99:
             state.health -= 0.08
+        if activity == "work":
+            state.work_minutes += 1
+            if state.work_minutes % 60 == 0:
+                self._record(state, "work_hour_completed", {"hours": 1, "total_work_minutes": state.work_minutes})
         if state.profile.life_goal == "career" and activity == "work":
             state.goal_progress = self._clamp(state.goal_progress + 0.02)
         elif state.profile.life_goal == "health" and activity in ("sleep", "eat"):
