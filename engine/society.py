@@ -83,6 +83,10 @@ class SocietySimulation:
                     status TEXT NOT NULL DEFAULT 'active', started_minute INTEGER NOT NULL,
                     FOREIGN KEY(employee_account_id) REFERENCES world_accounts(account_id),
                     FOREIGN KEY(business_id) REFERENCES world_businesses(business_id));
+                CREATE TABLE IF NOT EXISTS world_social_relationships(
+                    actor_id TEXT NOT NULL, target_id TEXT NOT NULL, relation_type TEXT NOT NULL,
+                    strength REAL NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'active',
+                    updated_minute INTEGER NOT NULL, PRIMARY KEY(actor_id,target_id));
                 CREATE INDEX IF NOT EXISTS idx_employment_employee ON world_employment_contracts(employee_id,status);
                 CREATE TABLE IF NOT EXISTS world_traffic_segments(
                     segment_id TEXT PRIMARY KEY, road_class TEXT NOT NULL,
@@ -638,6 +642,41 @@ class SocietySimulation:
                                 {"account_id": "system:legacy_counterparty", "amount": -sign}])
         return {"accepted": accepted, "duplicates": duplicates, "source": source_id}
 
+    def set_social_relationship(self, actor_id: str, target_id: str,
+                                relation_type: str, strength: float = 0.0,
+                                status: str = "active") -> dict:
+        actor_id = _valid_id(actor_id, "actor_id")
+        target_id = _valid_id(target_id, "target_id")
+        if actor_id == target_id:
+            raise ValueError("self_relationship_not_allowed")
+        allowed_types = ("parent", "child", "sibling", "spouse", "romantic_interest",
+                         "friend", "coworker", "neighbor", "acquaintance", "rival")
+        if relation_type not in allowed_types or status not in ("active", "estranged", "separated", "ended"):
+            raise ValueError("invalid_social_relationship")
+        if isinstance(strength, bool) or not isinstance(strength, (int, float)) or not -100 <= strength <= 100:
+            raise ValueError("invalid_relationship_strength")
+        if self.life_engine is not None and (actor_id not in self.life_engine.npcs or target_id not in self.life_engine.npcs):
+            raise KeyError("relationship_actor_not_found")
+        now = int(self.minute_provider())
+        with self.lock, self.db:
+            self.db.execute("""INSERT INTO world_social_relationships
+                (actor_id,target_id,relation_type,strength,status,updated_minute) VALUES(?,?,?,?,?,?)
+                ON CONFLICT(actor_id,target_id) DO UPDATE SET relation_type=excluded.relation_type,
+                strength=excluded.strength,status=excluded.status,updated_minute=excluded.updated_minute""",
+                (actor_id,target_id,relation_type,float(strength),status,now))
+            self.db.execute("""INSERT INTO world_event_journal
+                (event_id,event_type,actor_id,target_id,payload_json,sim_minute) VALUES(?,?,?,?,?,?)""",
+                (uuid.uuid4().hex,"social.relationship_changed",actor_id,target_id,
+                 json.dumps({"relation_type":relation_type,"strength":strength,"status":status}),now))
+        if self.life_engine is not None:
+            left = self.life_engine.npcs[actor_id]
+            right = self.life_engine.npcs[target_id]
+            left.affinity[target_id] = float(strength)
+            right.affinity[actor_id] = float(strength)
+            self.life_engine.store.save(self.life_engine.simulation_minute,[left,right],[])
+        return {"actor_id":actor_id,"target_id":target_id,"relation_type":relation_type,
+                "strength":float(strength),"status":status,"updated_minute":now}
+
     def create_employment_contract(self, contract_id: str, employee_id: str,
                                    employee_account_id: str, business_id: str,
                                    hourly_wage: int) -> dict:
@@ -722,5 +761,6 @@ class SocietySimulation:
                 objects.append(item)
             traffic = [dict(r) for r in self.db.execute("SELECT * FROM world_traffic_segments ORDER BY segment_id")]
             employment = [dict(r) for r in self.db.execute("SELECT * FROM world_employment_contracts ORDER BY contract_id")]
+            relationships = [dict(r) for r in self.db.execute("SELECT * FROM world_social_relationships ORDER BY actor_id,target_id")]
             return {"buildings": buildings, "objects": objects, "properties": properties, "businesses": businesses,
-                    "employment": employment, "traffic": traffic}
+                    "employment": employment, "relationships": relationships, "traffic": traffic}
