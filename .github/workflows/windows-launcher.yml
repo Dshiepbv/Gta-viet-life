@@ -62,6 +62,20 @@ jobs:
           Compress-Archive -Path package/* -DestinationPath artifacts/GtaVietLife-Windows-x64.zip -Force
           $hash=(Get-FileHash artifacts/GtaVietLife-Windows-x64.zip -Algorithm SHA256).Hash.ToLower()
           "$hash  GtaVietLife-Windows-x64.zip" | Out-File artifacts/SHA256SUMS.txt -Encoding ascii
+      - name: Verify portable package contents
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zip=[System.IO.Compression.ZipFile]::OpenRead("artifacts/GtaVietLife-Windows-x64.zip")
+          try {
+            $names=$zip.Entries | ForEach-Object { $_.FullName.Replace("\\","/") }
+            foreach($required in @("GtaVietLife.Launcher.exe","GtaVietLife.Updater.exe","runtime/engine/GtaVietLifeEngine.exe","runtime/bridge/GtaVietLifeBridge.exe","game/GtaVietLifeCore.cs","game/GtaVietLifeIcons/food.png")) {
+              if($names -notcontains $required){throw "Package missing required file: $required"}
+            }
+          } finally {$zip.Dispose()}
+      - name: Verify updater rollback safety
+        shell: pwsh
+        run: ./launcher/tests/Test-UpdaterRollback.ps1 -UpdaterPath "publish/updater/GtaVietLife.Updater.exe"
       - uses: actions/upload-artifact@v4
         with:
           name: GtaVietLife-Windows-Installer
