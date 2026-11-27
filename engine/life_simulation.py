@@ -251,8 +251,7 @@ class SQLiteLifeStore:
                                   "simulation_minute": self.simulation_minute},
                 "relationship": {"player_id": player_id, "affinity": state.affinity.get(player_id, 0.0)},
                 "known_facts": list(profile.knowledge),
-                "recent_memories": [dict(m) for m in state.memories[-10:]
-                                    if m.get("participant_id") in (None, player_id)],
+                "recent_memories": [dict(m) for m in state.memories[-10:]],
                 "topic": topic,
                 "knowledge_boundary": "Only known_facts and recent_memories are established knowledge. Do not claim unlisted events, unseen locations or private facts. Any proposed world action must be validated by the Engine.",
             }
