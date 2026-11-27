@@ -14,7 +14,16 @@ public partial class MainWindow:Window {
    try{if(await new UpdateService().CheckAndLaunchUpdaterAsync(CancellationToken.None)){Application.Current.Shutdown();return;}}
    catch(Exception ex){Log("Update check failed: "+ex.Message);}
    if(File.Exists(settings.GameExecutable))await Prepare();else Set("CẦN CHỌN GTA V","Chọn GTA5.exe một lần để lưu đường dẫn.");};
-  Closing+=async(_,_)=>{timer.Stop();cts?.Cancel();if(ready)await runtime.StopAsync();runtime.Dispose();};
+  Closing+=async(_,e)=>{
+   bool gameRunning=System.Diagnostics.Process.GetProcessesByName("GTA5").Length>0 ||
+                    System.Diagnostics.Process.GetProcessesByName("GTA5_Enhanced").Length>0;
+   if(gameRunning){
+    var choice=MessageBox.Show("GTA V đang chạy. Đóng Launcher sẽ dừng Engine Host và cầu nối AI. Chọn Yes để giữ Launcher mở và tiếp tục chơi.",
+      "GTA Viet Life",MessageBoxButton.YesNo,MessageBoxImage.Warning);
+    if(choice==MessageBoxResult.Yes){e.Cancel=true;return;}
+   }
+   timer.Stop();cts?.Cancel();if(ready)await runtime.StopAsync();runtime.Dispose();
+  };
  }
  void Browse_Click(object s,RoutedEventArgs e){var d=new OpenFileDialog{Title="Chọn GTA5.exe",Filter="GTA V|GTA5.exe;GTA5_Enhanced.exe|Executable|*.exe"};if(d.ShowDialog()==true){GamePathBox.Text=d.FileName;settings.GameExecutable=d.FileName;settings.Save();_=Prepare();}}
  async void Start_Click(object s,RoutedEventArgs e)=>await Prepare();

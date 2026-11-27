@@ -20,3 +20,16 @@ python -m unittest discover -s engine/tests -v
 ```
 
 No external package is required.
+
+
+## Local host bootstrap
+
+The Windows Launcher starts the standard-library service in `host.py` on loopback port 5580. It authenticates the GTA V Core adapter using a random per-user token at `%LOCALAPPDATA%\\GtaVietLife\\host.token`.
+
+Run manually for development:
+
+```powershell
+python engine/host.py --host 127.0.0.1 --port 5580 --token-file .\\host.token --data-dir .\\data
+```
+
+The host currently provides health, adapter handshake, heartbeat, session status and shutdown. It is a connectivity/runtime bootstrap, not yet the full NPC, economy or world simulation engine.
