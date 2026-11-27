@@ -8,8 +8,8 @@
 - WPF .NET 8 Launcher with Vietnamese status UI, one-instance guard and saved GTA executable path.
 - Latest stable GitHub release check on startup. A newer package is downloaded over HTTPS, checked against the SHA-256 checksum asset and applied by an external updater helper.
 - Updater stages the archive, checks for the Launcher executable, swaps the install directory and retains the previous version. Failed extraction or failed launch restores the previous directory.
-- ScriptHookVDotNet file-presence check before installation. Exact runtime/game compatibility is not inferred from file presence.
-- Automatic installation of GTA Viet Life C# modules, INI files and UI icon assets into the GTA scripts folder. Replaced project files are backed up only when their content changes. Existing saves and unrelated mods are not overwritten.
+- Preflight requires Script Hook V, the pinned SHVDN Enhanced file set (ASI, API v2/v3 DLLs, INI and MinHook), .NET Framework 4.8+ and Visual C++ Redistributable x64. It reads the selected game executable version and the latest ScriptHookV.log result; exact runtime/game compatibility is not inferred from file presence.
+- Automatic installation of GTA Viet Life C# modules and UI icon assets into the GTA scripts folder. Changed project code and icon assets are backed up. Existing INI settings are preserved; only the required Engine Port key is merged into the Core INI. Existing saves and unrelated mods are not overwritten.
 - Script replacement and application updates are deferred while GTA V is running.
 - Random per-user authentication token, loopback Engine Host process management, authenticated protocol request IDs, handshake, heartbeat, close and status.
 - Legacy AI bridge starts as a separately packaged process, uses a per-user data/config directory and exposes an identity health endpoint. The legacy /ping route remains compatible with existing game scripts.
@@ -24,10 +24,10 @@
 ## Verification
 
 - Python Engine Host unit tests cover health, token authentication, handshake, heartbeat, protocol rejection and stale-session detection.
-- Python source compilation is part of Windows CI.
+- Python source compilation is part of Windows CI.\n- The modified GTA V Core compiles against the pinned ScriptHookVDotNet Enhanced v1.1.0.6 API v3 assembly; the compile reported one pre-existing obsolete API warning for World.CurrentTimeOfDay and no errors.\n- The WPF Launcher and self-contained updater compile successfully after the latest UI fix.
 - Windows CI has successfully published the .NET 8 Launcher and updater, packaged Engine Host and AI bridge, and generated an installer/portable ZIP in prior internal runs.
 - Additional CI gates now verify required portable-package contents and updater rollback behavior; the latest run is tracked in the repository Actions page.
-- No GTA V or ScriptHookVDotNet runtime test has been run in this environment.
+- The latest full Windows packaging run is rebuilding the installer after the compatibility-preflight changes.\n- No GTA V or ScriptHookVDotNet runtime test has been run in this environment.
 
 ## Remaining gates before final user acceptance
 
