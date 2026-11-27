@@ -6,7 +6,7 @@ on:
     paths: ['launcher/**','engine/**','bridge/**','game/**','adapters/godot/**','packaging/**','docs/**','.github/workflows/windows-launcher.yml']
   pull_request:
     branches: [main]
-    paths: ['launcher/**','engine/**','bridge/**','game/**','packaging/**','docs/**','.github/workflows/windows-launcher.yml']
+    paths: ['launcher/**','engine/**','bridge/**','game/**','adapters/godot/**','packaging/**','docs/**','.github/workflows/windows-launcher.yml']
   workflow_dispatch:
 permissions:
   contents: write
