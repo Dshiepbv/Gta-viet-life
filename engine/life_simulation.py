@@ -580,15 +580,27 @@ class LifeSimulationEngine:
             if affinity_delta:
                 state.affinity[player_id] = round(max(-100.0, min(100.0,
                     state.affinity.get(player_id, 0.0) + affinity_delta * 5.0)), 3)
+            player_state = self.npcs.get(player_id)
+            if player_state is not None and player_state is not state:
+                if affinity_delta:
+                    player_state.affinity[npc_id] = round(max(-100.0, min(100.0,
+                        player_state.affinity.get(npc_id, 0.0) + affinity_delta * 5.0)), 3)
+                player_state.social = self._clamp(player_state.social + 4.0)
             for kind, summary in (("player_dialogue", player_message), ("npc_dialogue", npc_reply)):
-                state.memories.append({
-                    "minute": self.simulation_minute, "kind": kind,
-                    "participant_id": player_id, "summary": summary[:500],
-                    "source": "voice_bridge", "confidence": 1.0,
-                })
+                memory = {"minute": self.simulation_minute, "kind": kind,
+                          "participant_id": player_id, "summary": summary[:500],
+                          "source": "voice_bridge", "confidence": 1.0}
+                state.memories.append(memory)
                 state.memories = state.memories[-100:]
+                if player_state is not None and player_state is not state:
+                    player_memory = dict(memory)
+                    player_memory["participant_id"] = npc_id
+                    player_memory["source"] = "voice_bridge_mirror"
+                    player_state.memories.append(player_memory)
+                    player_state.memories = player_state.memories[-100:]
                 self._record(state, kind, {"participant_id": player_id, "summary": summary[:160]})
             result = {"memory_recorded": True, "npc_id": npc_id, "memory_count": len(state.memories),
+                      "player_memory_recorded": player_state is not None,
                       "affinity": state.affinity.get(player_id, 0.0)}
             self.store.save(self.simulation_minute, list(self.npcs.values()), self.events,
                             (dedup_key, result) if dedup_key else None, self.commands)
@@ -651,13 +663,27 @@ class LifeSimulationEngine:
                       "source": "direct_player_interaction", "confidence": 1.0}
             state.memories.append(memory)
             state.memories = state.memories[-100:]
+            states_to_save = [state]
+            player_state = self.npcs.get(player_id)
+            if player_state is not None and player_state is not state:
+                player_state.affinity[npc_id] = self._clamp(player_state.affinity.get(npc_id, 0.0) + 2.0)
+                player_state.social = self._clamp(player_state.social + 12.0)
+                player_state.memories.append({
+                    "minute": self.simulation_minute, "kind": "npc_conversation",
+                    "participant_id": npc_id,
+                    "summary": (state.profile.display_name + ": " + (message[:450] if message else "Player interaction")),
+                    "source": "direct_player_interaction", "confidence": 1.0,
+                })
+                player_state.memories = player_state.memories[-100:]
+                states_to_save.append(player_state)
             self.events = []
             result = {"npc_id": npc_id, "interaction": interaction, "affinity": state.affinity[player_id],
                       "social_need": state.social, "memory_recorded": True,
+                      "player_memory_recorded": player_state is not None,
                       "response_context": self.dialogue_context(npc_id, player_id, message)}
             self._record(state, "conversation", {"player_id": player_id, "interaction": interaction})
             request_result = (dedup_key, result) if dedup_key else None
-            self.store.save(self.simulation_minute, [state], self.events, request_result)
+            self.store.save(self.simulation_minute, states_to_save, self.events, request_result)
             return result
 
     def pending_commands(self, limit: int = 50) -> List[dict]:
