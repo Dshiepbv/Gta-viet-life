@@ -46,3 +46,7 @@ Run all engine tests:
 ```bash
 python -m unittest discover -s engine/tests -v
 ```
+
+## Second-game adapter — M5 portability proof
+
+A Godot 4 reference adapter now lives in `adapters/godot/`. It uses the same Engine Host API and canonical NPC simulation as GTA V; it owns only native scene rendering, player input, movement and semantic-location mapping. The Host integration suite includes a Godot adapter identity path covering registration, command execution acknowledgement and persisted conversation memory. Run the unchanged engine tests with `python -m unittest discover -s engine/tests -v`. The actual Godot 4 runtime still requires a separate launch/acceptance run.
