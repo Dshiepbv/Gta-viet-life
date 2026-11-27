@@ -32,7 +32,7 @@ public sealed class RuntimeManager:IDisposable {
   string scriptHookLog=File.Exists(shLog)?File.ReadAllText(shLog):"";
   if(scriptHookLog.IndexOf("Unknown game version",StringComparison.OrdinalIgnoreCase)>=0)
    return(false,"Script Hook V báo Unknown game version cho GTA build "+gameVersion+". Không thể báo sẵn sàng; cần chờ upstream hỗ trợ đúng bản game.",sd);
-  bool hookBuildConfirmed=scriptHookLog.Split(new[]{'\\r','\\n'},StringSplitOptions.RemoveEmptyEntries)
+  bool hookBuildConfirmed=scriptHookLog.Split(new[]{'\r','\n'},StringSplitOptions.RemoveEmptyEntries)
    .Any(line=>line.IndexOf("Success",StringComparison.OrdinalIgnoreCase)>=0&&line.IndexOf(gameVersion,StringComparison.OrdinalIgnoreCase)>=0);
   var src=Path.Combine(root,"game");if(!Directory.Exists(src))return(false,"Thiếu gói module game trong bộ cài.",sd);
   Directory.CreateDirectory(sd);var backup=Path.Combine(data,"Backups",DateTime.Now.ToString("yyyyMMdd-HHmmss")+"-"+Guid.NewGuid().ToString("N"));
