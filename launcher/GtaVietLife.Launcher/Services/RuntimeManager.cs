@@ -52,6 +52,10 @@ public sealed class RuntimeManager:IDisposable {
  public async Task StartAsync(CancellationToken ct){
   if(!await HealthyAsync("http://127.0.0.1:5580/health",ct)){Kill(host);host=null;KillNamed("GtaVietLifeEngine");StartHost();}
   await WaitAsync("http://127.0.0.1:5580/health",30,ct);
+  using(var hostStatus=await StatusAsync(ct)){
+   if(!hostStatus.RootElement.TryGetProperty("service",out var service)||service.GetString()!="gta-viet-life-engine")
+    throw new InvalidOperationException("Cổng 5580 không thuộc GTA Viet Life Engine Host đã xác thực.");
+  }
   if(!await HealthyAsync("http://127.0.0.1:5577/ping",ct)){Kill(bridge);bridge=null;KillNamed("GtaVietLifeBridge");StartBridge();}
   await WaitAsync("http://127.0.0.1:5577/ping",180,ct);
  }
