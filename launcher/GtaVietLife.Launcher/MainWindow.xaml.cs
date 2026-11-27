@@ -72,6 +72,6 @@ public partial class MainWindow:Window {
   MessageBox.Show("Đã xuất nhật ký: "+dest,"GTA Viet Life");
  }
  void Exit_Click(object s,RoutedEventArgs e)=>Close();
- void Set(string title,string detail){StatusTitle.Text=title;StatusDetail.Text=detail;StatusTitle.Foreground=ready?System.Windows.Media.Brushes.LightGreen:System.Windows.Media.Brushes.White;}
+ void Set(string title,string detail){StatusTitle.Text=title;StatusDetail.Text=detail;bool positive=title.StartsWith("SẴN SÀNG",StringComparison.Ordinal)||title.StartsWith("ĐANG TRONG GAME",StringComparison.Ordinal);StatusTitle.Foreground=positive?System.Windows.Media.Brushes.LightGreen:System.Windows.Media.Brushes.White;}
  void Log(string s){RuntimeManager.Log(s);Dispatcher.Invoke(()=>LogText.Text+=$"[{DateTime.Now:HH:mm:ss}] {s}\n");}
 }
