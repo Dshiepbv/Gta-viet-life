@@ -21,7 +21,7 @@ Mọi script SHVDN chạy chung một AppDomain, nên trao đổi qua `AppDomain
 | `GVL.Mod.<Ten>` | `bool` | Core | `Personal`, `Legal`, `Body`, `Social`, `Life`, `Economy`. `null` nghĩa là bật |
 | `GVL.Pay` | `Func<int,string,string,bool>` | Core (mặc định), **Kinh tế ghi đè** | Trả tiền `(soTien, nhom, ghiChu)` trả `true` nếu trả được |
 | `GVL.Earn` | `Action<int,string,string>` | Core (mặc định), Kinh tế ghi đè | Nhận tiền |
-| `GVL.PayCash` | `Func<int,string,string,bool>` | Core (mặc định), Kinh tế ghi đè | Trả tiền mặt בלבד; không tự động quét tài khoản ngân hàng |
+| `GVL.PayCash` | `Func<int,string,string,bool>` | Core (mặc định), Kinh tế ghi đè | Chỉ trả tiền mặt; không tự động quét tài khoản ngân hàng |
 | `GVL.EarnCash` | `Action<int,string,string>` | Core (mặc định), Kinh tế ghi đè | Nhận tiền mặt và ghi sổ cái |
 | `GVL.Needs` | `float[3]` | Đời sống | {đói, khát, năng lượng} 0-100 |
 | `GVL.NeedsAdd` | `float[3]` | ai cũng cộng dồn | World đọc mỗi tick, cộng vào nhu cầu rồi đặt `null` |
