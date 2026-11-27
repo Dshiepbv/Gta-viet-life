@@ -548,5 +548,11 @@ class SocietySimulation:
                 item["inventory"] = json.loads(item.pop("inventory_json"))
                 item["employees"] = json.loads(item.pop("employees_json"))
                 businesses.append(item)
+            objects = []
+            for r in self.db.execute("SELECT * FROM world_objects ORDER BY object_id"):
+                item = dict(r)
+                item["state"] = json.loads(item.pop("state_json"))
+                item.pop("adapter_anchors_json", None)
+                objects.append(item)
             traffic = [dict(r) for r in self.db.execute("SELECT * FROM world_traffic_segments ORDER BY segment_id")]
-            return {"buildings": buildings, "properties": properties, "businesses": businesses, "traffic": traffic}
+            return {"buildings": buildings, "objects": objects, "properties": properties, "businesses": businesses, "traffic": traffic}
