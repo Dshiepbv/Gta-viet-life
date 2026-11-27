@@ -63,12 +63,12 @@ public sealed class RuntimeManager:IDisposable {
   return(true,"GTA build "+gameVersion+"; đã phát hiện đủ bộ Script Hook V/ScriptHookVDotNet Enhanced và .NET/VC++ runtime; "+logState+". Kết nối Adapter trong game là bước xác nhận cuối. Save game và mod khác được giữ nguyên.",sd);
  }
  static bool HasNet48(){
-  try{using var key=RegistryKey.OpenBaseKey(RegistryHive.LocalMachine,RegistryView.Registry64).OpenSubKey(@"SOFTWARE\\Microsoft\\NET Framework Setup\\NDP\\v4\\Full");
+  try{using var key=RegistryKey.OpenBaseKey(RegistryHive.LocalMachine,RegistryView.Registry64).OpenSubKey(@"SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full");
    return Convert.ToInt32(key?.GetValue("Release")??0)>=528040;
   }catch{return false;}
  }
  static bool HasVcRuntime(){
-  try{using var key=RegistryKey.OpenBaseKey(RegistryHive.LocalMachine,RegistryView.Registry64).OpenSubKey(@"SOFTWARE\\Microsoft\\VisualStudio\\14.0\\VC\\Runtimes\\x64");
+  try{using var key=RegistryKey.OpenBaseKey(RegistryHive.LocalMachine,RegistryView.Registry64).OpenSubKey(@"SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64");
    return Convert.ToInt32(key?.GetValue("Installed")??0)==1;
   }catch{return false;}
  }
