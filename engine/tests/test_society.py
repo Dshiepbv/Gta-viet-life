@@ -39,7 +39,7 @@ class SocietySimulationTests(unittest.TestCase):
         self.assertEqual(len(self.society.pending_commands()), 1)
         cmd = self.society.pending_commands()[0]
         self.assertEqual(cmd["command_type"], "space.transition")
-        self.assertEqual(cmd["payload"]["semantic_target"], "home.001.door")
+        self.assertEqual(cmd["payload"]["semantic_target"], "home.001.room")
         self.assertTrue(self.society.acknowledge_command(
             cmd["command_id"], {"success": True, "status": "completed", "observed": "entered"}
         ))
