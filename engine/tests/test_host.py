@@ -217,4 +217,17 @@ class HostTests(unittest.TestCase):
       "result":{"success":False,"status":"unsupported","reason":"location_not_mapped"}})
   self.assertEqual(code,200); self.assertTrue(report["accepted"])
   self.assertEqual(self.req("/engine/v1/adapter/commands")[1]["commands"],[])
+
+ def test_player_actor_registration_uses_same_canonical_life_engine(self):
+  actor={"npc_id":"player.main","display_name":"Player","home_location_id":"home.player",
+         "occupation":"citizen","actor_kind":"player","age_years":34}
+  code,result=self.req("/engine/v1/simulation/actors",{"request_id":"player-register","npc":actor})
+  self.assertEqual(code,201); self.assertTrue(result["registered"])
+  self.assertEqual(result["npc_id"],"player.main")
+  snapshot=self.req("/engine/v1/simulation/snapshot")[1]
+  player=next(x for x in snapshot["npcs"] if x["npc_id"]=="player.main")
+  self.assertEqual(player["actor_kind"],"player")
+  self.assertIn("hygiene",player["needs"])
+  self.assertIn("bladder",player["needs"])
+
 if __name__=="__main__":unittest.main()
