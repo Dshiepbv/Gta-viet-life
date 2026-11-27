@@ -46,6 +46,10 @@ jobs:
         run: dotnet build game/compile/GtaVietLifeCore.Compile.csproj -c Release -p:ShvdnApi3="${{ env.SHVDN_API3 }}"
       - name: Compile GTA V World adapter against pinned SHVDN Enhanced API
         run: dotnet build game/compile/GtaVietLifeWorld.Compile.csproj -c Release -p:ShvdnApi3="${{ env.SHVDN_API3 }}"
+      - name: Compile GTA V Economy module against pinned SHVDN Enhanced API
+        run: dotnet build game/compile/GtaVietLifeEconomy.Compile.csproj -c Release -p:ShvdnApi3="${{ env.SHVDN_API3 }}"
+      - name: Compile GTA V Personal module against pinned SHVDN Enhanced API
+        run: dotnet build game/compile/GtaVietLifePersonal.Compile.csproj -c Release -p:ShvdnApi3="${{ env.SHVDN_API3 }}"
       - name: Publish Launcher
         run: dotnet publish launcher/GtaVietLife.Launcher/GtaVietLife.Launcher.csproj -c Release -r win-x64 --self-contained true -p:Version=${{ env.GVL_VERSION }} -p:AssemblyVersion=${{ env.GVL_VERSION }}.0 -p:FileVersion=${{ env.GVL_VERSION }}.0 -o publish/launcher
       - name: Publish updater
