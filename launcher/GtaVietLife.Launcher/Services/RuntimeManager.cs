@@ -45,9 +45,9 @@ public sealed class RuntimeManager:IDisposable {
   return(true,"Đã phát hiện tệp ScriptHookVDotNet và cài module GTA Viet Life. Phiên bản runtime/game sẽ được xác nhận qua phiên Adapter; save game và mod khác được giữ nguyên.",sd);
  }
  public async Task StartAsync(CancellationToken ct){
-  if(!await HealthyAsync("http://127.0.0.1:5580/health",ct))StartHost();
+  if(!await HealthyAsync("http://127.0.0.1:5580/health",ct)){Kill(host);host=null;KillNamed("GtaVietLifeEngine");StartHost();}
   await WaitAsync("http://127.0.0.1:5580/health",30,ct);
-  if(!await HealthyAsync("http://127.0.0.1:5577/ping",ct))StartBridge();
+  if(!await HealthyAsync("http://127.0.0.1:5577/ping",ct)){Kill(bridge);bridge=null;KillNamed("GtaVietLifeBridge");StartBridge();}
   await WaitAsync("http://127.0.0.1:5577/ping",180,ct);
  }
  async Task<bool> HealthyAsync(string url,CancellationToken ct){try{using var r=await http.GetAsync(url,ct);return r.IsSuccessStatusCode;}catch{return false;}}
@@ -90,7 +90,7 @@ public sealed class RuntimeManager:IDisposable {
  public void Launch(string exe){Process.Start(new ProcessStartInfo(exe){UseShellExecute=true,WorkingDirectory=Path.GetDirectoryName(exe)!});}
  public async Task StopAsync(){
   try{using var q=new HttpRequestMessage(HttpMethod.Post,"http://127.0.0.1:5580/engine/v1/shutdown");q.Headers.Add("X-GVL-Token",Token);q.Content=new StringContent(System.Text.Json.JsonSerializer.Serialize(new{request_id=Guid.NewGuid().ToString("N")}),System.Text.Encoding.UTF8,"application/json");using var r=await http.SendAsync(q);}catch{}
-  await Task.Delay(250);Kill(host);Kill(bridge);
+  await Task.Delay(250);Kill(host);Kill(bridge);KillNamed("GtaVietLifeBridge");
  }
  static void Kill(Process? p){try{if(p is{HasExited:false})p.Kill(true);}catch{}}
  public static void Log(string s){try{Directory.CreateDirectory(LauncherSettings.Dir);File.AppendAllText(Path.Combine(LauncherSettings.Dir,"launcher.log"),$"[{DateTime.Now:O}] {s}{Environment.NewLine}");}catch{}}
