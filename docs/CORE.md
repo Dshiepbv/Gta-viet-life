@@ -21,6 +21,8 @@ Mọi script SHVDN chạy chung một AppDomain, nên trao đổi qua `AppDomain
 | `GVL.Mod.<Ten>` | `bool` | Core | `Personal`, `Legal`, `Body`, `Social`, `Life`, `Economy`. `null` nghĩa là bật |
 | `GVL.Pay` | `Func<int,string,string,bool>` | Core (mặc định), **Kinh tế ghi đè** | Trả tiền `(soTien, nhom, ghiChu)` trả `true` nếu trả được |
 | `GVL.Earn` | `Action<int,string,string>` | Core (mặc định), Kinh tế ghi đè | Nhận tiền |
+| `GVL.PayCash` | `Func<int,string,string,bool>` | Core (mặc định), Kinh tế ghi đè | Trả tiền mặt בלבד; không tự động quét tài khoản ngân hàng |
+| `GVL.EarnCash` | `Action<int,string,string>` | Core (mặc định), Kinh tế ghi đè | Nhận tiền mặt và ghi sổ cái |
 | `GVL.Needs` | `float[3]` | Đời sống | {đói, khát, năng lượng} 0-100 |
 | `GVL.NeedsAdd` | `float[3]` | ai cũng cộng dồn | World đọc mỗi tick, cộng vào nhu cầu rồi đặt `null` |
 | `GVL.DrainMul` | `float` | Cá nhân | Hệ số tốc độ giảm nhu cầu (thể lực, cân nặng) |
@@ -59,6 +61,8 @@ static bool Pay(int amount, string cat, string note)
 ```
 
 Nhóm (`cat`) đang dùng: `fine` (phạt), `court` (bồi thường, án phí), `license` (lệ phí giấy tờ), `bail` (tiền bảo lãnh), `impound` (bãi giữ xe), `gift`, `date`, `pet`, `barber`, `shop`, `car`. Kinh tế (`GtaVietLifeEconomy.cs`, phím L) đăng ký `GVL.Pay` của mình: trừ ngân hàng trước rồi tới tiền mặt, không đủ thì trả `false` và không trừ gì; mọi khoản ghi sổ cái kèm `acct=bank|cash`. Nhóm Kinh tế dùng thêm: `xang`, `sua xe`, `cuu ho`, `vay`, `lai`, `no`, `siet no`, `gui`, `rut`. Khi `Pay` trả `false`, module gọi tự quyết (Cá nhân: ghi tiền án hoặc chuyển thành vụ kiện). Bản mặc định của Core trừ tiền mặt và phát `ledger.expense`.
+
+Với khoản thu/chi vốn phải giữ đúng hành vi tiền mặt (mua hàng, doanh thu cửa hàng, lương, tiền thuê, phạt, chi phí sinh hoạt), dùng `GVL.PayCash` và `GVL.EarnCash`. Hai cổng này không tự chuyển sang tài khoản ngân hàng. Kinh tế ghi `cash` vào sổ cái; Core mặc định phát `ledger.expense`/`ledger.income` với `acct=cash`. `GtaVietLifeWorld.cs` và các khoản mua sắm/giao xe trong `GtaVietLifePersonal.cs` đã chuyển sang cổng tiền mặt chung. Chỉ Core/Economy và nhánh dự phòng khi Core không tồn tại mới được thay đổi tiền mặt trực tiếp.
 
 ## Bus sự kiện
 
