@@ -14,6 +14,11 @@ public sealed class RuntimeManager:IDisposable {
  public RuntimeManager(){Directory.CreateDirectory(data);Directory.CreateDirectory(HostData);Directory.CreateDirectory(BridgeData);if(!File.Exists(tokenPath)||File.ReadAllText(tokenPath).Trim().Length<48)File.WriteAllText(tokenPath,Convert.ToBase64String(RandomNumberGenerator.GetBytes(48)));}
  public (bool,string,string) InstallAdapter(string exe){
   var gd=Path.GetDirectoryName(exe)!;var sd=Path.Combine(gd,"scripts");
+  bool gameRunning=Process.GetProcessesByName("GTA5").Length>0||Process.GetProcessesByName("GTA5_Enhanced").Length>0;
+  if(gameRunning){
+   if(File.Exists(Path.Combine(sd,"GtaVietLifeCore.cs")))return(true,"GTA V đang chạy; giữ nguyên các script đã nạp. Bản cập nhật module sẽ áp dụng ở lần mở game kế tiếp.",sd);
+   return(false,"GTA V đang chạy và chưa có Adapter trong scripts. Hãy thoát game để Launcher cài đặt an toàn.",sd);
+  }
   bool asi=File.Exists(Path.Combine(gd,"ScriptHookVDotNet.asi"));
   bool dll=File.Exists(Path.Combine(gd,"ScriptHookVDotNet3.dll"))||File.Exists(Path.Combine(gd,"ScriptHookVDotNet2.dll"))||File.Exists(Path.Combine(sd,"ScriptHookVDotNet3.dll"));
   if(!asi||!dll)return(false,"Chưa phát hiện đầy đủ ScriptHookVDotNet. Cần cài runtime tương thích trước; Launcher không tự thay thế mod loader.",sd);

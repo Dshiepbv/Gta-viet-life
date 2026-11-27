@@ -9,6 +9,7 @@ public sealed class UpdateService {
  const string Api="https://api.github.com/repos/Dshiepbv/Gta-viet-life/releases/latest";
  const string PackageName="GtaVietLife-Windows-x64.zip";const string ChecksumsName="SHA256SUMS.txt";
  public async Task<bool> CheckAndLaunchUpdaterAsync(CancellationToken ct){
+  if(Process.GetProcessesByName("GTA5").Length>0||Process.GetProcessesByName("GTA5_Enhanced").Length>0){RuntimeManager.Log("Update deferred because GTA V is running.");return false;}
   using var http=new HttpClient();http.DefaultRequestHeaders.UserAgent.ParseAdd("GTA-Viet-Life-Launcher/0.1");
   JsonDocument release;
   try{using var r=await http.GetAsync(Api,ct);if(!r.IsSuccessStatusCode){RuntimeManager.Log("Update check skipped: GitHub release endpoint returned "+(int)r.StatusCode);return false;}release=JsonDocument.Parse(await r.Content.ReadAsStringAsync(ct));}
