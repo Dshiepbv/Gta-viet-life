@@ -65,6 +65,8 @@ Every POST body must contain a non-empty unique `request_id`. Authenticated requ
 
 The current GTA Core reports only the capability `adapter.session`. It also imports the existing resident roster into the Engine Host through the authenticated simulation profile endpoint. This imports stable identity and schedule metadata only; it does not claim actor observation, spawning, navigation, interiors or vehicle control. Those capabilities remain unavailable until the corresponding in-world command/result path is implemented and verified.
 
+The GTA Core includes `world_minute` (absolute in-game day/minute) in the handshake and heartbeat. Once a clock-aware adapter session is live, the Host pauses its wall-clock simulation worker and advances NPC life only by positive deltas observed from the GTA world clock. Repeated heartbeat values do not advance time; a backward clock correction resets the observation baseline without rewinding durable NPC history. Each heartbeat refreshes the offline checkpoint so a paused game is not later mistaken for offline elapsed time. Adapters that omit `world_minute` retain the legacy wall-clock simulation behavior.
+
 The Host now exposes authenticated NPC simulation endpoints:
 - `POST /engine/v1/simulation/npcs` — register a game-neutral NPC profile and validated schedule.
 - `POST /engine/v1/simulation/advance` — advance bounded simulation minutes; request IDs are deduplicated.
