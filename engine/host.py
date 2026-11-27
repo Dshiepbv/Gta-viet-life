@@ -27,6 +27,8 @@ class State:
         cached = self.simulation.store.get_request_result("advance:" + request_id) if request_id else None
         result = self.simulation.advance(minutes, request_id)
         if cached is None:
+            for event in result.get("events", []):
+                self.society.process_life_event(event)
             self.society.advance(minutes)
         return result
     def handshake(self, p):
@@ -229,6 +231,10 @@ def handler_for(state, log):
                     return self.sendj(200,state.society.lease_property(
                         p.get("transaction_id",""),p.get("property_id",""),
                         p.get("tenant_account_id",""),p.get("rent",0),p.get("lease_minutes",0)))
+                if self.path=="/engine/v1/world/employment/contracts":
+                    return self.sendj(201,state.society.create_employment_contract(
+                        p.get("contract_id",""),p.get("employee_id",""),p.get("employee_account_id",""),
+                        p.get("business_id",""),p.get("hourly_wage",0)))
                 if self.path=="/engine/v1/world/businesses":
                     return self.sendj(201,state.society.create_business(
                         p.get("business_id",""),p.get("property_id",""),p.get("owner_account_id",""),
