@@ -103,6 +103,31 @@ class HostTests(unittest.TestCase):
   self.assertEqual(snapshot["npc_count"],1)
   self.assertEqual(snapshot["npcs"][0]["memory_count"],1)
   self.assertEqual(snapshot["npcs"][0]["relationships"],{"player.godot":2.0})
+ def test_world_interaction_and_society_apis(self):
+  code,r=self.req("/engine/v1/world/buildings",{"request_id":"bldg-1","building_id":"home.1","category":"residential","name":"Home 1",
+    "adapter_maps":{"godot4.reference":{"entrance":"home.1.door","interior":"home.1.room"}},"interactions":["enter","exit"]})
+  self.assertEqual(code,201); self.assertTrue(r["registered"])
+  code,r=self.req("/engine/v1/world/objects",{"request_id":"obj-1","object_id":"home.1.bed","building_id":"home.1",
+    "kind":"bed","adapter_anchors":{"godot4.reference":"home.1.bed.anchor"}})
+  self.assertEqual(code,201)
+  code,r=self.req("/engine/v1/world/interact",{"request_id":"world-enter","actor_id":"player.godot",
+    "target_kind":"building","target_id":"home.1","action":"enter","adapter_id":"godot4.reference"})
+  self.assertEqual(code,202); self.assertTrue(r["accepted"])
+  commands=self.req("/engine/v1/world/commands")[1]["commands"]
+  self.assertEqual(len(commands),1); self.assertEqual(commands[0]["command_type"],"space.transition")
+  code,r=self.req("/engine/v1/world/commands/ack",{"request_id":"world-ack","command_id":commands[0]["command_id"],
+    "result":{"success":True,"status":"completed","outcome":"entered"}})
+  self.assertEqual(code,200); self.assertTrue(r["accepted"])
+  self.assertEqual(self.req("/engine/v1/world/snapshot")[1]["buildings"][0]["building_id"],"home.1")
+  code,r=self.req("/engine/v1/world/accounts",{"request_id":"acct-1","account_id":"player.cash","owner_id":"player.1","opening_balance":1000})
+  self.assertEqual(code,201); self.assertEqual(r["balance"],1000)
+  code,r=self.req("/engine/v1/world/events",{"request_id":"legacy-events","source_id":"gta5.shvdn","events":[
+    {"sequence":1,"event_type":"ledger.income","data":"amount=100;cat=work;note=shift","sim_minute":1}]})
+  self.assertEqual(code,200); self.assertEqual(r["accepted"],1)
+  code,r=self.req("/engine/v1/world/events",{"request_id":"legacy-events-replay","source_id":"gta5.shvdn","events":[
+    {"sequence":1,"event_type":"ledger.income","data":"amount=100;cat=work;note=shift","sim_minute":1}]})
+  self.assertEqual(code,200); self.assertEqual(r["duplicates"],1)
+  self.assertEqual(self.state.society.account("legacy:player_cash")["balance"],100)
  def test_adapter_command_poll_and_ack(self):
   npc={"npc_id":"npc.command","display_name":"Minh","home_location_id":"home.command","occupation":"worker",
        "schedule":[{"start_minute":0,"end_minute":1440,"activity":"work","location_id":"work.command"}]}
