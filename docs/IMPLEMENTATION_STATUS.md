@@ -158,7 +158,8 @@ The adapter path now includes an initial physical execution loop for resident ac
 
 - GTA Core polls the authenticated Engine Host command outbox every two seconds and places unique command IDs into a shared in-process queue.
 - GTA World consumes commands on its main ScriptHookVDotNet tick, resolves the resident by canonical `res_<id>`, and maps only the known `.home`, `.work`, `.lunch` and `.leisure` semantic location IDs to the resident's actual saved GTA coordinates.
-- The adapter issues a nav-mesh movement task to the mapped destination, or a bounded wander task when already nearby. It acknowledges only after the task is issued.
+- The adapter issues a nav-mesh movement task to the mapped destination, or a bounded wander task when already nearby. It acknowledges only after the task is issued. Commands for NPCs that are not currently materialized, are frozen in conversation, or are following the player are deferred and rotated behind other work so one off-screen resident cannot block all other residents.
+- The Engine coalesces pending `actor.set_activity` commands per NPC to the latest desired state; this prevents a large stale movement backlog from accumulating while the adapter is disconnected.
 - Once the first Engine command is applied, the resident's old time-of-day movement controller is bypassed; Engine activity commands become the schedule authority for that resident. If the Ped is not materialized, the command remains pending until it is available.
 - On resident Ped respawn, the last Engine activity/location is reapplied.
 
