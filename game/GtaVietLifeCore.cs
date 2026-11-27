@@ -628,6 +628,10 @@ public class GtaVietLifeCore : Script
                     {
                         Dictionary<string, object> command = item as Dictionary<string, object>;
                         if (command == null) continue;
+                        Dictionary<string, object> payload = command.ContainsKey("payload") ? command["payload"] as Dictionary<string, object> : null;
+                        object adapterValue;
+                        if (payload == null || !payload.TryGetValue("adapter_id", out adapterValue) ||
+                            Convert.ToString(adapterValue, CultureInfo.InvariantCulture) != "gta5.shvdn") continue;
                         lock (queue)
                         {
                             bool exists = false;
