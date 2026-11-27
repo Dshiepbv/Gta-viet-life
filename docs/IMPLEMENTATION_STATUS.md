@@ -225,3 +225,7 @@ This section supersedes milestone shorthand in earlier incremental notes. All ch
 ### Current release gate
 
 M0–M5 source implementation is integrated on main. The integrated Windows CI run must pass all Host tests, Bridge context tests, Godot parser, pinned SHVDN C# compile targets, packaging and updater rollback before a final candidate can be considered. Even after CI passes, the target GTA V build and a Godot graphical session remain separate runtime acceptance gates. Do not hand out intermediate builds for user testing.
+
+### Clock correctness hardening
+
+The GTA V adapter is the authoritative simulation clock when connected. The selected clock mode and last accepted GTA world minute are now durable in SQLite. GTA sessions no longer use wall-clock offline catch-up, and a Host restart reconciles only positive in-game minute deltas. Godot and adapters without a world-clock feed continue to use the Host clock. A Windows CI regression test covers restart and clock reconciliation.
