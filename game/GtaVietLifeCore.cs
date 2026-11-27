@@ -11,6 +11,7 @@ using System.Net;
 using System.Diagnostics;
 using System.Text;
 using System.Threading.Tasks;
+using System.Web.Script.Serialization;
 using GTA;
 
 public class GtaVietLifeCore : Script
@@ -29,7 +30,10 @@ public class GtaVietLifeCore : Script
     readonly object HostLock = new object();
     volatile bool hostConnected;
     bool hostConnecting, residentSyncing;
-    int nextHostHeartbeat, nextResidentSync;
+    int nextHostHeartbeat, nextResidentSync, nextEngineCommandPoll;
+    bool engineCommandPolling;
+    readonly object EngineCommandLock = new object();
+    readonly HashSet<string> queuedEngineCommandIds = new HashSet<string>();
     bool forward = true, logEvents = true, forwarding;
     long gameDay, lastSeenSeq;
     int lastMinute = -1, nextPublish, nextForward, nextSave;
@@ -58,6 +62,8 @@ public class GtaVietLifeCore : Script
             Set("GVL.Earn", earn);
         }
         Set("GVL.CoreVersion", 2);
+        Set("GVL.Engine.Commands", new Queue<Dictionary<string, object>>());
+        Set("GVL.Engine.Ack", new Action<string>(AckEngineCommand));
         Tick += OnTick;
         Aborted += delegate { CloseHostSession(); Save(); };
     }
@@ -102,6 +108,7 @@ public class GtaVietLifeCore : Script
         int now = Game.GameTime;
         MaintainHostSession(now);
         if (hostConnected && now > nextResidentSync) { nextResidentSync = now + 10000; SyncResidentProfiles(); }
+        if (hostConnected && now > nextEngineCommandPoll) { nextEngineCommandPoll = now + 2000; PollEngineCommands(); }
         TimeSpan t = World.CurrentTimeOfDay;
         int minute = t.Hours * 60 + t.Minutes;
         if (lastMinute >= 0 && minute < lastMinute && lastMinute - minute > 600)
@@ -421,6 +428,79 @@ public class GtaVietLifeCore : Script
             }
             catch (Exception ex) { Log("dong bo cu dan vao life engine loi: " + ex.Message); }
             finally { lock (HostLock) residentSyncing = false; }
+        });
+    }
+
+    void PollEngineCommands()
+    {
+        lock (HostLock)
+        {
+            if (engineCommandPolling || !hostConnected || string.IsNullOrEmpty(hostToken)) return;
+            engineCommandPolling = true;
+        }
+        Task.Run(delegate
+        {
+            try
+            {
+                using (WebClient wc = new HostWebClient())
+                {
+                    wc.Proxy = null; wc.Encoding = Encoding.UTF8;
+                    wc.Headers["X-GVL-Token"] = hostToken;
+                    string response = wc.DownloadString(hostServer + "/engine/v1/adapter/commands");
+                    JavaScriptSerializer json = new JavaScriptSerializer();
+                    Dictionary<string, object> root = json.Deserialize<Dictionary<string, object>>(response);
+                    object raw;
+                    if (root == null || !root.TryGetValue("commands", out raw)) return;
+                    object[] commands = raw as object[];
+                    if (commands == null) return;
+                    Queue<Dictionary<string, object>> queue = Get("GVL.Engine.Commands") as Queue<Dictionary<string, object>>;
+                    if (queue == null) { queue = new Queue<Dictionary<string, object>>(); Set("GVL.Engine.Commands", queue); }
+                    foreach (object item in commands)
+                    {
+                        Dictionary<string, object> command = item as Dictionary<string, object>;
+                        if (command == null) continue;
+                        object idValue;
+                        if (!command.TryGetValue("command_id", out idValue)) continue;
+                        string id = Convert.ToString(idValue, CultureInfo.InvariantCulture);
+                        if (string.IsNullOrEmpty(id)) continue;
+                        lock (EngineCommandLock)
+                        {
+                            if (!queuedEngineCommandIds.Add(id)) continue;
+                        }
+                        lock (queue) queue.Enqueue(command);
+                    }
+                }
+            }
+            catch (Exception ex) { Log("poll lenh life engine loi: " + ex.Message); }
+            finally { lock (HostLock) engineCommandPolling = false; }
+        });
+    }
+
+    void AckEngineCommand(string commandId)
+    {
+        if (string.IsNullOrEmpty(commandId) || string.IsNullOrEmpty(hostToken)) return;
+        Task.Run(delegate
+        {
+            bool accepted = false;
+            try
+            {
+                string body = "{\"request_id\":\"" + Guid.NewGuid().ToString("N") +
+                    "\",\"command_id\":\"" + JsonEscape(commandId) +
+                    "\",\"result\":{\"success\":true,\"execution\":\"gta_adapter_applied\"}}";
+                using (WebClient wc = new HostWebClient())
+                {
+                    wc.Proxy = null; wc.Encoding = Encoding.UTF8;
+                    wc.Headers[HttpRequestHeader.ContentType] = "application/json; charset=utf-8";
+                    wc.Headers["X-GVL-Token"] = hostToken;
+                    string response = wc.UploadString(hostServer + "/engine/v1/adapter/commands/ack", "POST", body);
+                    accepted = response.IndexOf("\"accepted\":true", StringComparison.OrdinalIgnoreCase) >= 0;
+                }
+            }
+            catch (Exception ex) { Log("ack lenh life engine loi: " + ex.Message); }
+            if (accepted)
+            {
+                lock (EngineCommandLock) queuedEngineCommandIds.Remove(commandId);
+            }
         });
     }
 
