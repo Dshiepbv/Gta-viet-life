@@ -324,8 +324,14 @@ class SocietySimulation:
                 raise KeyError("account_not_found")
             if any(isinstance(v, bool) or not isinstance(v, int) or v < 0 for v in (value, rent)):
                 raise ValueError("invalid_property_finance")
-            self.db.execute("INSERT INTO world_properties(property_id,building_id,owner_account_id,value,rent) VALUES(?,?,?,?,?)",
-                            (property_id, building_id, owner_account_id, value, rent))
+            existing = self.db.execute("SELECT building_id,owner_account_id FROM world_properties WHERE property_id=?", (property_id,)).fetchone()
+            if existing:
+                if existing["building_id"] != building_id or existing["owner_account_id"] != owner_account_id:
+                    raise ValueError("property_identity_or_owner_conflict")
+                self.db.execute("UPDATE world_properties SET value=?,rent=? WHERE property_id=?", (value, rent, property_id))
+            else:
+                self.db.execute("INSERT INTO world_properties(property_id,building_id,owner_account_id,value,rent) VALUES(?,?,?,?,?)",
+                                (property_id, building_id, owner_account_id, value, rent))
         return {"property_id": property_id, "created": True}
 
     def purchase_property(self, transaction_id: str, property_id: str, buyer_account_id: str,
@@ -378,8 +384,14 @@ class SocietySimulation:
             property_owner = self.db.execute("SELECT owner_account_id FROM world_properties WHERE property_id=?", (property_id,)).fetchone()
             if property_owner["owner_account_id"] != owner_account_id:
                 raise ValueError("business_owner_must_own_property")
-            self.db.execute("""INSERT INTO world_businesses(business_id,property_id,owner_account_id,cash_account_id,category,inventory_json,employees_json)
-                VALUES(?,?,?,?,?,'{}','[]')""", (business_id, property_id, owner_account_id, cash_account_id, category))
+            existing = self.db.execute("SELECT property_id,owner_account_id,cash_account_id FROM world_businesses WHERE business_id=?", (business_id,)).fetchone()
+            if existing:
+                if (existing["property_id"], existing["owner_account_id"], existing["cash_account_id"]) != (property_id, owner_account_id, cash_account_id):
+                    raise ValueError("business_identity_conflict")
+                self.db.execute("UPDATE world_businesses SET category=? WHERE business_id=?", (category, business_id))
+            else:
+                self.db.execute("""INSERT INTO world_businesses(business_id,property_id,owner_account_id,cash_account_id,category,inventory_json,employees_json)
+                    VALUES(?,?,?,?,?,'{}','[]')""", (business_id, property_id, owner_account_id, cash_account_id, category))
         return {"business_id": business_id, "created": True}
 
     def set_inventory(self, business_id: str, inventory: dict) -> dict:
