@@ -412,8 +412,8 @@ class LifeSimulationEngine:
             for index in range(0, len(participants) - 1, 2):
                 left, right = participants[index], participants[index + 1]
                 affinity_gain = 2.0 if left.profile.household_id and left.profile.household_id == right.profile.household_id else 1.0
-                left.affinity[right.profile.npc_id] = self._clamp(left.affinity.get(right.profile.npc_id, 0.0) + affinity_gain, -100, 100)
-                right.affinity[left.profile.npc_id] = self._clamp(right.affinity.get(left.profile.npc_id, 0.0) + affinity_gain, -100, 100)
+                left.affinity[right.profile.npc_id] = round(max(-100.0, min(100.0, left.affinity.get(right.profile.npc_id, 0.0) + affinity_gain)), 3)
+                right.affinity[left.profile.npc_id] = round(max(-100.0, min(100.0, right.affinity.get(left.profile.npc_id, 0.0) + affinity_gain)), 3)
                 for actor, other in ((left, right), (right, left)):
                     actor.memories.append({
                         "minute": self.simulation_minute, "kind": "npc_conversation",
