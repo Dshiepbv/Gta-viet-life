@@ -5,8 +5,10 @@ from pathlib import Path
 
 try:
     from .life_simulation import LifeSimulationEngine, NPCProfile, ScheduleBlock, SQLiteLifeStore
+    from .society import SocietySimulation
 except ImportError:  # PyInstaller entry-point execution
     from life_simulation import LifeSimulationEngine, NPCProfile, ScheduleBlock, SQLiteLifeStore
+    from society import SocietySimulation
 
 PROTOCOL="gvl-engine/1"; BUILD="0.1.0"; MAX_BODY=65536
 class State:
@@ -15,6 +17,8 @@ class State:
         self.data_dir = Path(data_dir) if data_dir else None
         db_path = str(self.data_dir / "life-simulation.sqlite3") if self.data_dir else ":memory:"
         self.simulation = LifeSimulationEngine(SQLiteLifeStore(db_path))
+        self.society = SocietySimulation(self.simulation.store.connection, self.simulation.store._lock,
+            lambda: self.simulation.simulation_minute, self.simulation)
     def auth(self, token): return bool(token) and secrets.compare_digest(self.token, token)
     def handshake(self, p):
         rid=p.get("request_id")
@@ -92,6 +96,16 @@ def handler_for(state, log):
                     return self.sendj(200,{"commands":state.simulation.pending_commands(limit)})
                 except (ValueError,TypeError) as exc:
                     return self.sendj(400,{"error":str(exc)})
+            if self.path=="/engine/v1/world/snapshot":
+                if not state.auth(self.headers.get("X-GVL-Token")): return self.sendj(401,{"error":"unauthorized"})
+                return self.sendj(200,state.society.snapshot())
+            if self.path=="/engine/v1/world/commands":
+                if not state.auth(self.headers.get("X-GVL-Token")): return self.sendj(401,{"error":"unauthorized"})
+                try:
+                    limit=int(self.headers.get("X-GVL-Limit","50"))
+                    return self.sendj(200,{"commands":state.society.pending_commands(limit)})
+                except (ValueError,TypeError) as exc:
+                    return self.sendj(400,{"error":str(exc)})
             return self.sendj(404,{"error":"not_found"})
         def do_POST(self):
             if not state.auth(self.headers.get("X-GVL-Token")): return self.sendj(401,{"error":"unauthorized"})
@@ -132,6 +146,59 @@ def handler_for(state, log):
                     result=state.simulation.dialogue_context(
                         p.get("npc_id",""),p.get("player_id",""),p.get("topic",""))
                     return self.sendj(200,result)
+                if self.path=="/engine/v1/world/buildings":
+                    return self.sendj(201,state.society.register_building(
+                        p.get("building_id",""),p.get("category",""),p.get("name",""),
+                        p.get("adapter_maps",{}),p.get("interactions",[])))
+                if self.path=="/engine/v1/world/objects":
+                    return self.sendj(201,state.society.register_object(
+                        p.get("object_id",""),p.get("building_id",""),p.get("kind",""),
+                        p.get("adapter_anchors",{}),p.get("initial_state",{})))
+                if self.path=="/engine/v1/world/interact":
+                    return self.sendj(202,state.society.interact(
+                        rid,p.get("actor_id",""),p.get("target_kind",""),p.get("target_id",""),
+                        p.get("action",""),p.get("adapter_id",""),p.get("payload",{})))
+                if self.path=="/engine/v1/world/commands/ack":
+                    accepted=state.society.acknowledge_command(p.get("command_id",""),p.get("result",{}))
+                    return self.sendj(200 if accepted else 409,{"accepted":accepted})
+                if self.path=="/engine/v1/world/accounts":
+                    return self.sendj(201,state.society.create_account(
+                        p.get("account_id",""),p.get("owner_id",""),p.get("opening_balance",0),
+                        p.get("allow_negative",False),p.get("currency","USD")))
+                if self.path=="/engine/v1/world/transactions":
+                    return self.sendj(200,state.society.post_transaction(
+                        p.get("transaction_id",""),p.get("source",""),p.get("description",""),
+                        p.get("entries",[])))
+                if self.path=="/engine/v1/world/properties":
+                    return self.sendj(201,state.society.create_property(
+                        p.get("property_id",""),p.get("building_id",""),p.get("owner_account_id",""),
+                        p.get("value",0),p.get("rent",0)))
+                if self.path=="/engine/v1/world/properties/purchase":
+                    return self.sendj(200,state.society.purchase_property(
+                        p.get("transaction_id",""),p.get("property_id",""),
+                        p.get("buyer_account_id",""),p.get("price",0)))
+                if self.path=="/engine/v1/world/properties/lease":
+                    return self.sendj(200,state.society.lease_property(
+                        p.get("transaction_id",""),p.get("property_id",""),
+                        p.get("tenant_account_id",""),p.get("rent",0),p.get("lease_minutes",0)))
+                if self.path=="/engine/v1/world/businesses":
+                    return self.sendj(201,state.society.create_business(
+                        p.get("business_id",""),p.get("property_id",""),p.get("owner_account_id",""),
+                        p.get("cash_account_id",""),p.get("category","")))
+                if self.path=="/engine/v1/world/businesses/inventory":
+                    return self.sendj(200,state.society.set_inventory(
+                        p.get("business_id",""),p.get("inventory",{})))
+                if self.path=="/engine/v1/world/businesses/sell":
+                    return self.sendj(200,state.society.sell_product(
+                        p.get("transaction_id",""),p.get("business_id",""),p.get("buyer_account_id",""),
+                        p.get("item_id",""),p.get("quantity",0),p.get("unit_price",0)))
+                if self.path=="/engine/v1/world/traffic/segments":
+                    return self.sendj(201,state.society.register_traffic_segment(
+                        p.get("segment_id",""),p.get("road_class",""),p.get("capacity",1.0)))
+                if self.path=="/engine/v1/world/traffic/incidents":
+                    return self.sendj(200,state.society.record_traffic_incident(
+                        p.get("incident_id",""),p.get("segment_id",""),p.get("severity",0),
+                        p.get("kind",""),p.get("details","")))
                 if self.path=="/engine/v1/heartbeat":
                     ok=state.heartbeat(str(p.get("session_id","")),p.get("world_minute")); return self.sendj(200 if ok else 409,{"accepted":ok})
                 if self.path=="/engine/v1/close":
