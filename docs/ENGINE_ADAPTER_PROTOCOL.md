@@ -161,3 +161,9 @@ After the command executor increment, the GTA V Core handshake declares:
 - `adapter.actor_activity` — execution of the first `actor.set_activity` command for registered resident Peds.
 
 The World script maps only the existing resident's verified home, work and lunch coordinates. It defers commands while the resident Ped is absent, frozen in conversation, or following the player. Acknowledgement currently means the GTA task was issued, not that the destination was reached. The capability declaration must not be interpreted as support for arbitrary ambient NPCs, interiors, vehicle tasks, or activity-specific animations.
+
+## Second adapter implementation — Godot 4 (M5)
+
+The `adapters/godot/` reference project consumes the same `gvl-engine/1` Host protocol as the GTA V adapter. It demonstrates adapter identity/capability declaration, NPC registration, durable semantic command polling, physical movement in a native scene, completion acknowledgement after arrival, and a player-to-NPC interaction routed back to the canonical Engine domain. Godot owns only its native scene coordinates and presentation. It does not own canonical NPC state or duplicate domain rules.
+
+The current Godot scene maps `home.godot`, `work.godot` and `park.godot` to local 2D positions. This mapping is adapter-local and is not shared with GTA. The project is a narrow portability reference, not a full second game. Runtime validation with Godot 4 remains an explicit acceptance gate; source presence and Host-side integration tests are not a substitute for launching the Godot project.
