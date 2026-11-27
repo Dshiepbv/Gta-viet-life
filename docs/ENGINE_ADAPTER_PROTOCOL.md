@@ -219,3 +219,8 @@ The shared life clock now tracks completed canonical work hours. An active emplo
 ## Persistent social and family graph
 
 The Society domain now stores explicit actor-to-actor ties with relation types (parent, child, sibling, spouse, romantic interest, friend, coworker, neighbor, acquaintance and rival), relationship strength and status (active, estranged, separated or ended). The relationship endpoint validates that both participants exist in the shared actor registry, persists the social edge and synchronizes symmetric affinity into both life records. This provides a canonical basis for family and social consequences; family formation, custody, household finances, births and relationship-specific autonomous behavior are not yet complete.
+
+
+## Durable life-event delivery
+
+The SQLite life-event journal is now consumed through a separate processed-event ledger. The Host recovers unprocessed events on startup and after every simulation advance. Each event is marked processed in the same database transaction as its linked economic consequence, and payroll ledger transaction IDs are independently idempotent. This closes the failure window where simulation state could be saved but an associated society/economy consequence lost during a Host interruption.
