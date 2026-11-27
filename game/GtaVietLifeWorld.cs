@@ -3171,6 +3171,9 @@ public class GtaVietLifeWorld : Script
                 Resident resident = null;
                 foreach (Resident item in residents) if ("res_" + item.Id == npcId) { resident = item; break; }
                 if (resident == null || resident.P == null || !resident.P.Exists()) return; // chua materialize: giu lenh cho den khi NPC hien dien
+                bool followingPlayer = false;
+                try { followingPlayer = Game.Player.Character.PedGroup.Contains(resident.P); } catch { }
+                if (resident.P.IsPositionFrozen || followingPlayer) return; // khong cat ngang hoi thoai/di theo nguoi choi
                 string activity = Convert.ToString(payload.ContainsKey("activity") ? payload["activity"] : "");
                 string locationId = Convert.ToString(payload.ContainsKey("location_id") ? payload["location_id"] : "");
                 if (!ApplyEngineResidentActivity(resident, activity, locationId, now)) return;
