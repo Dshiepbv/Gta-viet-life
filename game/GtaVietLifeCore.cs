@@ -248,6 +248,72 @@ public class GtaVietLifeCore : Script
         });
     }
 
+    // A separate durable outbox feeds the canonical Life Engine journal.
+    // It is independent of the legacy bridge acknowledgement so neither consumer can lose events.
+    void ForwardEngineEvents()
+    {
+        string[] batch;
+        lock (OutboxLock)
+        {
+            if (engineEventForwarding || engineOutbox.Count == 0 || !hostConnected || string.IsNullOrEmpty(hostToken)) return;
+            engineEventForwarding = true;
+            batch = engineOutbox.GetRange(0, Math.Min(100, engineOutbox.Count)).ToArray();
+        }
+        Task.Run(delegate
+        {
+            bool ok = false;
+            try
+            {
+                List<Dictionary<string, object>> events = new List<Dictionary<string, object>>();
+                foreach (string line in batch)
+                {
+                    string[] parts = (line ?? "").Split(new[] { '\t' }, 3);
+                    long seq;
+                    if (parts.Length < 3 || !long.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out seq)) continue;
+                    events.Add(new Dictionary<string, object> {
+                        { "sequence", seq }, { "event_type", parts[1] }, { "data", parts[2] },
+                        { "sim_minute", currentWorldMinute }
+                    });
+                }
+                if (events.Count == 0) ok = true;
+                else
+                {
+                    Dictionary<string, object> request = new Dictionary<string, object> {
+                        { "request_id", Guid.NewGuid().ToString("N") },
+                        { "source_id", "gta5.shvdn" }, { "events", events }
+                    };
+                    JavaScriptSerializer json = new JavaScriptSerializer();
+                    using (WebClient wc = new HostWebClient())
+                    {
+                        wc.Proxy = null; wc.Encoding = Encoding.UTF8;
+                        wc.Headers[HttpRequestHeader.ContentType] = "application/json; charset=utf-8";
+                        wc.Headers["X-GVL-Token"] = hostToken;
+                        string response = wc.UploadString(hostServer + "/engine/v1/world/events", "POST", json.Serialize(request));
+                        ok = response.IndexOf("\"accepted\"", StringComparison.OrdinalIgnoreCase) >= 0;
+                    }
+                }
+            }
+            catch (Exception ex) { Log("forward event vao life engine loi: " + ex.Message); }
+            finally
+            {
+                if (ok)
+                {
+                    lock (OutboxLock)
+                    {
+                        int remove = Math.Min(batch.Length, engineOutbox.Count);
+                        for (int i = 0; i < remove; i++)
+                        {
+                            if (engineOutbox[0] != batch[i]) break;
+                            engineOutbox.RemoveAt(0);
+                        }
+                    }
+                    Save();
+                }
+                lock (OutboxLock) engineEventForwarding = false;
+            }
+        });
+    }
+
     void Save()
     {
         lock (SaveLock)
