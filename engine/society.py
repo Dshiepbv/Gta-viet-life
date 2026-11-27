@@ -5,6 +5,7 @@ This module owns canonical facts and consequences; it never imports a game SDK.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 import threading
@@ -423,6 +424,82 @@ class SocietySimulation:
             if cur.rowcount != 1:
                 raise KeyError("business_not_found")
         return {"updated": True, "inventory": normalized}
+
+    def sync_business_state(self, request_id: str, business_id: str, adapter_id: str,
+                            cash_balance: int, inventory: dict, is_open: bool = True) -> dict:
+        """Reconcile a native game's authoritative shop snapshot into the canonical business ledger."""
+        request_id = _valid_id(request_id, "request_id")
+        if len(request_id) > 100:
+            raise ValueError("invalid_request_id")
+        business_id = _valid_id(business_id, "business_id")
+        adapter_id = _valid_id(adapter_id, "adapter_id")
+        if isinstance(cash_balance, bool) or not isinstance(cash_balance, int) or cash_balance < 0:
+            raise ValueError("invalid_business_cash_balance")
+        if not isinstance(is_open, bool):
+            raise ValueError("invalid_business_open_state")
+        if not isinstance(inventory, dict) or len(inventory) > 256:
+            raise ValueError("invalid_inventory")
+        normalized = {}
+        for item_id, quantity in inventory.items():
+            _valid_id(item_id, "item_id")
+            if isinstance(quantity, bool) or not isinstance(quantity, int) or quantity < 0:
+                raise ValueError("invalid_inventory_quantity")
+            normalized[item_id] = quantity
+        with self.lock, self.db:
+            cached = self.db.execute(
+                "SELECT response_json FROM world_request_dedup WHERE request_id=?", (request_id,)
+            ).fetchone()
+            if cached:
+                return json.loads(cached["response_json"])
+            row = self.db.execute(
+                """SELECT b.cash_account_id,p.building_id,bu.adapter_maps_json
+                FROM world_businesses b
+                JOIN world_properties p ON p.property_id=b.property_id
+                JOIN world_buildings bu ON bu.building_id=p.building_id
+                WHERE b.business_id=?""", (business_id,)
+            ).fetchone()
+            if not row:
+                raise KeyError("business_not_found")
+            adapter_maps = json.loads(row["adapter_maps_json"])
+            if adapter_id not in adapter_maps:
+                raise ValueError("adapter_mapping_unavailable")
+            cash_account_id = row["cash_account_id"]
+            account = self.db.execute(
+                "SELECT balance FROM world_accounts WHERE account_id=?", (cash_account_id,)
+            ).fetchone()
+            if not account:
+                raise KeyError("business_cash_account_not_found")
+            delta = cash_balance - int(account["balance"])
+            equity_id = "system:business_sync_equity"
+            self.db.execute(
+                """INSERT OR IGNORE INTO world_accounts
+                (account_id,owner_id,balance,allow_negative,currency)
+                VALUES(?, 'system', 0, 1, 'USD')""", (equity_id,)
+            )
+            if delta:
+                transaction_id = "bsync:" + hashlib.sha256(request_id.encode("utf-8")).hexdigest()[:48]
+                self._post_transaction_locked(
+                    transaction_id, "business_snapshot_sync", business_id,
+                    [{"account_id": cash_account_id, "amount": delta},
+                     {"account_id": equity_id, "amount": -delta}],
+                )
+            self.db.execute(
+                "UPDATE world_businesses SET inventory_json=?,is_open=? WHERE business_id=?",
+                (json.dumps(normalized, ensure_ascii=False, sort_keys=True), int(is_open), business_id),
+            )
+            result = {"synced": True, "business_id": business_id, "cash_balance": cash_balance,
+                      "cash_delta": delta, "inventory": normalized, "is_open": is_open}
+            self.db.execute(
+                "INSERT INTO world_request_dedup(request_id,response_json) VALUES(?,?)",
+                (request_id, json.dumps(result, ensure_ascii=False)),
+            )
+            self.db.execute(
+                """INSERT INTO world_event_journal
+                (event_id,event_type,target_id,payload_json,sim_minute) VALUES(?,?,?,?,?)""",
+                (uuid.uuid4().hex, "business.state_synchronized", business_id,
+                 json.dumps(result, ensure_ascii=False), int(self.minute_provider())),
+            )
+            return result
 
     def sell_product(self, transaction_id: str, business_id: str, buyer_account_id: str,
                      item_id: str, quantity: int, unit_price: int) -> dict:
