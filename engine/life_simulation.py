@@ -257,6 +257,49 @@ class SQLiteLifeStore:
                     (request_id, json.dumps(response, ensure_ascii=False)),
                 )
 
+    def apply_physical_interaction(self, actor_id: str, object_kind: str) -> dict:
+        """Apply canonical human-life consequences only after the adapter confirms a physical object use."""
+        if not isinstance(actor_id, str) or not actor_id or len(actor_id) > 128:
+            raise ValueError("invalid_actor_id")
+        if not isinstance(object_kind, str) or not object_kind or len(object_kind) > 64:
+            raise ValueError("invalid_object_kind")
+        effects = {
+            "food": ("eat", {"hunger": -35.0, "mood": 3.0, "bladder": 8.0}),
+            "meal": ("eat", {"hunger": -35.0, "mood": 3.0, "bladder": 8.0}),
+            "fridge": ("eat", {"hunger": -15.0, "bladder": 4.0}),
+            "vending_machine": ("eat", {"hunger": -15.0, "bladder": 5.0}),
+            "bed": ("sleep", {"energy": 35.0, "health": 1.0, "stress": -8.0}),
+            "toilet": ("toilet", {"bladder": -90.0}),
+            "shower": ("shower", {"hygiene": 85.0, "stress": -5.0}),
+            "gym_equipment": ("exercise", {"fitness": 8.0, "energy": -12.0, "stress": -5.0}),
+            "computer": ("study", {"goal_progress": 0.5, "energy": -3.0}),
+            "book": ("study", {"goal_progress": 0.5, "mood": 2.0}),
+            "hobby": ("leisure", {"mood": 8.0, "stress": -6.0}),
+            "social_seating": ("socialize", {"social": 15.0, "mood": 4.0}),
+        }
+        key = object_kind.strip().lower().replace("-", "_").replace(" ", "_")
+        if key not in effects:
+            return {"applied": False, "reason": "no_life_effect_mapping", "actor_id": actor_id}
+        activity, changes = effects[key]
+        with self._lock:
+            state = self.npcs.get(actor_id)
+            if state is None:
+                raise KeyError("actor_not_found")
+            for field_name, delta in changes.items():
+                if field_name == "goal_progress":
+                    state.goal_progress = self._clamp(state.goal_progress + delta)
+                else:
+                    setattr(state, field_name, self._clamp(getattr(state, field_name) + delta))
+            state.current_activity = activity
+            state.last_transition_minute = self.simulation_minute
+            self.events = []
+            self._record(state, "physical_activity_completed", {
+                "object_kind": key, "activity": activity, "actor_kind": state.profile.actor_kind,
+            })
+            self.store.save(self.simulation_minute, [state], self.events)
+            return {"applied": True, "actor_id": actor_id, "actor_kind": state.profile.actor_kind,
+                    "activity": activity, "changes": changes}
+
     def pending_commands(self, limit: int = 50) -> List[dict]:
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 200:
             raise ValueError("invalid_command_limit")
