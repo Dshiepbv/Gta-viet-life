@@ -345,7 +345,7 @@ public class GtaVietLifeCore : Script
             catch { }
             string body = "{\"protocol\":\"gvl-engine/1\",\"request_id\":\"" + Guid.NewGuid().ToString("N") + "\",\"session_id\":\"" + hostSessionId +
                 "\",\"adapter\":{\"id\":\"gta5.shvdn\",\"version\":\"0.1.0\",\"base_game\":\"" + gameEdition + "\",\"base_game_build\":\"" + gameVersion +
-                "\"},\"capabilities\":[\"adapter.session\"]}";
+                "\"},\"capabilities\":[\"adapter.session\",\"adapter.command_poll\",\"adapter.actor_activity\"]}";
             using (WebClient wc = new HostWebClient())
             {
                 wc.Proxy = null; wc.Encoding = Encoding.UTF8;
