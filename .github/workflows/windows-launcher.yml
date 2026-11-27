@@ -16,10 +16,17 @@ jobs:
         with: { dotnet-version: '8.0.x' }
       - uses: actions/setup-python@v5
         with: { python-version: '3.11' }
+      - name: Set release version
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_TYPE -eq "tag") { $version = $env:GITHUB_REF_NAME.TrimStart("v") } else { $version = "0.1.0" }
+          "GVL_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - name: Test Engine Host
         run: python -m unittest discover -s engine/tests -v
+      - name: Compile Python modules
+        run: python -m compileall -q bridge engine
       - name: Publish Launcher
-        run: dotnet publish launcher/GtaVietLife.Launcher/GtaVietLife.Launcher.csproj -c Release -r win-x64 --self-contained true -o publish/launcher
+        run: dotnet publish launcher/GtaVietLife.Launcher/GtaVietLife.Launcher.csproj -c Release -r win-x64 --self-contained true -p:Version=${{ env.GVL_VERSION }} -p:AssemblyVersion=${{ env.GVL_VERSION }}.0 -p:FileVersion=${{ env.GVL_VERSION }}.0 -o publish/launcher
       - name: Publish updater
         run: dotnet publish launcher/GtaVietLife.Updater/GtaVietLife.Updater.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish/updater
       - name: Stage updater and game scripts
