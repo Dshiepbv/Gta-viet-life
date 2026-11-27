@@ -29,7 +29,7 @@ public class GtaVietLifeCore : Script
     string hostToken = "";
     readonly object HostLock = new object();
     volatile bool hostConnected;
-    bool hostConnecting, residentSyncing;
+    bool hostConnecting, residentSyncing, playerSyncing;
     long nextHostHeartbeatTicks;
     int nextResidentSync, nextEngineCommandPoll, nextWorldCommandPoll, nextWalletBaselineSync, nextWorldPostRetry;
     bool engineCommandPolling, worldCommandPolling;
@@ -511,28 +511,37 @@ public class GtaVietLifeCore : Script
     // This syncs identity and schedule only; it does not claim physical NPC control.
     void SyncPlayerProfile()
     {
-        try
+        lock (HostLock)
         {
-            string playerName = Settings.GetValue("Player", "Name", "Player");
-            string occupation = Settings.GetValue("Player", "Occupation", "citizen");
-            string home = Settings.GetValue("Player", "HomeLocation", "player.home");
-            int age = Settings.GetValue("Player", "Age", 30);
-            age = Math.Max(18, Math.Min(100, age));
-            string body = "{\"request_id\":\"" + Guid.NewGuid().ToString("N") + "\",\"npc\":{" +
-                "\"npc_id\":\"player.main\",\"display_name\":\"" + JsonEscape(playerName) +
-                "\",\"home_location_id\":\"" + JsonEscape(home) + "\",\"occupation\":\"" +
-                JsonEscape(occupation) + "\",\"actor_kind\":\"player\",\"age_years\":" +
-                age.ToString(CultureInfo.InvariantCulture) + ",\"life_goal\":\"career\",\"schedule\":[]}}";
-            using (WebClient wc = new HostWebClient())
-            {
-                wc.Proxy = null; wc.Encoding = Encoding.UTF8;
-                wc.Headers[HttpRequestHeader.ContentType] = "application/json; charset=utf-8";
-                wc.Headers["X-GVL-Token"] = hostToken;
-                wc.UploadString(hostServer + "/engine/v1/simulation/actors", "POST", body);
-            }
-            SyncPlayerWalletBaseline();
+            if (playerSyncing || !hostConnected || string.IsNullOrEmpty(hostToken)) return;
+            playerSyncing = true;
         }
-        catch (Exception ex) { Log("dong bo nhan vat nguoi choi vao life engine loi: " + ex.Message); }
+        Task.Run(delegate
+        {
+            try
+            {
+                string playerName = Settings.GetValue("Player", "Name", "Player");
+                string occupation = Settings.GetValue("Player", "Occupation", "citizen");
+                string home = Settings.GetValue("Player", "HomeLocation", "player.home");
+                int age = Settings.GetValue("Player", "Age", 30);
+                age = Math.Max(18, Math.Min(100, age));
+                string body = "{\"request_id\":\"" + Guid.NewGuid().ToString("N") + "\",\"npc\":{" +
+                    "\"npc_id\":\"player.main\",\"display_name\":\"" + JsonEscape(playerName) +
+                    "\",\"home_location_id\":\"" + JsonEscape(home) + "\",\"occupation\":\"" +
+                    JsonEscape(occupation) + "\",\"actor_kind\":\"player\",\"age_years\":" +
+                    age.ToString(CultureInfo.InvariantCulture) + ",\"life_goal\":\"career\",\"schedule\":[]}}";
+                using (WebClient wc = new HostWebClient())
+                {
+                    wc.Proxy = null; wc.Encoding = Encoding.UTF8;
+                    wc.Headers[HttpRequestHeader.ContentType] = "application/json; charset=utf-8";
+                    wc.Headers["X-GVL-Token"] = hostToken;
+                    wc.UploadString(hostServer + "/engine/v1/simulation/actors", "POST", body);
+                }
+                SyncPlayerWalletBaseline();
+            }
+            catch (Exception ex) { Log("dong bo nhan vat nguoi choi vao life engine loi: " + ex.Message); }
+            finally { lock (HostLock) playerSyncing = false; }
+        });
     }
 
     void SyncResidentProfiles()
