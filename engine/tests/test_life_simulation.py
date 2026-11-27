@@ -52,12 +52,16 @@ class LifeSimulationTests(unittest.TestCase):
             first.interact("npc.minh-an", "player.main")
             before = first.snapshot()
             second = LifeSimulationEngine(SQLiteLifeStore(path))
-            after = second.snapshot()
-            self.assertEqual(after["simulation_minute"], before["simulation_minute"])
-            self.assertEqual(after["npcs"][0]["activity"], before["npcs"][0]["activity"])
-            self.assertEqual(after["npcs"][0]["memory_count"], 1)
-            self.assertEqual(after["npcs"][0]["relationships"], {"player.main": 2.0})
-            self.assertGreater(after["npcs"][0]["goal_progress"], 0)
+            try:
+                after = second.snapshot()
+                self.assertEqual(after["simulation_minute"], before["simulation_minute"])
+                self.assertEqual(after["npcs"][0]["activity"], before["npcs"][0]["activity"])
+                self.assertEqual(after["npcs"][0]["memory_count"], 1)
+                self.assertEqual(after["npcs"][0]["relationships"], {"player.main": 2.0})
+                self.assertGreater(after["npcs"][0]["goal_progress"], 0)
+            finally:
+                second.store.close()
+                first.store.close()
 
     def test_rejects_overlapping_schedules_and_bad_advance(self):
         with self.assertRaises(ValueError):
