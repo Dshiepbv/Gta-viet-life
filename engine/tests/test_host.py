@@ -43,4 +43,16 @@ class HostTests(unittest.TestCase):
   code,r=self.req("/engine/v1/simulation/snapshot")
   self.assertEqual(code,200); self.assertEqual(r["npc_count"],1)
   self.assertEqual(r["npcs"][0]["memory_count"],1)
+ def test_adapter_command_poll_and_ack(self):
+  npc={"npc_id":"npc.command","display_name":"Minh","home_location_id":"home.command","occupation":"worker",
+       "schedule":[{"start_minute":0,"end_minute":1440,"activity":"work","location_id":"work.command"}]}
+  self.assertEqual(self.req("/engine/v1/simulation/npcs",{"request_id":"npc-command","npc":npc})[0],201)
+  self.assertEqual(self.req("/engine/v1/simulation/advance",{"request_id":"advance-command","minutes":1})[0],200)
+  code,r=self.req("/engine/v1/adapter/commands")
+  self.assertEqual(code,200); self.assertEqual(len(r["commands"]),1)
+  command=r["commands"][0]
+  self.assertEqual(command["command_type"],"actor.set_activity")
+  code,ack=self.req("/engine/v1/adapter/commands/ack",{"request_id":"ack-command","command_id":command["command_id"],"result":{"success":True}})
+  self.assertEqual(code,200); self.assertTrue(ack["accepted"])
+  self.assertEqual(self.req("/engine/v1/adapter/commands")[1]["commands"],[])
 if __name__=="__main__":unittest.main()
