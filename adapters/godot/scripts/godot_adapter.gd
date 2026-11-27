@@ -12,7 +12,7 @@ const POLL_SECONDS := 2.0
 var token := ""
 var session_id := ""
 var request_counter := 0
-var resident: Node2D
+var resident: Variant
 var player: Node2D
 var locations := {
 	"home.godot": Vector2(170, 400),
