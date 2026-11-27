@@ -154,7 +154,7 @@ def handler_for(state, log):
                     result=p.get("result")
                     accepted=state.simulation.complete_command(command_id,result)
                     return self.sendj(200 if accepted else 409,{"accepted":accepted,"command_id":command_id})
-                if self.path=="/engine/v1/simulation/npcs":
+                if self.path in ("/engine/v1/simulation/npcs","/engine/v1/simulation/actors"):
                     raw=p.get("npc")
                     if not isinstance(raw,dict): raise ValueError("npc_object_required")
                     schedule=raw.get("schedule",[])
@@ -167,7 +167,8 @@ def handler_for(state, log):
                         traits=tuple(raw.get("traits",[])), schedule=tuple(blocks),
                         life_goal=raw.get("life_goal","career"), household_id=raw.get("household_id",""),
                         age_years=raw.get("age_years",30), biography=raw.get("biography",""),
-                        skills=raw.get("skills",{}), knowledge=tuple(raw.get("knowledge",[])))
+                        skills=raw.get("skills",{}), knowledge=tuple(raw.get("knowledge",[])),
+                        actor_kind=raw.get("actor_kind","npc"))
                     state.simulation.register_npc(profile)
                     return self.sendj(201,{"registered":True,"npc_id":profile.npc_id})
                 if self.path=="/engine/v1/simulation/interact":
