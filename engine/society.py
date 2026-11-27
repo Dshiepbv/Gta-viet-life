@@ -350,8 +350,6 @@ class SocietySimulation:
                     "SELECT account_id,amount FROM world_ledger_entries WHERE transaction_id=? ORDER BY entry_id",
                     (transaction_id,)
                 ).fetchall()
-                expected = [(buyer_account_id, -price)]
-                expected.extend((entry["account_id"], entry["amount"]) for entry in prior[1:2])
                 if (existing["source"] != "property_purchase" or existing["description"] != property_id
                         or len(prior) != 2 or prior[0]["account_id"] != buyer_account_id
                         or prior[0]["amount"] != -price or prior[1]["amount"] != price
