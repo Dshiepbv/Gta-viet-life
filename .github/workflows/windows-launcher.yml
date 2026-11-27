@@ -1,9 +1,12 @@
 name: Build GTA Viet Life Windows Launcher
 on:
   push:
-    branches: [codex/gta-viet-life-architecture-hardening]
+    branches: [main]
     tags: ['v*']
-    paths: ['launcher/**','engine/**','bridge/**','game/**','packaging/**','.github/workflows/windows-launcher.yml']
+    paths: ['launcher/**','engine/**','bridge/**','game/**','packaging/**','docs/**','.github/workflows/windows-launcher.yml']
+  pull_request:
+    branches: [main]
+    paths: ['launcher/**','engine/**','bridge/**','game/**','packaging/**','docs/**','.github/workflows/windows-launcher.yml']
   workflow_dispatch:
 permissions:
   contents: write
