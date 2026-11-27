@@ -20,7 +20,7 @@ public sealed class UpdateService {
    if(latest<=current){RuntimeManager.Log("Launcher is current ("+current+").");return false;}
    var assets=root.GetProperty("assets");
    string? packageUrl=null,checksumsUrl=null;
-   foreach(var a in assets){var name=a.GetProperty("name").GetString();var url=a.GetProperty("browser_download_url").GetString();if(name==PackageName)packageUrl=url;if(name==ChecksumsName)checksumsUrl=url;}
+   foreach(var a in assets.EnumerateArray()){var name=a.GetProperty("name").GetString();var url=a.GetProperty("browser_download_url").GetString();if(name==PackageName)packageUrl=url;if(name==ChecksumsName)checksumsUrl=url;}
    if(packageUrl==null||checksumsUrl==null){RuntimeManager.Log("Release "+tag+" missing package/checksum assets.");return false;}
    var dir=Path.Combine(LauncherSettings.Dir,"Updates");Directory.CreateDirectory(dir);
    var zip=Path.Combine(dir,PackageName);var sums=Path.Combine(dir,ChecksumsName);
