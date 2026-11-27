@@ -172,7 +172,7 @@ class SocietySimulation:
                 raise ValueError("adapter_mapping_unavailable")
             command_id = uuid.uuid4().hex
             command_type = "space.transition" if target_kind == "building" and action in ("enter", "exit", "open", "close") else "interaction.use_object"
-            command_payload = {"target_kind": target_kind, "target_id": target_id, "action": action,
+            command_payload = {"actor_id": actor_id, "target_kind": target_kind, "target_id": target_id, "action": action,
                                "semantic_target": semantic_target, "adapter_id": adapter_id,
                                "parameters": payload or {}}
             response = {"accepted": True, "command_id": command_id, "status": "pending",
