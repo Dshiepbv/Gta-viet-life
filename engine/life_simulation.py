@@ -378,6 +378,10 @@ class LifeSimulationEngine:
         state.age_minutes += 1
         state.hygiene -= 0.035
         state.bladder += 0.11
+        if state.bladder >= 94 and activity not in ("toilet", "use_bathroom"):
+            activity = "toilet"
+        if state.hygiene <= 8 and activity not in ("shower", "bathe"):
+            activity = "shower"
         if activity == "sleep":
             state.energy += 1.7
             state.health += 0.025
@@ -422,10 +426,6 @@ class LifeSimulationEngine:
             state.hunger += 0.4
 
         # Basic autonomic needs apply equally to the player avatar and every NPC.
-        if state.bladder >= 94 and activity not in ("toilet", "use_bathroom"):
-            activity = "toilet"
-        if state.hygiene <= 8 and activity not in ("shower", "bathe"):
-            activity = "shower"
         if state.hunger >= 98 or state.energy <= 2 or state.hygiene <= 1 or state.bladder >= 99:
             state.health -= 0.08
         if state.profile.life_goal == "career" and activity == "work":
