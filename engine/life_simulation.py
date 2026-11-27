@@ -401,6 +401,32 @@ class LifeSimulationEngine:
             state.last_transition_minute = self.simulation_minute
             self._record(state, "activity_changed", {"from": previous, "to": activity, "location_id": location})
 
+    def _process_autonomous_social_interactions(self) -> None:
+        """Pair co-located NPCs on a social activity; deterministic and bounded per 15-minute pulse."""
+        groups: Dict[str, List[NPCState]] = {}
+        for state in self.npcs.values():
+            if state.current_activity == "socialize" and state.location_id:
+                groups.setdefault(state.location_id, []).append(state)
+        for location_id in sorted(groups):
+            participants = sorted(groups[location_id], key=lambda item: item.profile.npc_id)
+            for index in range(0, len(participants) - 1, 2):
+                left, right = participants[index], participants[index + 1]
+                affinity_gain = 2.0 if left.profile.household_id and left.profile.household_id == right.profile.household_id else 1.0
+                left.affinity[right.profile.npc_id] = self._clamp(left.affinity.get(right.profile.npc_id, 0.0) + affinity_gain, -100, 100)
+                right.affinity[left.profile.npc_id] = self._clamp(right.affinity.get(left.profile.npc_id, 0.0) + affinity_gain, -100, 100)
+                for actor, other in ((left, right), (right, left)):
+                    actor.memories.append({
+                        "minute": self.simulation_minute, "kind": "npc_conversation",
+                        "participant_id": other.profile.npc_id,
+                        "summary": "Talked with " + other.profile.display_name + " at " + location_id,
+                        "source": "autonomous_social_simulation", "confidence": 1.0,
+                    })
+                    actor.memories = actor.memories[-100:]
+                    self._record(actor, "social_interaction", {
+                        "participant_id": other.profile.npc_id, "location_id": location_id,
+                        "affinity_gain": affinity_gain,
+                    })
+
     def advance(self, minutes: int, request_id: Optional[str] = None) -> dict:
         if isinstance(minutes, bool) or not isinstance(minutes, int) or not 0 <= minutes <= MAX_ADVANCE_MINUTES:
             raise ValueError("minutes_must_be_integer_between_0_and_10080")
@@ -418,6 +444,8 @@ class LifeSimulationEngine:
                 self.simulation_minute += 1
                 for state in self.npcs.values():
                     self._tick_npc(state)
+                if self.simulation_minute % 15 == 0:
+                    self._process_autonomous_social_interactions()
             result = {"simulation_minute": self.simulation_minute, "advanced_minutes": minutes,
                       "npc_count": len(self.npcs), "events": list(self.events)}
             request_result = (dedup_key, result) if dedup_key else None
