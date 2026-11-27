@@ -59,6 +59,25 @@ class LifeSimulationTests(unittest.TestCase):
         self.assertTrue(result["memory_recorded"])
         self.assertEqual(engine.snapshot()["npcs"][0]["memory_count"], 1)
 
+    def test_actual_voice_dialogue_is_saved_idempotently_without_changing_affinity(self):
+        engine = LifeSimulationEngine()
+        engine.register_npc(profile())
+        first = engine.record_dialogue_memory(
+            "npc.minh-an", "player.main", "Quán hôm nay đông không?",
+            "Cũng đông, nhưng giờ này đỡ hơn rồi.", "voice-turn-001"
+        )
+        self.assertTrue(first["memory_recorded"])
+        self.assertEqual(engine.npcs["npc.minh-an"].affinity.get("player.main", 0.0), 0.0)
+        replay = engine.record_dialogue_memory(
+            "npc.minh-an", "player.main", "Quán hôm nay đông không?",
+            "Cũng đông, nhưng giờ này đỡ hơn rồi.", "voice-turn-001"
+        )
+        self.assertEqual(replay, first)
+        memories = engine.npcs["npc.minh-an"].memories
+        self.assertEqual(memories[-2]["kind"], "player_dialogue")
+        self.assertEqual(memories[-1]["kind"], "npc_dialogue")
+        self.assertEqual(memories[-1]["source"], "voice_bridge")
+
     def test_save_reload_preserves_clock_needs_and_memory(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "life.sqlite3"
