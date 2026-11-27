@@ -221,11 +221,12 @@ class SQLiteLifeStore:
                      "created_minute": r["created_minute"]} for r in rows]
 
     def complete_command(self, command_id: str, result: dict) -> bool:
+        status = "completed" if result.get("success") is True else result.get("status")
         with self._lock, self.connection:
             cur = self.connection.execute(
-                """UPDATE command_outbox SET status='completed',result_json=?,completed_at=CURRENT_TIMESTAMP
+                """UPDATE command_outbox SET status=?,result_json=?,completed_at=CURRENT_TIMESTAMP
                 WHERE command_id=? AND status='pending'""",
-                (json.dumps(result, ensure_ascii=False), command_id)
+                (status, json.dumps(result, ensure_ascii=False), command_id)
             )
             return cur.rowcount == 1
 
@@ -414,8 +415,12 @@ class LifeSimulationEngine:
     def complete_command(self, command_id: str, result: dict) -> bool:
         if not isinstance(command_id, str) or not command_id or len(command_id) > 128:
             raise ValueError("invalid_command_id")
-        if not isinstance(result, dict) or result.get("success") is not True:
-            raise ValueError("command_success_required")
+        if not isinstance(result, dict):
+            raise ValueError("command_result_object_required")
+        success = result.get("success")
+        status = result.get("status")
+        if success is not True and not (success is False and status in ("failed", "unsupported", "rejected", "cancelled")):
+            raise ValueError("command_result_status_required")
         return self.store.complete_command(command_id, result)
 
     def snapshot(self) -> dict:
