@@ -42,7 +42,7 @@ public partial class MainWindow:Window {
  }
  void Play_Click(object s,RoutedEventArgs e){try{runtime.Launch(GamePathBox.Text.Trim());Set("ĐANG CHỜ ADAPTER","GTA V đã mở. Chờ ScriptHookVDotNet nạp và kết nối Engine Host.");}catch(Exception ex){Set("KHÔNG MỞ ĐƯỢC GAME",ex.Message);}}
  async void Poll(object? s,EventArgs e){
-  try{using var d=await runtime.StatusAsync(CancellationToken.None);bool connected=d.RootElement.GetProperty("adapter_connected").GetBoolean();
+  try{using var d=await runtime.StatusAsync(CancellationToken.None);var root=d.RootElement;bool connected=root.GetProperty("adapter_connected").GetBoolean();
    HostState.Text="Hoạt động";
    bool bridgeHealthy=await runtime.BridgeHealthyAsync();
    BridgeState.Text=bridgeHealthy?"Hoạt động":"Mất kết nối";
