@@ -62,6 +62,21 @@ class HostTests(unittest.TestCase):
   code,r=self.req("/engine/v1/simulation/snapshot")
   self.assertEqual(code,200); self.assertEqual(r["npc_count"],1)
   self.assertEqual(r["npcs"][0]["memory_count"],1)
+ def test_context_endpoint_exposes_bounded_canonical_facts(self):
+  npc={"npc_id":"npc.context-api","display_name":"Mai","home_location_id":"home.api","occupation":"nurse",
+       "age_years":29,"household_id":"household.1","biography":"Works at the clinic.",
+       "skills":{"medical":70},"knowledge":[{"fact":"Clinic closes at 18:00","source":"observation.1","confidence":0.9}],
+       "schedule":[{"start_minute":0,"end_minute":1440,"activity":"work","location_id":"clinic.api"}]}
+  code,r=self.req("/engine/v1/simulation/npcs",{"request_id":"context-register","npc":npc})
+  self.assertEqual(code,201)
+  code,context=self.req("/engine/v1/simulation/context",{"request_id":"context-read","npc_id":"npc.context-api","player_id":"player.1","topic":"clinic"})
+  self.assertEqual(code,200)
+  self.assertEqual(context["identity"]["age_years"],29)
+  self.assertEqual(context["identity"]["skills"]["medical"],70)
+  self.assertEqual(context["known_facts"][0]["source"],"observation.1")
+  self.assertIn("Do not claim unlisted events",context["knowledge_boundary"])
+  code,r=self.req("/engine/v1/simulation/context",{"request_id":"context-missing","npc_id":"missing","player_id":"player.1"})
+  self.assertEqual(code,404)
  def test_second_game_adapter_uses_same_host_contract_and_domain_state(self):
   hello={"protocol":PROTOCOL,"request_id":"godot-hello","session_id":"godot-session",
          "adapter":{"id":"godot4.reference","version":"0.1.0","base_game":"Godot 4","base_game_build":"4.x"},
