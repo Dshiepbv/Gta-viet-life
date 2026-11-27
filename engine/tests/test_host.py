@@ -62,6 +62,19 @@ class HostTests(unittest.TestCase):
   code,r=self.req("/engine/v1/simulation/snapshot")
   self.assertEqual(code,200); self.assertEqual(r["npc_count"],1)
   self.assertEqual(r["npcs"][0]["memory_count"],1)
+ def test_voice_dialogue_memory_endpoint(self):
+  npc={"npc_id":"npc.voice","display_name":"Mai","home_location_id":"home.voice","occupation":"seller",
+       "schedule":[{"start_minute":0,"end_minute":1440,"activity":"work","location_id":"shop.voice"}]}
+  self.assertEqual(self.req("/engine/v1/simulation/npcs",{"request_id":"voice-register","npc":npc})[0],201)
+  payload={"request_id":"voice-memory-1","npc_id":"npc.voice","player_id":"player.main",
+           "dialogue":{"player_message":"Quán đông không?","npc_reply":"Cũng hơi đông."}}
+  code,result=self.req("/engine/v1/simulation/memory",payload)
+  self.assertEqual(code,200); self.assertTrue(result["memory_recorded"])
+  code,replay=self.req("/engine/v1/simulation/memory",payload)
+  self.assertEqual(code,200); self.assertEqual(replay,result)
+  state=self.state.simulation.npcs["npc.voice"]
+  self.assertEqual(state.memories[-2]["summary"],"Quán đông không?")
+  self.assertEqual(state.memories[-1]["summary"],"Cũng hơi đông.")
  def test_context_endpoint_exposes_bounded_canonical_facts(self):
   npc={"npc_id":"npc.context-api","display_name":"Mai","home_location_id":"home.api","occupation":"nurse",
        "age_years":29,"household_id":"household.1","biography":"Works at the clinic.",
