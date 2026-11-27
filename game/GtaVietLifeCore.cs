@@ -150,6 +150,7 @@ public class GtaVietLifeCore : Script
         currentWorldMinute = gameDay * 1440L + minute;
         MaintainHostSession(Stopwatch.GetTimestamp());
         if (hostConnected && now > nextResidentSync) { nextResidentSync = now + 10000; SyncResidentProfiles(); }
+        if (hostConnected && now > nextWalletBaselineSync) { nextWalletBaselineSync = now + 10000; SyncPlayerProfile(); }
         if (hostConnected && now > nextEngineCommandPoll) { nextEngineCommandPoll = now + 2000; PollEngineCommands(); }
         if (hostConnected && now > nextWorldCommandPoll) { nextWorldCommandPoll = now + 2000; PollEngineWorldCommands(); }
         if (hostConnected && now > nextWorldPostRetry) { nextWorldPostRetry = now + 5000; StartWorldPostWorker(); }
@@ -508,6 +509,32 @@ public class GtaVietLifeCore : Script
 
     // Import legacy persistent residents into the game-neutral life engine.
     // This syncs identity and schedule only; it does not claim physical NPC control.
+    void SyncPlayerProfile()
+    {
+        try
+        {
+            string playerName = Settings.GetValue("Player", "Name", "Player");
+            string occupation = Settings.GetValue("Player", "Occupation", "citizen");
+            string home = Settings.GetValue("Player", "HomeLocation", "player.home");
+            int age = Settings.GetValue("Player", "Age", 30);
+            age = Math.Max(18, Math.Min(100, age));
+            string body = "{\"request_id\":\"" + Guid.NewGuid().ToString("N") + "\",\"npc\":{" +
+                "\"npc_id\":\"player.main\",\"display_name\":\"" + JsonEscape(playerName) +
+                "\",\"home_location_id\":\"" + JsonEscape(home) + "\",\"occupation\":\"" +
+                JsonEscape(occupation) + "\",\"actor_kind\":\"player\",\"age_years\":" +
+                age.ToString(CultureInfo.InvariantCulture) + ",\"life_goal\":\"career\",\"schedule\":[]}}";
+            using (WebClient wc = new HostWebClient())
+            {
+                wc.Proxy = null; wc.Encoding = Encoding.UTF8;
+                wc.Headers[HttpRequestHeader.ContentType] = "application/json; charset=utf-8";
+                wc.Headers["X-GVL-Token"] = hostToken;
+                wc.UploadString(hostServer + "/engine/v1/simulation/actors", "POST", body);
+            }
+            SyncPlayerWalletBaseline();
+        }
+        catch (Exception ex) { Log("dong bo nhan vat nguoi choi vao life engine loi: " + ex.Message); }
+    }
+
     void SyncResidentProfiles()
     {
         lock (HostLock)
