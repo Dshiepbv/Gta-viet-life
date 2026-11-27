@@ -287,5 +287,25 @@ class LifeSimulationTests(unittest.TestCase):
 
 
 
+    def test_player_and_npc_conversations_update_both_sides_of_relationship(self):
+        engine = LifeSimulationEngine()
+        player = engine.register_npc(NPCProfile(
+            npc_id="player.social", display_name="Player", home_location_id="home.player",
+            occupation="citizen", actor_kind="player",
+        ))
+        npc = engine.register_npc(NPCProfile(
+            npc_id="npc.social", display_name="Mai", home_location_id="home.npc",
+            occupation="teacher",
+        ))
+        engine.interact("npc.social", "player.social", message="Chao Mai", request_id="social-1")
+        self.assertEqual(npc.affinity["player.social"], 2.0)
+        self.assertEqual(player.affinity["npc.social"], 2.0)
+        self.assertTrue(any(m["participant_id"] == "npc.social" for m in player.memories))
+        engine.record_dialogue_memory("npc.social", "player.social", "Em khỏe không?", "Tôi khỏe.", request_id="voice-1", affinity_delta=1)
+        self.assertEqual(npc.affinity["player.social"], 7.0)
+        self.assertEqual(player.affinity["npc.social"], 7.0)
+        self.assertTrue(any(m["source"] == "voice_bridge_mirror" for m in player.memories))
+
+
 if __name__ == "__main__":
     unittest.main()
