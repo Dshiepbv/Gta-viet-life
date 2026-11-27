@@ -63,6 +63,44 @@ class LifeSimulationTests(unittest.TestCase):
                 second.store.close()
                 first.store.close()
 
+    def test_dialogue_context_is_provenance_aware_and_persisted(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "context.sqlite3"
+            rich = NPCProfile(
+                npc_id="npc.context", display_name="Mai", home_location_id="home.context",
+                occupation="nurse", traits=("careful",), life_goal="health",
+                household_id="household.7", age_years=29, biography="Works at the local clinic.",
+                skills={"medical": 72.0},
+                knowledge=({"fact": "The clinic closes at 18:00.", "source": "npc_observation_001",
+                            "confidence": 0.95},),
+                schedule=(ScheduleBlock(0, 1440, "work", "clinic.context"),),
+            )
+            first = LifeSimulationEngine(SQLiteLifeStore(path))
+            first.register_npc(rich)
+            result = first.interact("npc.context", "player.1", message="I met you at the clinic yesterday.")
+            context = result["response_context"]
+            self.assertEqual(context["identity"]["age_years"], 29)
+            self.assertEqual(context["identity"]["household_id"], "household.7")
+            self.assertEqual(context["identity"]["skills"]["medical"], 72.0)
+            self.assertEqual(context["known_facts"][0]["source"], "npc_observation_001")
+            self.assertIn("Do not claim unlisted events", context["knowledge_boundary"])
+            self.assertEqual(context["recent_memories"][-1]["summary"], "I met you at the clinic yesterday.")
+            second = LifeSimulationEngine(SQLiteLifeStore(path))
+            try:
+                restored = second.dialogue_context("npc.context", "player.1")
+                self.assertEqual(restored["identity"]["biography"], "Works at the local clinic.")
+                self.assertEqual(restored["known_facts"], list(rich.knowledge))
+                self.assertEqual(restored["recent_memories"][-1]["participant_id"], "player.1")
+            finally:
+                second.store.close()
+                first.store.close()
+
+    def test_rejects_unprovenanced_or_invalid_npc_knowledge(self):
+        with self.assertRaises(ValueError):
+            NPCProfile("npc.bad", "Bad", "home", "worker", knowledge=({"fact": "secret", "confidence": 2},))
+        with self.assertRaises(ValueError):
+            NPCProfile("npc.bad-age", "Bad", "home", "worker", age_years=-1)
+
     def test_rejects_overlapping_schedules_and_bad_advance(self):
         with self.assertRaises(ValueError):
             NPCProfile("x", "X", "home", "worker", schedule=(
