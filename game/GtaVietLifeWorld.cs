@@ -2275,7 +2275,12 @@ public class GtaVietLifeWorld : Script
         if (amount <= 0) return;
         Action<int, string, string> earn = null;
         try { earn = AppDomain.CurrentDomain.GetData("GVL.EarnCash") as Action<int, string, string>; } catch { }
-        if (earn != null) { try { earn(amount, cat, note); return; } catch (Exception ex) { Log("ghi nhan thu tien mat loi: " + ex.Message); } }
+        if (earn != null)
+        {
+            try { earn(amount, cat, note); }
+            catch (Exception ex) { Log("ghi nhan thu tien mat loi: " + ex.Message); }
+            return; // never apply a second credit after a delegate may have partially committed
+        }
         Game.Player.Money = Game.Player.Money + amount;
     }
 
