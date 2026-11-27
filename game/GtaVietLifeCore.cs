@@ -68,6 +68,7 @@ public class GtaVietLifeCore : Script
         Set("GVL.Engine.Commands", new Queue<Dictionary<string, object>>());
         Set("GVL.Engine.Ack", new Action<string>(AckEngineCommand));
         Set("GVL.Engine.Report", new Action<string, string, string>(ReportEngineCommand));
+        Set("GVL.Engine.Context", new Func<string, string, string>(GetNpcDialogueContext));
         Tick += OnTick;
         Aborted += delegate { CloseHostSession(); Save(); };
     }
@@ -533,6 +534,27 @@ public class GtaVietLifeCore : Script
             // Host pending state is authoritative; lost reports are safely redelivered.
             lock (EngineCommandLock) queuedEngineCommandIds.Remove(commandId);
         });
+    }
+
+    // Context reads are performed by the voice bridge worker, never on the GTA game tick.
+    // The Host remains authoritative; the bridge receives bounded facts only.
+    string GetNpcDialogueContext(string npcId, string playerId)
+    {
+        if (string.IsNullOrEmpty(npcId) || string.IsNullOrEmpty(hostToken) || !hostConnected) return "";
+        try
+        {
+            string body = "{\"request_id\":\"" + Guid.NewGuid().ToString("N") +
+                "\",\"npc_id\":\"" + JsonEscape(npcId) + "\",\"player_id\":\"" +
+                JsonEscape(playerId ?? "player.main") + "\"}";
+            using (WebClient wc = new HostWebClient())
+            {
+                wc.Proxy = null; wc.Encoding = Encoding.UTF8;
+                wc.Headers[HttpRequestHeader.ContentType] = "application/json; charset=utf-8";
+                wc.Headers["X-GVL-Token"] = hostToken;
+                return wc.UploadString(hostServer + "/engine/v1/simulation/context", "POST", body);
+            }
+        }
+        catch (Exception ex) { Log("doc ngu canh NPC tu life engine loi: " + ex.Message); return ""; }
     }
 
     void SendHostHeartbeat()
