@@ -2358,6 +2358,8 @@ public class GtaVietLifeWorld : Script
     bool engineWorldCatalogSent;
     string pendingWorldCommandId = "", pendingWorldCommandAction = "";
     int pendingWorldCommandDeadline;
+    readonly HashSet<string> processedWorldCommandIds = new HashSet<string>();
+    readonly Queue<string> worldCommandReceiptOrder = new Queue<string>();
     Vector3 homeOutPos;
     Vector3 enterTarget; int enterUntil;
     bool enterIsExit;
@@ -3324,6 +3326,7 @@ public class GtaVietLifeWorld : Script
             { processed++; continue; }
             string commandId = Convert.ToString(idValue, CultureInfo.InvariantCulture);
             string commandType = Convert.ToString(typeValue, CultureInfo.InvariantCulture);
+            if (processedWorldCommandIds.Contains(commandId)) { ReportWorldCommand(commandId, "completed", "duplicate_command_already_executed"); processed++; continue; }
             Dictionary<string, object> payload = command.ContainsKey("payload") ? command["payload"] as Dictionary<string, object> : null;
             if (payload == null) { ReportWorldCommand(commandId, "rejected", "missing_payload"); processed++; continue; }
             string targetId = Convert.ToString(payload.ContainsKey("target_id") ? payload["target_id"] : "");
@@ -3356,7 +3359,7 @@ public class GtaVietLifeWorld : Script
                 }
                 if (action == "exit")
                 {
-                    if (!insideHome) { ReportWorldCommand(commandId, "rejected", "player_not_inside_home"); processed++; continue; }
+                    if (!insideHome) { RememberWorldCommand(commandId); ReportWorldCommand(commandId, "completed", "already_outside_home"); processed++; continue; }
                     ExitHome();
                     pendingWorldCommandId = commandId; pendingWorldCommandAction = "exit";
                     pendingWorldCommandDeadline = now + 15000;
@@ -3375,6 +3378,7 @@ public class GtaVietLifeWorld : Script
                 if (!int.TryParse(parts[2], out idx) || idx != homeIdx || parts[3] != nearFurn)
                 { lock (queue) queue.Enqueue(command); break; }
                 if (!insideHome) { ReportWorldCommand(commandId, "rejected", "object_requires_home_interior"); processed++; continue; }
+                RememberWorldCommand(commandId);
                 UseFurniture();
                 ReportWorldCommand(commandId, "completed", "native_object_interaction_started");
                 processed++;
@@ -3391,12 +3395,20 @@ public class GtaVietLifeWorld : Script
         bool completed = pendingWorldCommandAction == "enter" ? insideHome :
             pendingWorldCommandAction == "exit" ? !insideHome : false;
         string id = pendingWorldCommandId;
-        if (completed) ReportWorldCommand(id, "completed", "player_space_transition_observed");
-        else if (now >= pendingWorldCommandDeadline) ReportWorldCommand(id, "failed", "space_transition_not_observed");
+        if (completed) { RememberWorldCommand(id); ReportWorldCommand(id, "completed", "player_space_transition_observed"); }
+        else if (now >= pendingWorldCommandDeadline) { RememberWorldCommand(id); ReportWorldCommand(id, "failed", "space_transition_not_observed"); }
         else return;
         pendingWorldCommandId = "";
         pendingWorldCommandAction = "";
         pendingWorldCommandDeadline = 0;
+    }
+
+    void RememberWorldCommand(string commandId)
+    {
+        if (string.IsNullOrEmpty(commandId) || !processedWorldCommandIds.Add(commandId)) return;
+        worldCommandReceiptOrder.Enqueue(commandId);
+        while (worldCommandReceiptOrder.Count > 1024)
+            processedWorldCommandIds.Remove(worldCommandReceiptOrder.Dequeue());
     }
 
     void ReportWorldCommand(string commandId, string status, string reason)
