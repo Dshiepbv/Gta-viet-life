@@ -19,6 +19,8 @@ from urllib.parse import parse_qs
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.environ.get("GVL_DATA_DIR", HERE)
 os.makedirs(DATA_DIR, exist_ok=True)
+DATA_DIR = os.environ.get("GVL_DATA_DIR", HERE)
+os.makedirs(DATA_DIR, exist_ok=True)
 
 
 class _Tee:
@@ -50,7 +52,7 @@ sys.stderr = sys.stdout
 def load_config() -> dict:
     path = os.path.join(DATA_DIR, "config.json")
     if not os.path.exists(path):
-        path = os.path.join(HERE, "config.example.json")
+        path = os.path.join(getattr(sys, "_MEIPASS", HERE), "config.example.json")
         print("[cfg] Chưa có config.json, đang dùng config.example.json")
     with open(path, encoding="utf-8") as f:
         return json.load(f)

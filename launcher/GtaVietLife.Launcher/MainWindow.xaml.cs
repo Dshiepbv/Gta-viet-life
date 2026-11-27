@@ -10,7 +10,10 @@ public partial class MainWindow:Window {
  readonly DispatcherTimer timer=new(){Interval=TimeSpan.FromSeconds(3)};bool busy,ready;CancellationTokenSource? cts;
  public MainWindow(){
   InitializeComponent();GamePathBox.Text=settings.GameExecutable;timer.Tick+=Poll;
-  Loaded+=async(_,_)=>{if(File.Exists(settings.GameExecutable))await Prepare();else Set("CẦN CHỌN GTA V","Chọn GTA5.exe một lần để lưu đường dẫn.");};
+  Loaded+=async(_,_)=>{
+   try{if(await new UpdateService().CheckAndLaunchUpdaterAsync(CancellationToken.None)){Application.Current.Shutdown();return;}}
+   catch(Exception ex){Log("Update check failed: "+ex.Message);}
+   if(File.Exists(settings.GameExecutable))await Prepare();else Set("CẦN CHỌN GTA V","Chọn GTA5.exe một lần để lưu đường dẫn.");};
   Closing+=async(_,_)=>{timer.Stop();cts?.Cancel();if(ready)await runtime.StopAsync();runtime.Dispose();};
  }
  void Browse_Click(object s,RoutedEventArgs e){var d=new OpenFileDialog{Title="Chọn GTA5.exe",Filter="GTA V|GTA5.exe;GTA5_Enhanced.exe|Executable|*.exe"};if(d.ShowDialog()==true){GamePathBox.Text=d.FileName;settings.GameExecutable=d.FileName;settings.Save();_=Prepare();}}

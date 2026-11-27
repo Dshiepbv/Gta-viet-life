@@ -2,7 +2,7 @@ using System.Diagnostics;
 using System.IO.Compression;
 if(args.Length<3){Console.Error.WriteLine("Usage: updater package.zip install-dir parent-pid");return 2;}
 var zip=Path.GetFullPath(args[0]);var target=Path.GetFullPath(args[1]);if(!int.TryParse(args[2],out var pid))return 2;
-try{Process.GetProcessById(pid).WaitForExit(30000);}catch{}
+try{var parentProcess=Process.GetProcessById(pid);if(!parentProcess.WaitForExit(30000))throw new TimeoutException("Launcher did not exit before update timeout.");}catch(ArgumentException){}
 var parent=Path.GetDirectoryName(target)!;var stage=Path.Combine(parent,"gvl-stage-"+Guid.NewGuid().ToString("N"));var backup=Path.Combine(parent,"gvl-backup-"+DateTime.UtcNow.ToString("yyyyMMddHHmmss"));
 Directory.CreateDirectory(stage);
 try{

@@ -23,7 +23,7 @@
 - Integrate the Adapter handshake into the actual GTA V Core script.
 - Verify exact ScriptHookVDotNet Enhanced/Legacy compatibility against a supported game build.
 - Verify PyInstaller bridge packaging, audio initialization and first-run speech-model behavior.
-- Implement and verify signed automatic updates, transactional apply and rollback.
+- Automatic latest-release check, HTTPS download, SHA-256 package verification and helper-based directory-swap rollback are implemented in source; publisher code-signing/manifest signature is not yet provisioned or verified.
 - Complete Engine Host domain simulation and real in-world command/result flow.
 - Run in-game and graceful-shutdown tests in a supported GTA V runtime.
 

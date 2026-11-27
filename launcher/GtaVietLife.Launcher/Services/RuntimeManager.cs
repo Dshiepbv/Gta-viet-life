@@ -38,6 +38,8 @@ public sealed class RuntimeManager:IDisposable {
  }
  void StartBridge(){
   var exe=Path.Combine(root,"runtime","bridge","GtaVietLifeBridge.exe");if(!File.Exists(exe))throw new FileNotFoundException("Thiếu cầu nối AI đã đóng gói.",exe);
+  var sample=Path.Combine(root,"runtime","bridge","config.example.json");var userConfig=Path.Combine(BridgeData,"config.json");
+  if(!File.Exists(userConfig)&&File.Exists(sample))File.Copy(sample,userConfig);
   if(bridge is{HasExited:false})return;
   var p=new ProcessStartInfo(exe){UseShellExecute=false,CreateNoWindow=true,WorkingDirectory=Path.GetDirectoryName(exe)!};p.Environment["GVL_DATA_DIR"]=BridgeData;
   bridge=Process.Start(p)??throw new InvalidOperationException("Không khởi động được cầu nối AI.");Track(bridge,"bridge");
