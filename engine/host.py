@@ -9,6 +9,8 @@ class State:
         self.token=token; self.lock=threading.RLock(); self.session=None; self.started=time.time()
     def auth(self, token): return bool(token) and secrets.compare_digest(self.token, token)
     def handshake(self, p):
+        rid=p.get("request_id")
+        if not isinstance(rid,str) or not rid: raise ValueError("request_id_required")
         if p.get("protocol") != PROTOCOL: raise ValueError("protocol_mismatch")
         a=p.get("adapter")
         if not isinstance(a,dict) or not a.get("id") or not a.get("version"): raise ValueError("invalid_adapter_identity")
@@ -57,6 +59,8 @@ def handler_for(state, log):
             if not state.auth(self.headers.get("X-GVL-Token")): return self.sendj(401,{"error":"unauthorized"})
             try:
                 p=self.body()
+                rid=p.get("request_id")
+                if not isinstance(rid,str) or not rid: raise ValueError("request_id_required")
                 if self.path=="/engine/v1/handshake": return self.sendj(200,state.handshake(p))
                 if self.path=="/engine/v1/heartbeat":
                     ok=state.heartbeat(str(p.get("session_id",""))); return self.sendj(200 if ok else 409,{"accepted":ok})

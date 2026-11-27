@@ -18,13 +18,13 @@ class HostTests(unittest.TestCase):
  def test_health_and_auth(self):
   self.assertEqual(self.req("/health",auth=False)[0],200); self.assertEqual(self.req("/engine/v1/status",auth=False)[0],401)
  def test_handshake_heartbeat(self):
-  p={"protocol":PROTOCOL,"session_id":"s1","adapter":{"id":"gta5.shvdn","version":"0.1.0"},"capabilities":["adapter.session"]}
+  p={"protocol":PROTOCOL,"request_id":"req-1","session_id":"s1","adapter":{"id":"gta5.shvdn","version":"0.1.0"},"capabilities":["adapter.session"]}
   code,r=self.req("/engine/v1/handshake",p); self.assertEqual(code,200); self.assertTrue(r["accepted"])
   self.assertTrue(self.state.snapshot()["adapter_connected"]); self.assertTrue(self.state.heartbeat("s1"))
  def test_protocol_rejected(self):
-  code,r=self.req("/engine/v1/handshake",{"protocol":"bad","session_id":"s","adapter":{"id":"x","version":"1"}})
+  code,r=self.req("/engine/v1/handshake",{"protocol":"bad","request_id":"req-bad","session_id":"s","adapter":{"id":"x","version":"1"}})
   self.assertEqual(code,400); self.assertEqual(r["error"],"protocol_mismatch")
  def test_stale_session(self):
-  self.state.handshake({"protocol":PROTOCOL,"session_id":"s","adapter":{"id":"x","version":"1"},"capabilities":[]})
+  self.state.handshake({"protocol":PROTOCOL,"request_id":"req-stale","session_id":"s","adapter":{"id":"x","version":"1"},"capabilities":[]})
   self.state.session["last_heartbeat"]=time.time()-20; self.assertFalse(self.state.snapshot()["adapter_connected"])
 if __name__=="__main__":unittest.main()

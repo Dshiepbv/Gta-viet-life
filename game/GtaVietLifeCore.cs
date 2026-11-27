@@ -308,7 +308,7 @@ public class GtaVietLifeCore : Script
         {
             if (string.IsNullOrEmpty(hostToken)) hostToken = ReadHostToken();
             if (string.IsNullOrEmpty(hostToken)) throw new Exception("khong tim thay host.token");
-            string body = "{\"protocol\":\"gvl-engine/1\",\"session_id\":\"" + hostSessionId +
+            string body = "{\"protocol\":\"gvl-engine/1\",\"request_id\":\"" + Guid.NewGuid().ToString("N") + "\",\"session_id\":\"" + hostSessionId +
                 "\",\"adapter\":{\"id\":\"gta5.shvdn\",\"version\":\"0.1.0\",\"base_game\":\"gta5\",\"base_game_build\":\"unknown\"},\"capabilities\":[\"adapter.session\"]}";
             using (WebClient wc = new WebClient())
             {
@@ -327,7 +327,7 @@ public class GtaVietLifeCore : Script
 
     void SendHostHeartbeat()
     {
-        string body = "{\"session_id\":\"" + hostSessionId + "\"}";
+        string body = "{\"request_id\":\"" + Guid.NewGuid().ToString("N") + "\",\"session_id\":\"" + hostSessionId + "\"}";
         using (WebClient wc = new WebClient())
         {
             wc.Proxy = null; wc.Encoding = Encoding.UTF8;
@@ -349,7 +349,7 @@ public class GtaVietLifeCore : Script
                 wc.Proxy = null; wc.Encoding = Encoding.UTF8;
                 wc.Headers[HttpRequestHeader.ContentType] = "application/json; charset=utf-8";
                 wc.Headers["X-GVL-Token"] = hostToken;
-                wc.UploadString(hostServer + "/engine/v1/close", "POST", "{\"session_id\":\"" + hostSessionId + "\"}");
+                wc.UploadString(hostServer + "/engine/v1/close", "POST", "{\"request_id\":\"" + Guid.NewGuid().ToString("N") + "\",\"session_id\":\"" + hostSessionId + "\"}");
             }
         }
         catch { }
