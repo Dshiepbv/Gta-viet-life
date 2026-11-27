@@ -95,6 +95,8 @@ class SocietySimulationTests(unittest.TestCase):
             occupation="driver", schedule=(ScheduleBlock(0, 1440, "commute", "road.main"),)
         )
         npc = self.life.register_npc(profile)
+        self.life.advance(1)
+        self.assertEqual(npc.location_id, "road.main")
         before = npc.stress
         self.society.register_traffic_segment("road.main", "arterial", 1.0)
         result = self.society.record_traffic_incident("incident.1", "road.main", 3, "collision", "Lane blocked")
