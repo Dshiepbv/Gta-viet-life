@@ -39,6 +39,9 @@ public class GtaVietLifeCore : Script
     long gameDay, lastSeenSeq, currentWorldMinute;
     int lastMinute = -1, nextPublish, nextForward, nextSave;
     readonly List<string> outbox = new List<string>();
+    readonly List<string> engineOutbox = new List<string>();
+    bool engineEventForwarding;
+    int nextEngineEventForward;
     readonly long[] clock = new long[6];
 
     public GtaVietLifeCore()
@@ -151,6 +154,7 @@ public class GtaVietLifeCore : Script
             Set("GVL.Clock", clock);
             DrainEvents();
         }
+        if (hostConnected && now > nextEngineEventForward) { nextEngineEventForward = now + 5000; ForwardEngineEvents(); }
         if (forward && now > nextForward) { nextForward = now + 3000; Forward(); }
         if (now > nextSave) { nextSave = now + 120000; Save(); }
     }
@@ -188,6 +192,7 @@ public class GtaVietLifeCore : Script
             }
             catch { }
         }
+        lock (OutboxLock) engineOutbox.AddRange(fresh);
         if (forward)
         {
             lock (OutboxLock) outbox.AddRange(fresh);
@@ -248,13 +253,15 @@ public class GtaVietLifeCore : Script
         lock (SaveLock)
         try
         {
-            List<string> snapshot;
-            lock (OutboxLock) snapshot = new List<string>(outbox);
+            List<string> snapshot, engineSnapshot;
+            lock (OutboxLock) { snapshot = new List<string>(outbox); engineSnapshot = new List<string>(engineOutbox); }
             string encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(string.Join("\n", snapshot.ToArray())));
+            string engineEncoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(string.Join("\n", engineSnapshot.ToArray())));
             string[] lines = {
                 "day=" + gameDay.ToString(CultureInfo.InvariantCulture),
                 "seq=" + lastSeenSeq.ToString(CultureInfo.InvariantCulture),
-                "outbox=" + encoded
+                "outbox=" + encoded,
+                "engine_outbox=" + engineEncoded
             };
             File.WriteAllLines(TempFile, lines, Encoding.UTF8);
             if (File.Exists(SaveFile))
@@ -282,6 +289,7 @@ public class GtaVietLifeCore : Script
             if (!File.Exists(path)) return false;
             long loadedDay = 0, loadedSeq = 0;
             List<string> loadedOutbox = new List<string>();
+            List<string> loadedEngineOutbox = new List<string>();
             foreach (string line in File.ReadAllLines(path, Encoding.UTF8))
             {
                 int i = line.IndexOf('=');
@@ -289,15 +297,16 @@ public class GtaVietLifeCore : Script
                 string key = line.Substring(0, i), value = line.Substring(i + 1);
                 if (key == "day") long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out loadedDay);
                 else if (key == "seq") long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out loadedSeq);
-                else if (key == "outbox" && value.Length > 0)
+                else if ((key == "outbox" || key == "engine_outbox") && value.Length > 0)
                 {
                     string decoded = Encoding.UTF8.GetString(Convert.FromBase64String(value));
-                    foreach (string item in decoded.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries)) loadedOutbox.Add(item);
+                    List<string> destination = key == "outbox" ? loadedOutbox : loadedEngineOutbox;
+                    foreach (string item in decoded.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries)) destination.Add(item);
                 }
             }
             gameDay = Math.Max(0, loadedDay);
             lastSeenSeq = Math.Max(0, loadedSeq);
-            lock (OutboxLock) outbox.AddRange(loadedOutbox);
+            lock (OutboxLock) { outbox.AddRange(loadedOutbox); engineOutbox.AddRange(loadedEngineOutbox); }
             return true;
         }
         catch (Exception ex) { Log("load " + path + " loi: " + ex.Message); return false; }
