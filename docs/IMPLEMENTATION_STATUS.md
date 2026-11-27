@@ -182,3 +182,12 @@ Release CI now includes a separate compile-check project for `GtaVietLifeWorld.c
 - Clock-aware adapter sessions pause the Host wall-clock worker; heartbeat deltas drive NPC simulation. The first live observation aligns an empty Engine database to the GTA world minute. Persisted NPC history is never rewound by a backward clock correction.
 - Adapter command reports now persist terminal outcomes (`completed`, `failed`, `unsupported`, `rejected`, `cancelled`). Unknown command types and unmapped resident activity/location combinations are reported as `unsupported` instead of being silently discarded or retried forever. Temporarily unavailable NPCs remain deferred.
 - These paths are covered by Engine Host tests and compile checks. Actual pause behavior and in-world command outcomes remain unverified until live GTA V acceptance.
+
+
+## Shared cash transaction integration — 2026-11-27
+
+- Added `GVL.PayCash` and `GVL.EarnCash` delegates alongside the existing bank-aware `GVL.Pay` / `GVL.Earn` contract. Cash-only flows retain their original cash semantics and do not silently debit or credit bank accounts.
+- The Economy module registers cash-only delegates that write to its local ledger and emit the shared `ledger.expense` / `ledger.income` events. Core supplies compatible defaults when Economy is absent.
+- The World module's direct cash income/expense paths (business revenue, wages, taxes, rents, fines, property, inventory, delivery, taxi, work and lifestyle spending) now route through the shared cash delegates. Personal shopping, vehicle delivery and backpack purchases do the same. Remaining direct assignments in those modules are only the guarded fallback implementations or wallet restoration.
+- The bank-aware delegate remains available for services that intentionally support card/bank payment. The old Economy module's own bank transfers and loan accounting continue to write their own ledger entries.
+- This is a shared in-game transaction/ledger integration, not yet a single SQLite transaction journal across every game save. Durable cross-module reconciliation and exhaustive economic balance testing remain outstanding.
