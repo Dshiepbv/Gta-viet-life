@@ -99,6 +99,8 @@ class SocietySimulation:
                 CREATE TABLE IF NOT EXISTS world_event_journal(
                     event_id TEXT PRIMARY KEY, event_type TEXT NOT NULL, actor_id TEXT,
                     target_id TEXT, payload_json TEXT NOT NULL, sim_minute INTEGER NOT NULL);
+                CREATE TABLE IF NOT EXISTS world_processed_life_events(
+                    event_id TEXT PRIMARY KEY, processed_minute INTEGER NOT NULL);
             """)
             self.db.execute("INSERT OR IGNORE INTO world_accounts(account_id,owner_id,balance,allow_negative,currency) VALUES('system:opening_equity','system',0,1,'USD')")
 
@@ -707,28 +709,52 @@ class SocietySimulation:
         return {"contract_id": contract_id, "created": True}
 
     def process_life_event(self, event: dict) -> Optional[dict]:
-        """Settle wages only for canonical work-hour events; ledger transaction IDs make replay safe."""
-        if not isinstance(event, dict) or event.get("event_type") != "work_hour_completed":
-            return None
-        employee_id = event.get("npc_id")
-        sim_minute = event.get("sim_minute")
-        if not isinstance(employee_id, str) or not isinstance(sim_minute, int):
-            return None
+        """Idempotently consume durable life events and settle any linked economic consequence."""
+        if not isinstance(event, dict):
+            raise ValueError("life_event_object_required")
+        event_id = event.get("event_id")
+        if not isinstance(event_id, str) or not event_id:
+            raise ValueError("life_event_id_required")
         with self.lock, self.db:
-            contracts = self.db.execute("""SELECT c.contract_id,c.employee_account_id,c.hourly_wage,b.cash_account_id
-                FROM world_employment_contracts c JOIN world_businesses b ON b.business_id=c.business_id
-                WHERE c.employee_id=? AND c.status='active' ORDER BY c.contract_id""", (employee_id,)).fetchall()
-            results = []
-            for contract in contracts:
-                wage = contract["hourly_wage"]
-                if wage <= 0:
-                    continue
-                txid = "payroll:" + contract["contract_id"] + ":" + str(sim_minute)
-                results.append(self._post_transaction_locked(txid, "payroll",
-                    "Hourly wage for " + employee_id,
-                    [{"account_id": contract["cash_account_id"], "amount": -wage},
-                     {"account_id": contract["employee_account_id"], "amount": wage}]))
-            return {"employee_id": employee_id, "transactions": results}
+            if self.db.execute("SELECT 1 FROM world_processed_life_events WHERE event_id=?", (event_id,)).fetchone():
+                return {"event_id": event_id, "duplicate": True}
+            result = None
+            if event.get("event_type") == "work_hour_completed":
+                employee_id = event.get("npc_id")
+                sim_minute = event.get("sim_minute")
+                if isinstance(employee_id, str) and isinstance(sim_minute, int):
+                    contracts = self.db.execute("""SELECT c.contract_id,c.employee_account_id,c.hourly_wage,b.cash_account_id
+                        FROM world_employment_contracts c JOIN world_businesses b ON b.business_id=c.business_id
+                        WHERE c.employee_id=? AND c.status='active' ORDER BY c.contract_id""", (employee_id,)).fetchall()
+                    transactions = []
+                    for contract in contracts:
+                        wage = contract["hourly_wage"]
+                        if wage <= 0:
+                            continue
+                        txid = "payroll:" + contract["contract_id"] + ":" + str(sim_minute)
+                        transactions.append(self._post_transaction_locked(txid, "payroll",
+                            "Hourly wage for " + employee_id,
+                            [{"account_id": contract["cash_account_id"], "amount": -wage},
+                             {"account_id": contract["employee_account_id"], "amount": wage}]))
+                    result = {"employee_id": employee_id, "transactions": transactions}
+            self.db.execute("INSERT INTO world_processed_life_events(event_id,processed_minute) VALUES(?,?)",
+                            (event_id, int(self.minute_provider())))
+            return result or {"event_id": event_id, "processed": True}
+
+    def process_pending_life_events(self, limit: int = 1000) -> int:
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 10000:
+            raise ValueError("invalid_life_event_limit")
+        with self.lock:
+            rows = self.db.execute("""SELECT e.event_id,e.sim_minute,e.npc_id,e.event_type,e.payload_json
+                FROM life_events e LEFT JOIN world_processed_life_events p ON p.event_id=e.event_id
+                WHERE p.event_id IS NULL ORDER BY e.sim_minute,e.event_id LIMIT ?""", (limit,)).fetchall()
+        processed = 0
+        for row in rows:
+            self.process_life_event({"event_id":row["event_id"],"sim_minute":row["sim_minute"],
+                "npc_id":row["npc_id"],"event_type":row["event_type"],"payload":json.loads(row["payload_json"])})
+            processed += 1
+        return processed
+
 
     def advance(self, minutes: int) -> None:
         """Apply bounded time-based decay and lease expiry using the canonical simulation clock."""
