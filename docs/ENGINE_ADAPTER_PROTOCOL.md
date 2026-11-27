@@ -202,3 +202,10 @@ POST /engine/v1/simulation/context returns bounded identity, current needs/activ
 The canonical simulation treats the player character and NPCs as human-life actors in the same domain model. Register either through `POST /engine/v1/simulation/actors` (or the backward-compatible NPC route) with `actor_kind: "player" | "npc"`. Both actor kinds share needs, health, hygiene, bladder, fitness, mood, aging and life-stage progression. The engine never steers the player character with autonomous NPC navigation commands; the game adapter remains responsible for player input and physical presentation. NPC activity commands remain adapter-executed.
 
 The current life-needs slice includes hunger, energy, social connection, stress, hygiene and bladder pressure, plus health, fitness, mood and age progression. Supported semantic activities include eating, sleeping, work, commute, socializing, leisure, showering, bathroom use, exercise and study. This is a foundation, not a claim that all human systems (medical treatment, family formation, education, employment contracts, full body animation or every life stage) are complete.
+
+
+### Physical interactions update the shared human-life model
+
+A completed `interaction.use_object` command is not merely a visual acknowledgement. When the registered object's canonical kind has a human-life mapping, the Host applies the consequence to the actor after the adapter reports `success=true`. Current mappings include food/meal/fridge, bed, toilet, shower, gym equipment, computer/book, hobby and social seating. The result is persisted in the same canonical actor snapshot for both `actor_kind=player` and `actor_kind=npc`.
+
+The engine deliberately does not apply a need change when a command is only queued, rejected, unsupported or failed. This preserves the rule that physical actions must be observed by the game adapter before their life consequences become canonical. Unknown object kinds still record the physical object use but return no life-domain effect until an explicit mapping is implemented.
