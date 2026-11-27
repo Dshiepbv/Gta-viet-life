@@ -26,7 +26,8 @@ public class GtaVietLifeCore : Script
     string hostSessionId = Guid.NewGuid().ToString("N");
     string hostToken = "";
     readonly object HostLock = new object();
-    bool hostConnected, hostConnecting;
+    volatile bool hostConnected;
+    bool hostConnecting;
     int nextHostHeartbeat;
     bool forward = true, logEvents = true, forwarding;
     long gameDay, lastSeenSeq;
@@ -58,7 +59,6 @@ public class GtaVietLifeCore : Script
         Set("GVL.CoreVersion", 2);
         Tick += OnTick;
         Aborted += delegate { CloseHostSession(); Save(); };
-        Task.Run(delegate { RegisterHostSession(); });
     }
 
     static object Get(string k) { try { return AppDomain.CurrentDomain.GetData(k); } catch { return null; } }

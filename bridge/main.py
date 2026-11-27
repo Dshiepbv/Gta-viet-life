@@ -19,8 +19,6 @@ from urllib.parse import parse_qs
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.environ.get("GVL_DATA_DIR", HERE)
 os.makedirs(DATA_DIR, exist_ok=True)
-DATA_DIR = os.environ.get("GVL_DATA_DIR", HERE)
-os.makedirs(DATA_DIR, exist_ok=True)
 
 
 class _Tee:

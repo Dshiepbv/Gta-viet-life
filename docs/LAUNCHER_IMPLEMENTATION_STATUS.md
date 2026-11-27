@@ -20,7 +20,7 @@
 
 ## Remaining gates before final user acceptance
 - Execute Windows CI and correct every build/package failure.
-- Integrate the Adapter handshake into the actual GTA V Core script.
+- Adapter handshake/heartbeat is integrated into the GTA V Core script; runtime compilation and in-game handshake remain unverified.
 - Verify exact ScriptHookVDotNet Enhanced/Legacy compatibility against a supported game build.
 - Verify PyInstaller bridge packaging, audio initialization and first-run speech-model behavior.
 - Automatic latest-release check, HTTPS download, SHA-256 package verification and helper-based directory-swap rollback are implemented in source; publisher code-signing/manifest signature is not yet provisioned or verified.

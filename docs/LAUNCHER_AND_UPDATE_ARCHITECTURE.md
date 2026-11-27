@@ -80,7 +80,7 @@ Launcher must expose explicit states, not a single optimistic spinner:
 - **STARTING_ENGINE** — Engine Host process is starting.
 - **WAITING_FOR_GAME** — Host is healthy; waiting for GTA V and Adapter.
 - **HANDSHAKING** — Adapter and Host negotiate protocol, build and capabilities.
-- **READY** — every mandatory gate below has passed.
+- **READY_TO_LAUNCH** — verified local package, detected mod-runtime files, installed Adapter scripts, healthy Engine Host and healthy legacy AI bridge; game process may not yet be running.\n- **IN_GAME_CONNECTED** — active game Adapter has completed authenticated protocol handshake and a fresh heartbeat.
 - **DEGRADED** — optional feature unavailable; gameplay may continue only if policy explicitly permits it.
 - **BLOCKED** — a mandatory dependency or compatibility check failed.
 - **STOPPING** — graceful shutdown and durable flush.
@@ -115,7 +115,7 @@ Every release manifest must include:
 - supported GTA V build(s);
 - supported mod-runtime name and exact version range;
 - package file list, sizes and SHA-256 hashes;
-- package signature and signing-key identity;
+- package digest and checksum provenance; (publisher signing key is a pending production gate);
 - schema versions and migrations;
 - dependency versions and licenses;
 - release notes, known issues and rollback compatibility.

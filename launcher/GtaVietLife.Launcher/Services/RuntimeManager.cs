@@ -21,7 +21,13 @@ public sealed class RuntimeManager:IDisposable {
   Directory.CreateDirectory(sd);var backup=Path.Combine(data,"Backups",DateTime.Now.ToString("yyyyMMdd-HHmmss"));
   foreach(var f in Directory.GetFiles(src,"GtaVietLife*.*")){
    var n=Path.GetFileName(f);if(!n.EndsWith(".cs",StringComparison.OrdinalIgnoreCase)&&!n.EndsWith(".ini",StringComparison.OrdinalIgnoreCase))continue;
-   var t=Path.Combine(sd,n);if(File.Exists(t)){Directory.CreateDirectory(backup);File.Copy(t,Path.Combine(backup,n),true);}File.Copy(f,t,true);
+   var t=Path.Combine(sd,n);
+   if(File.Exists(t)){
+    var oldHash=SHA256.HashData(File.ReadAllBytes(t));var newHash=SHA256.HashData(File.ReadAllBytes(f));
+    if(System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(oldHash,newHash))continue;
+    Directory.CreateDirectory(backup);File.Copy(t,Path.Combine(backup,n),true);
+   }
+   File.Copy(f,t,true);
   }
   return(true,"Đã cài module GTA Viet Life; đã sao lưu file trùng tên, không đụng tới save game hoặc mod khác.",sd);
  }
