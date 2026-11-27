@@ -8,6 +8,7 @@ Script trong game (GtaVietLife.cs) gọi tới đây qua http://127.0.0.1:5577
                  dòng 3 = tên NPC không dấu (hiện thông báo trong game)
   GET  /ping   : kiểm tra cầu nối đang chạy
 """
+import base64
 import json
 import os
 import threading
@@ -253,7 +254,10 @@ class Bridge:
                       else f"nghe {t1 - t0:.1f}s · nghĩ {t2 - t1:.1f}s")
             print(f"[{npc['name']}] {timing} | "
                   f"Bạn: {text} → {result['reply']} ({result['action']})")
-            return f"{result['action']}\n{ms}\n{ascii_name(npc['name'])}"
+            dialogue = base64.b64encode(json.dumps(
+                {"player_message": text, "npc_reply": result["reply"]}, ensure_ascii=False
+            ).encode("utf-8")).decode("ascii")
+            return f"{result['action']}\n{ms}\n{ascii_name(npc['name'])}\n{dialogue}"
 
 
 def make_handler(bridge: Bridge):
