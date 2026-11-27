@@ -65,6 +65,7 @@ public class GtaVietLifeCore : Script
         Set("GVL.CoreVersion", 2);
         Set("GVL.Engine.Commands", new Queue<Dictionary<string, object>>());
         Set("GVL.Engine.Ack", new Action<string>(AckEngineCommand));
+        Set("GVL.Engine.Report", new Action<string, string, string>(ReportEngineCommand));
         Tick += OnTick;
         Aborted += delegate { CloseHostSession(); Save(); };
     }
@@ -481,14 +482,26 @@ public class GtaVietLifeCore : Script
 
     void AckEngineCommand(string commandId)
     {
+        ReportEngineCommand(commandId, "completed", "");
+    }
+
+    // Record both successful execution and terminal adapter outcomes. Deferred work
+    // stays in the local queue; unsupported work must not remain pending forever.
+    void ReportEngineCommand(string commandId, string status, string reason)
+    {
         if (string.IsNullOrEmpty(commandId) || string.IsNullOrEmpty(hostToken)) return;
+        if (status != "completed" && status != "failed" && status != "unsupported" &&
+            status != "rejected" && status != "cancelled") status = "failed";
+        if (reason != null && reason.Length > 240) reason = reason.Substring(0, 240);
         Task.Run(delegate
         {
             try
             {
+                bool success = status == "completed";
                 string body = "{\"request_id\":\"" + Guid.NewGuid().ToString("N") +
                     "\",\"command_id\":\"" + JsonEscape(commandId) +
-                    "\",\"result\":{\"success\":true,\"execution\":\"gta_adapter_applied\"}}";
+                    "\",\"result\":{\"success\":" + (success ? "true" : "false") +
+                    ",\"status\":\"" + status + "\",\"reason\":\"" + JsonEscape(reason ?? "") + "\"}}";
                 using (WebClient wc = new HostWebClient())
                 {
                     wc.Proxy = null; wc.Encoding = Encoding.UTF8;
@@ -497,10 +510,8 @@ public class GtaVietLifeCore : Script
                     wc.UploadString(hostServer + "/engine/v1/adapter/commands/ack", "POST", body);
                 }
             }
-            catch (Exception ex) { Log("ack lenh life engine loi: " + ex.Message); }
-            // Always release the local dedup key. If the acknowledgement was lost or the
-            // command was superseded, the Host's pending state is authoritative and polling
-            // will safely redeliver it when necessary.
+            catch (Exception ex) { Log("bao ket qua lenh life engine loi: " + ex.Message); }
+            // Host pending state is authoritative; lost reports are safely redelivered.
             lock (EngineCommandLock) queuedEngineCommandIds.Remove(commandId);
         });
     }
