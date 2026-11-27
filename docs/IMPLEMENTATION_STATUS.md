@@ -42,7 +42,7 @@ Status labels: **Existing** means relevant code is present; **Partial** means im
 | 17 | Persistent society and world simulation | Residents, schedules, traffic rhythm, rumors and random events | Partial — population scale and offline world causality are not verified |
 | 18 | Dashboard, Android and cloud | Python dashboard, Android WebView, Apps Script relay | Existing / partial — authentication, conflict handling and command idempotency need hardening |
 | 19 | System-wide performance | Tick-based modules, cached model lists, background bridge calls | Not verified — no profiler baseline or repeatable performance suite |
-| 20 | Release packaging and versioning | Install scripts and Android Actions build | Partial — no unified game-mod release manifest or compatibility matrix |
+| 20 | Release packaging and versioning | Install scripts and Android Actions build | Partial — target is now a single Windows Launcher + managed Engine Host + in-game Adapter; implementation, updater, installer and compatibility matrix are not yet present |
 
 ## Changes delivered on this branch
 
@@ -84,3 +84,24 @@ Before promoting this branch to a release:
 ## Explicitly unresolved
 
 This branch is a foundational hardening increment, not completion of all 20 development areas and not yet a release candidate. The largest remaining architectural work is a unified transaction journal, one authoritative simulation clock, central economic configuration with Vietnamese regional/household profiles, idempotent dashboard commands, schema/version migration for every save file, and repeatable game-runtime tests.
+
+
+## Approved player workflow — single Launcher
+
+The target player experience is now formally specified in `docs/LAUNCHER_AND_UPDATE_ARCHITECTURE.md`:
+
+**Open GTA Viet Life Launcher → automatic preflight and safe update → start Engine Host → wait for GTA V Adapter handshake → show READY → play.**
+
+The Launcher is the single player-facing orchestrator. It manages installation, update/rollback, Engine Host lifecycle, game/mod-runtime detection, diagnostics and backups. The Engine Host owns simulation and persistence. The GTA V Adapter remains a required in-game plugin and is responsible for executing physical game actions.
+
+### Readiness and update guarantees
+
+- READY is gated on verified package integrity, compatible game/mod-runtime versions, healthy Engine Host, successful schema check, loaded Adapter, compatible protocol, required capabilities and a successful session handshake/heartbeat.
+- Updates are staged, signature/hash verified, applied transactionally and rolled back to the last known-good version on failure.
+- Saves, user configuration and custom content are preserved separately from application binaries.
+- Offline startup may use the last verified compatible release according to security policy; Launcher must disclose that update checks are unavailable.
+- The Launcher does not replace the in-game Adapter and must not claim readiness based only on its own process or the Host process.
+
+### Implementation status
+
+**Architecture approved; product implementation not yet delivered.** No working Launcher EXE, installer, automatic updater, packaged Engine Host or complete GTA Adapter handshake is claimed by this documentation change. Technology choices remain subject to verification against the actual Windows baseline, GTA V build and mod-runtime API. User-facing alpha testing remains prohibited under the delivery policy.
