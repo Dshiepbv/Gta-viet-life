@@ -275,6 +275,20 @@ public class GtaVietLife : Script
         int ms = 0;
         if (lines.Length > 1) int.TryParse(lines[1].Trim(), out ms);
         if (p == null || !p.Exists() || !p.IsAlive || ms <= 0) { ReleaseLater(p, 500); return; }
+        if (lines.Length > 3)
+        {
+            try
+            {
+                string[] resident = ResidentInfo(p);
+                Action<string, string> record = AppDomain.CurrentDomain.GetData("GVL.Engine.RecordDialogue") as Action<string, string>;
+                if (resident != null && record != null)
+                {
+                    string dialogueJson = Encoding.UTF8.GetString(Convert.FromBase64String(lines[3].Trim()));
+                    record(resident[0], dialogueJson);
+                }
+            }
+            catch (Exception ex) { Log("dong bo ky uc hoi thoai NPC loi: " + ex.Message); }
+        }
 
         Ped me = Game.Player.Character;
         speakingPed = p;
