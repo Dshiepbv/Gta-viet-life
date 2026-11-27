@@ -31,7 +31,7 @@ public class GtaVietLifeCore : Script
     volatile bool hostConnected;
     bool hostConnecting, residentSyncing;
     long nextHostHeartbeatTicks;
-    int nextResidentSync, nextEngineCommandPoll, nextWorldCommandPoll, nextWalletBaselineSync;
+    int nextResidentSync, nextEngineCommandPoll, nextWorldCommandPoll, nextWalletBaselineSync, nextWorldPostRetry;
     bool engineCommandPolling, worldCommandPolling;
     readonly object EngineCommandLock = new object();
     readonly object WorldPostQueueLock = new object();
@@ -151,6 +151,7 @@ public class GtaVietLifeCore : Script
         if (hostConnected && now > nextResidentSync) { nextResidentSync = now + 10000; SyncResidentProfiles(); }
         if (hostConnected && now > nextEngineCommandPoll) { nextEngineCommandPoll = now + 2000; PollEngineCommands(); }
         if (hostConnected && now > nextWorldCommandPoll) { nextWorldCommandPoll = now + 2000; PollEngineWorldCommands(); }
+        if (hostConnected && now > nextWorldPostRetry) { nextWorldPostRetry = now + 5000; StartWorldPostWorker(); }
 
         if (now > nextPublish)
         {
@@ -607,10 +608,15 @@ public class GtaVietLifeCore : Script
     {
         if (string.IsNullOrEmpty(path) || !path.StartsWith("/engine/v1/world/", StringComparison.Ordinal) ||
             string.IsNullOrEmpty(body) || !hostConnected || string.IsNullOrEmpty(hostToken)) return;
+        lock (WorldPostQueueLock) worldPostQueue.Enqueue(new KeyValuePair<string, string>(path, body));
+        StartWorldPostWorker();
+    }
+
+    void StartWorldPostWorker()
+    {
         lock (WorldPostQueueLock)
         {
-            worldPostQueue.Enqueue(new KeyValuePair<string, string>(path, body));
-            if (worldPostWorker) return;
+            if (worldPostWorker || worldPostQueue.Count == 0 || !hostConnected || string.IsNullOrEmpty(hostToken)) return;
             worldPostWorker = true;
         }
         Task.Run(delegate
@@ -633,7 +639,19 @@ public class GtaVietLifeCore : Script
                         wc.UploadString(hostServer + item.Key, "POST", item.Value);
                     }
                 }
-                catch (Exception ex) { Log("gui tuong tac the gioi toi engine loi: " + ex.Message); }
+                catch (Exception ex)
+                {
+                    lock (WorldPostQueueLock)
+                    {
+                        KeyValuePair<string, string>[] rest = worldPostQueue.ToArray();
+                        worldPostQueue.Clear();
+                        worldPostQueue.Enqueue(item);
+                        foreach (KeyValuePair<string, string> queued in rest) worldPostQueue.Enqueue(queued);
+                        worldPostWorker = false;
+                    }
+                    Log("gui tuong tac the gioi toi engine loi; se thu lai: " + ex.Message);
+                    return;
+                }
             }
         });
     }
