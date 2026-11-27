@@ -94,6 +94,32 @@ class LifeSimulationTests(unittest.TestCase):
             finally:
                 store.close()
 
+    def test_activity_transition_creates_durable_adapter_command(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "commands.sqlite3"
+            first = LifeSimulationEngine(SQLiteLifeStore(path))
+            first.register_npc(profile())
+            first.advance(1)
+            commands = first.pending_commands()
+            self.assertEqual(len(commands), 1)
+            command = commands[0]
+            self.assertEqual(command["command_type"], "actor.set_activity")
+            self.assertEqual(command["payload"]["activity"], "sleep")
+            second = LifeSimulationEngine(SQLiteLifeStore(path))
+            try:
+                self.assertEqual(second.pending_commands()[0]["command_id"], command["command_id"])
+                self.assertTrue(second.complete_command(command["command_id"], {"success": True, "execution": "accepted"}))
+                self.assertEqual(second.pending_commands(), [])
+                self.assertFalse(second.complete_command(command["command_id"], {"success": True}))
+            finally:
+                second.store.close()
+                first.store.close()
+
+    def test_command_ack_requires_success(self):
+        engine = LifeSimulationEngine()
+        with self.assertRaises(ValueError):
+            engine.complete_command("unknown", {"success": False})
+
     def test_need_driven_override(self):
         engine = LifeSimulationEngine()
         npc = engine.register_npc(profile())
