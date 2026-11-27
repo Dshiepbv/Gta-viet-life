@@ -121,3 +121,7 @@ Logs must support filtering and export. Sensitive credentials, tokens and privat
 A feature is complete only when the player can perform it through in-world actions, the base game physically executes the interaction, the simulation validates and persists the consequence, and relevant actors/systems respond consistently.
 
 Menus and HUD prompts may support usability, but they cannot substitute for physical interaction or functioning gameplay.
+
+## 10. Mandatory data governance
+
+All engine, adapter and gameplay work must comply with [Data Standards, Canonical Sources and Provenance](DATA_STANDARDS_AND_PROVENANCE.md). The repository is the version-controlled authority for project-owned schemas, contracts, migrations and reference configuration. External data must be traceable to a verified source and pinned version, with license and transformation provenance. Runtime saves and simulation state remain in runtime persistence; GitHub governs their schemas and reproducible reference inputs. No fabricated authoritative data, undocumented competing schemas or silent schema changes are permitted.
