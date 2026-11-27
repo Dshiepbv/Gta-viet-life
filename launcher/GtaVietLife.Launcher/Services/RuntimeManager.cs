@@ -29,7 +29,7 @@ public sealed class RuntimeManager:IDisposable {
    }
    File.Copy(f,t,true);
   }
-  return(true,"Đã cài module GTA Viet Life; đã sao lưu file trùng tên, không đụng tới save game hoặc mod khác.",sd);
+  return(true,"Đã phát hiện tệp ScriptHookVDotNet và cài module GTA Viet Life. Phiên bản runtime/game sẽ được xác nhận qua phiên Adapter; save game và mod khác được giữ nguyên.",sd);
  }
  public async Task StartAsync(CancellationToken ct){
   StartHost();await WaitAsync("http://127.0.0.1:5580/health",30,ct);

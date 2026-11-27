@@ -10,10 +10,10 @@ The player must not manually copy C# files, run Python commands, start a server,
 
 The supported installation and daily workflow is:
 
-1. Install GTA Viet Life once using a signed/verified installer package.
+1. Install GTA Viet Life once using the supplied Windows installer. Installer code-signing is a pending production gate.
 2. Open **GTA Viet Life Launcher**.
 3. Launcher checks the installation, game/mod-runtime compatibility, disk space, required files and update manifest.
-4. If an update is available, Launcher downloads it to a staging directory, verifies its manifest, hashes and publisher signature, then installs it transactionally.
+4. If a newer stable GitHub release is available, Launcher downloads the package over HTTPS, checks its SHA-256 against the release checksum asset, then hands it to the external updater for directory-swap installation with a retained backup. Publisher code-signing is not yet provisioned.
 5. Launcher starts or attaches to the local Life Simulation Engine Host.
 6. GTA V Adapter is loaded by the supported GTA mod runtime when the game starts.
 7. Adapter connects to the Engine Host, negotiates protocol version and capabilities, and reports a healthy game session.

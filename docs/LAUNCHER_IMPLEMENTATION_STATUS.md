@@ -10,8 +10,8 @@
 - Automatic installation of GTA Viet Life C# and INI files, with timestamped backups of replaced files; save files and unrelated mods are not touched.
 - Local random authentication token and loopback Engine Host process startup.
 - Standard-library Engine Host health, handshake, heartbeat, close and status endpoints.
-- Windows CI workflow for Python tests, self-contained Launcher publishing and runtime packaging.
-- Diagnostic log export.
+- Windows CI workflow for Python tests, self-contained Launcher/Updater publishing, Engine Host packaging, AI bridge packaging and installer/portable package generation.
+- Latest stable GitHub release check, HTTPS download, SHA-256 checksum verification and external updater helper with directory-swap backup/rollback.\n- Diagnostic log export.
 
 ## Readiness states
 - READY TO LAUNCH means Engine Host and legacy AI bridge are healthy, the expected mod runtime is detected and project scripts are installed.
@@ -19,7 +19,7 @@
 - Copying scripts or starting a process alone never counts as an in-game connection.
 
 ## Remaining gates before final user acceptance
-- Execute Windows CI and correct every build/package failure.
+- Execute Windows CI and correct every build/package failure.\n- Provision publisher signing/certificate infrastructure before public production updates.
 - Adapter handshake/heartbeat is integrated into the GTA V Core script; runtime compilation and in-game handshake remain unverified.
 - Verify exact ScriptHookVDotNet Enhanced/Legacy compatibility against a supported game build.
 - Verify PyInstaller bridge packaging, audio initialization and first-run speech-model behavior.

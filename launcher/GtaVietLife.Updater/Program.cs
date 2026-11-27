@@ -3,7 +3,7 @@ using System.IO.Compression;
 if(args.Length<3){Console.Error.WriteLine("Usage: updater package.zip install-dir parent-pid");return 2;}
 var zip=Path.GetFullPath(args[0]);var target=Path.GetFullPath(args[1]);if(!int.TryParse(args[2],out var pid))return 2;
 try{var parentProcess=Process.GetProcessById(pid);if(!parentProcess.WaitForExit(30000))throw new TimeoutException("Launcher did not exit before update timeout.");}catch(ArgumentException){}
-var parent=Path.GetDirectoryName(target)!;var stage=Path.Combine(parent,"gvl-stage-"+Guid.NewGuid().ToString("N"));var backup=Path.Combine(parent,"gvl-backup-"+DateTime.UtcNow.ToString("yyyyMMddHHmmss"));
+var parent=Path.GetDirectoryName(target)!;var stage=Path.Combine(parent,"gvl-stage-"+Guid.NewGuid().ToString("N"));var backup=Path.Combine(parent,"gvl-backup-"+DateTime.UtcNow.ToString("yyyyMMddHHmmss")+"-"+Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(stage);
 try{
  ZipFile.ExtractToDirectory(zip,stage,true);
