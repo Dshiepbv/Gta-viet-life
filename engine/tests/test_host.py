@@ -21,6 +21,23 @@ class HostTests(unittest.TestCase):
   p={"protocol":PROTOCOL,"request_id":"req-1","session_id":"s1","adapter":{"id":"gta5.shvdn","version":"0.1.0"},"capabilities":["adapter.session"]}
   code,r=self.req("/engine/v1/handshake",p); self.assertEqual(code,200); self.assertTrue(r["accepted"])
   self.assertTrue(self.state.snapshot()["adapter_connected"]); self.assertTrue(self.state.heartbeat("s1"))
+ def test_game_clock_drives_simulation_and_pauses_background_clock(self):
+  p={"protocol":PROTOCOL,"request_id":"clock-handshake","session_id":"clock-session",
+     "adapter":{"id":"gta5.shvdn","version":"0.1.0"},"capabilities":["adapter.session"],"world_minute":600}
+  self.assertTrue(self.state.handshake(p)["accepted"])
+  self.assertEqual(self.state.simulation.simulation_minute,600)
+  self.assertTrue(self.state.heartbeat("clock-session",603))
+  self.assertEqual(self.state.simulation.simulation_minute,603)
+  self.assertTrue(self.state.heartbeat("clock-session",603))
+  self.assertEqual(self.state.simulation.simulation_minute,603)
+  # A backward clock correction updates the baseline but never rewinds NPC history.
+  self.assertTrue(self.state.heartbeat("clock-session",590))
+  self.assertEqual(self.state.simulation.simulation_minute,603)
+  self.assertTrue(self.state.heartbeat("clock-session",592))
+  self.assertEqual(self.state.simulation.simulation_minute,605)
+  self.assertTrue(self.state.adapter_is_connected())
+  self.assertTrue(self.state.close("clock-session"))
+  self.assertFalse(self.state.adapter_is_connected())
  def test_protocol_rejected(self):
   code,r=self.req("/engine/v1/handshake",{"protocol":"bad","request_id":"req-bad","session_id":"s","adapter":{"id":"x","version":"1"}})
   self.assertEqual(code,400); self.assertEqual(r["error"],"protocol_mismatch")
