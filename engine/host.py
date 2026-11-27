@@ -153,7 +153,8 @@ def handler_for(state, log):
                     if not isinstance(dialogue,dict): raise ValueError("dialogue_object_required")
                     result=state.simulation.record_dialogue_memory(
                         p.get("npc_id",""),p.get("player_id","player.main"),
-                        dialogue.get("player_message",""),dialogue.get("npc_reply",""),rid)
+                        dialogue.get("player_message",""),dialogue.get("npc_reply",""),rid,
+                        dialogue.get("affinity_delta",0))
                     return self.sendj(200,result)
                 if self.path=="/engine/v1/simulation/context":
                     result=state.simulation.dialogue_context(
