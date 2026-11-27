@@ -103,6 +103,16 @@ class HostTests(unittest.TestCase):
   self.assertEqual(snapshot["npc_count"],1)
   self.assertEqual(snapshot["npcs"][0]["memory_count"],1)
   self.assertEqual(snapshot["npcs"][0]["relationships"],{"player.godot":2.0})
+ def test_world_clock_advance_decays_traffic_once_even_on_request_replay(self):
+  self.state.society.register_traffic_segment("road.clock","arterial",1.0)
+  self.state.society.record_traffic_incident("incident.clock","road.clock",2,"collision","")
+  self.assertEqual(self.state.society.snapshot()["traffic"][0]["congestion"],24.0)
+  first=self.state.advance(10,"world-clock-advance")
+  self.assertEqual(first["simulation_minute"],10)
+  self.assertEqual(self.state.society.snapshot()["traffic"][0]["congestion"],19.0)
+  replay=self.state.advance(10,"world-clock-advance")
+  self.assertEqual(replay["simulation_minute"],10)
+  self.assertEqual(self.state.society.snapshot()["traffic"][0]["congestion"],19.0)
  def test_world_interaction_and_society_apis(self):
   code,r=self.req("/engine/v1/world/buildings",{"request_id":"bldg-1","building_id":"home.1","category":"residential","name":"Home 1",
     "adapter_maps":{"godot4.reference":{"entrance":"home.1.door","interior":"home.1.room"}},"interactions":["enter","exit"]})
