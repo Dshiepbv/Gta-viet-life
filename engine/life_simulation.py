@@ -16,7 +16,18 @@ from typing import Dict, List, Optional, Sequence
 
 
 MAX_ADVANCE_MINUTES = 7 * 24 * 60
-NEED_KEYS = ("hunger", "energy", "social", "stress")
+NEED_KEYS = ("hunger", "energy", "social", "stress", "hygiene", "bladder")
+MINUTES_PER_LIFE_YEAR = 365 * 24 * 60
+
+
+def life_stage(age_years: int) -> str:
+    if age_years < 3: return "infant"
+    if age_years < 13: return "child"
+    if age_years < 18: return "teen"
+    if age_years < 30: return "young_adult"
+    if age_years < 60: return "adult"
+    if age_years < 75: return "senior"
+    return "elder"
 
 
 @dataclass(frozen=True)
@@ -49,6 +60,7 @@ class NPCProfile:
     biography: str = ""
     skills: Dict[str, float] = field(default_factory=dict)
     knowledge: Sequence[dict] = ()
+    actor_kind: str = "npc"
 
     def __post_init__(self) -> None:
         if not self.npc_id or len(self.npc_id) > 128:
@@ -57,6 +69,8 @@ class NPCProfile:
             raise ValueError("display_name and home_location_id are required")
         if self.life_goal not in ("career", "health", "social"):
             raise ValueError("unsupported_life_goal")
+        if self.actor_kind not in ("player", "npc"):
+            raise ValueError("invalid_actor_kind")
         if isinstance(self.age_years, bool) or not isinstance(self.age_years, int) or not 0 <= self.age_years <= 120:
             raise ValueError("invalid_age_years")
         if len(self.biography) > 2000 or len(self.household_id) > 128:
@@ -94,6 +108,12 @@ class NPCState:
     last_transition_minute: int = 0
     memories: List[dict] = field(default_factory=list)
     goal_progress: float = 0.0
+    health: float = 100.0
+    hygiene: float = 85.0
+    bladder: float = 10.0
+    fitness: float = 50.0
+    mood: float = 70.0
+    age_minutes: int = 0
 
     def __post_init__(self) -> None:
         if not self.location_id:
@@ -159,6 +179,7 @@ class SQLiteLifeStore:
                     life_goal=p.get("life_goal", "career"), household_id=p.get("household_id", ""),
                     age_years=p.get("age_years", 30), biography=p.get("biography", ""),
                     skills=p.get("skills", {}), knowledge=p.get("knowledge", ()),
+                    actor_kind=p.get("actor_kind", "npc"),
                 )
                 s = json.loads(row["state_json"])
                 result.append(NPCState(
@@ -167,6 +188,9 @@ class SQLiteLifeStore:
                     current_activity=s["current_activity"], location_id=s["location_id"],
                     last_transition_minute=s["last_transition_minute"], memories=s.get("memories", []),
                     goal_progress=s.get("goal_progress", 0.0),
+                    health=s.get("health", 100.0), hygiene=s.get("hygiene", 85.0),
+                    bladder=s.get("bladder", 10.0), fitness=s.get("fitness", 50.0),
+                    mood=s.get("mood", 70.0), age_minutes=s.get("age_minutes", 0),
                 ))
             return minute, result
 
@@ -188,7 +212,10 @@ class SQLiteLifeStore:
                     "stress": state.stress, "affinity": state.affinity,
                     "current_activity": state.current_activity, "location_id": state.location_id,
                     "last_transition_minute": state.last_transition_minute, "memories": state.memories[-100:],
-                    "goal_progress": state.goal_progress,
+                    "goal_progress": state.goal_progress, "health": state.health,
+                    "hygiene": state.hygiene, "bladder": state.bladder,
+                    "fitness": state.fitness, "mood": state.mood,
+                    "age_minutes": state.age_minutes,
                 }
                 self.connection.execute(
                     """INSERT INTO npc_state(npc_id,profile_json,state_json,updated_at)
@@ -328,7 +355,7 @@ class LifeSimulationEngine:
             "event_id": event_id, "sim_minute": self.simulation_minute,
             "npc_id": state.profile.npc_id, "event_type": event_type, "payload": payload,
         })
-        if event_type == "activity_changed":
+        if event_type == "activity_changed" and state.profile.actor_kind != "player":
             self.commands.append({
                 "command_id": event_id, "npc_id": state.profile.npc_id,
                 "command_type": "actor.set_activity", "created_minute": self.simulation_minute,
@@ -348,12 +375,17 @@ class LifeSimulationEngine:
               or (state.social <= 8 and planned in ("free_time", "leisure"))):
             activity = "socialize"
 
+        state.age_minutes += 1
+        state.hygiene -= 0.035
+        state.bladder += 0.11
         if activity == "sleep":
             state.energy += 1.7
+            state.health += 0.025
             state.hunger += 0.35
             state.stress -= 0.35
         elif activity == "eat":
             state.hunger -= 4.0
+            state.bladder += 0.04
             state.energy += 0.15
             state.stress -= 0.1
         elif activity in ("work", "commute"):
@@ -370,18 +402,51 @@ class LifeSimulationEngine:
             state.hunger += 0.35
             state.social += 0.15
             state.stress -= 0.25
+        elif activity in ("shower", "bathe"):
+            state.hygiene += 3.5
+            state.stress -= 0.2
+        elif activity in ("toilet", "use_bathroom"):
+            state.bladder -= 12.0
+            state.stress -= 0.1
+        elif activity == "exercise":
+            state.fitness += 0.12
+            state.energy -= 0.55
+            state.hunger += 0.65
+            state.stress -= 0.35
+        elif activity == "study":
+            state.energy -= 0.3
+            state.stress += 0.15
+            state.goal_progress = self._clamp(state.goal_progress + 0.015)
         else:
             state.energy -= 0.15
             state.hunger += 0.4
 
+        # Basic autonomic needs apply equally to the player avatar and every NPC.
+        if state.bladder >= 94 and activity not in ("toilet", "use_bathroom"):
+            activity = "toilet"
+        if state.hygiene <= 8 and activity not in ("shower", "bathe"):
+            activity = "shower"
+        if state.hunger >= 98 or state.energy <= 2 or state.hygiene <= 1 or state.bladder >= 99:
+            state.health -= 0.08
         if state.profile.life_goal == "career" and activity == "work":
             state.goal_progress = self._clamp(state.goal_progress + 0.02)
         elif state.profile.life_goal == "health" and activity in ("sleep", "eat"):
             state.goal_progress = self._clamp(state.goal_progress + 0.01)
         elif state.profile.life_goal == "social" and activity in ("socialize", "leisure"):
             state.goal_progress = self._clamp(state.goal_progress + 0.02)
+        state.health = self._clamp(state.health)
+        state.hygiene = self._clamp(state.hygiene)
+        state.bladder = self._clamp(state.bladder)
+        state.fitness = self._clamp(state.fitness - (0.001 if activity != "exercise" else 0.0))
+        state.mood = self._clamp(100.0 - (state.stress * 0.55) - (state.hunger * 0.15)
+                                 - ((100.0 - state.social) * 0.12) - ((100.0 - state.energy) * 0.08))
         for key in NEED_KEYS:
             setattr(state, key, self._clamp(getattr(state, key)))
+        previous_stage = life_stage(state.profile.age_years + ((state.age_minutes - 1) // MINUTES_PER_LIFE_YEAR))
+        current_stage = life_stage(state.profile.age_years + (state.age_minutes // MINUTES_PER_LIFE_YEAR))
+        if current_stage != previous_stage:
+            self._record(state, "life_stage_changed", {"from": previous_stage, "to": current_stage,
+                                                       "age_years": state.profile.age_years + (state.age_minutes // MINUTES_PER_LIFE_YEAR)})
         if activity != state.current_activity or location != state.location_id:
             previous = state.current_activity
             state.current_activity = activity
@@ -491,13 +556,17 @@ class LifeSimulationEngine:
             profile = state.profile
             return {
                 "identity": {"npc_id": profile.npc_id, "name": profile.display_name,
-                             "age_years": profile.age_years, "occupation": profile.occupation,
+                             "age_years": profile.age_years + (state.age_minutes // MINUTES_PER_LIFE_YEAR),
+                             "life_stage": life_stage(profile.age_years + (state.age_minutes // MINUTES_PER_LIFE_YEAR)),
+                             "actor_kind": profile.actor_kind, "occupation": profile.occupation,
                              "household_id": profile.household_id, "biography": profile.biography,
                              "traits": list(profile.traits), "skills": dict(profile.skills),
                              "life_goal": profile.life_goal, "goal_progress": state.goal_progress},
                 "current_state": {"activity": state.current_activity, "location_id": state.location_id,
                                   "needs": {"hunger": state.hunger, "energy": state.energy,
-                                            "social": state.social, "stress": state.stress},
+                                            "social": state.social, "stress": state.stress,
+                                            "hygiene": state.hygiene, "bladder": state.bladder,
+                                            "health": state.health, "fitness": state.fitness, "mood": state.mood},
                                   "simulation_minute": self.simulation_minute},
                 "relationship": {"player_id": player_id, "affinity": state.affinity.get(player_id, 0.0)},
                 "known_facts": list(profile.knowledge),
@@ -568,7 +637,12 @@ class LifeSimulationEngine:
                     "occupation": s.profile.occupation, "home_location_id": s.profile.home_location_id,
                     "life_goal": s.profile.life_goal, "goal_progress": s.goal_progress,
                     "location_id": s.location_id, "activity": s.current_activity,
-                    "needs": {"hunger": s.hunger, "energy": s.energy, "social": s.social, "stress": s.stress},
+                    "actor_kind": s.profile.actor_kind,
+                    "age_years": s.profile.age_years + (s.age_minutes // MINUTES_PER_LIFE_YEAR),
+                    "life_stage": life_stage(s.profile.age_years + (s.age_minutes // MINUTES_PER_LIFE_YEAR)),
+                    "health": s.health, "fitness": s.fitness, "mood": s.mood,
+                    "needs": {"hunger": s.hunger, "energy": s.energy, "social": s.social,
+                              "stress": s.stress, "hygiene": s.hygiene, "bladder": s.bladder},
                     "relationships": dict(s.affinity), "memory_count": len(s.memories),
                 } for s in sorted(self.npcs.values(), key=lambda item: item.profile.npc_id)],
             }
