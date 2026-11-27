@@ -38,8 +38,8 @@ jobs:
           Expand-Archive godot.zip godot-runtime -Force
           $godot=Get-ChildItem godot-runtime -Recurse -Filter "Godot_v4.4.1-stable_win64.exe" | Select-Object -First 1
           if(!$godot){throw "Pinned Godot executable not found."}
-          & $godot.FullName --headless --editor --path adapters/godot --quit
-          if($LASTEXITCODE -ne 0){throw "Godot headless project import/script parse failed."}
+          & $godot.FullName --headless --editor --path adapters/godot --quit --verbose 2>&1 | Tee-Object godot-validation.log
+          if($LASTEXITCODE -ne 0){Get-Content godot-validation.log; throw "Godot headless project import/script parse failed."}
       - name: Set release version
         shell: pwsh
         run: |
