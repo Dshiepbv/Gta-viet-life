@@ -31,10 +31,13 @@ public sealed class RuntimeManager:IDisposable {
   if(!HasVcRuntime())return(false,"Máy chưa phát hiện Microsoft Visual C++ Redistributable x64 (v14), là yêu cầu của ScriptHookVDotNet Enhanced.",sd);
   var shLog=Path.Combine(gd,"ScriptHookV.log");
   string scriptHookLog=File.Exists(shLog)?File.ReadAllText(shLog):"";
-  if(scriptHookLog.IndexOf("Unknown game version",StringComparison.OrdinalIgnoreCase)>=0)
-   return(false,"Script Hook V báo Unknown game version cho GTA build "+gameVersion+". Không thể báo sẵn sàng; cần chờ upstream hỗ trợ đúng bản game.",sd);
-  bool hookBuildConfirmed=scriptHookLog.Split(new[]{'\r','\n'},StringSplitOptions.RemoveEmptyEntries)
-   .Any(line=>line.IndexOf("Success",StringComparison.OrdinalIgnoreCase)>=0&&line.IndexOf(gameVersion,StringComparison.OrdinalIgnoreCase)>=0);
+  var logLines=scriptHookLog.Split(new[]{'\r','\n'},StringSplitOptions.RemoveEmptyEntries);
+  int unknownIndex=Array.FindLastIndex(logLines,line=>line.IndexOf("Unknown game version",StringComparison.OrdinalIgnoreCase)>=0);
+  int successIndex=Array.FindLastIndex(logLines,line=>line.IndexOf("Success",StringComparison.OrdinalIgnoreCase)>=0);
+  if(unknownIndex>=0&&unknownIndex>successIndex)
+   return(false,"Script Hook V báo Unknown game version ở lần chạy gần nhất cho GTA build "+gameVersion+". Không thể báo sẵn sàng; cần chờ upstream hỗ trợ đúng bản game.",sd);
+  string successContext=successIndex>=0?string.Join(" ",logLines.Skip(successIndex).Take(3)):"";
+  bool hookBuildConfirmed=successIndex>=0&&successContext.IndexOf(gameVersion,StringComparison.OrdinalIgnoreCase)>=0;
   var src=Path.Combine(root,"game");if(!Directory.Exists(src))return(false,"Thiếu gói module game trong bộ cài.",sd);
   Directory.CreateDirectory(sd);var backup=Path.Combine(data,"Backups",DateTime.Now.ToString("yyyyMMdd-HHmmss")+"-"+Guid.NewGuid().ToString("N"));
   foreach(var f in Directory.GetFiles(src,"GtaVietLife*.*")){
