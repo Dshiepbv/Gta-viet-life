@@ -82,7 +82,7 @@ class NPCState:
 class SQLiteLifeStore:
     """Versioned, transactional persistence for canonical NPC state and events."""
 
-    SCHEMA_VERSION = 1
+    SCHEMA_VERSION = 2
 
     def __init__(self, path: str | Path = ":memory:") -> None:
         self._lock = threading.RLock()
@@ -105,7 +105,15 @@ class SQLiteLifeStore:
                     event_id TEXT PRIMARY KEY, sim_minute INTEGER NOT NULL, npc_id TEXT NOT NULL,
                     event_type TEXT NOT NULL, payload_json TEXT NOT NULL)""")
                 self.connection.execute("INSERT OR REPLACE INTO schema_meta(key,value) VALUES('simulation_minute','0')")
-                self.connection.execute("INSERT OR REPLACE INTO schema_meta(key,value) VALUES('schema_version','1')")
+                version = 1
+            if version < 2:
+                self.connection.execute("""CREATE TABLE IF NOT EXISTS request_dedup (
+                    request_id TEXT PRIMARY KEY, response_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""")
+                version = 2
+            self.connection.execute(
+                "INSERT OR REPLACE INTO schema_meta(key,value) VALUES('schema_version',?)", (str(version),)
+            )
 
     def load(self) -> tuple[int, List[NPCState]]:
         with self._lock:
@@ -131,7 +139,15 @@ class SQLiteLifeStore:
                 ))
             return minute, result
 
-    def save(self, sim_minute: int, states: Sequence[NPCState], events: Sequence[dict]) -> None:
+    def get_request_result(self, request_id: str) -> Optional[dict]:
+        with self._lock:
+            row = self.connection.execute(
+                "SELECT response_json FROM request_dedup WHERE request_id=?", (request_id,)
+            ).fetchone()
+            return json.loads(row["response_json"]) if row else None
+
+    def save(self, sim_minute: int, states: Sequence[NPCState], events: Sequence[dict],
+             request_result: Optional[tuple[str, dict]] = None) -> None:
         with self._lock, self.connection:
             for state in states:
                 p = asdict(state.profile)
@@ -160,6 +176,12 @@ class SQLiteLifeStore:
             self.connection.execute(
                 "INSERT OR REPLACE INTO schema_meta(key,value) VALUES('last_wallclock_epoch',?)", (str(time.time()),)
             )
+            if request_result is not None:
+                request_id, response = request_result
+                self.connection.execute(
+                    "INSERT OR IGNORE INTO request_dedup(request_id,response_json) VALUES(?,?)",
+                    (request_id, json.dumps(response, ensure_ascii=False)),
+                )
 
     def get_wallclock_epoch(self) -> Optional[float]:
         with self._lock:
@@ -252,7 +274,7 @@ class LifeSimulationEngine:
             state.goal_progress = self._clamp(state.goal_progress + 0.02)
         elif state.profile.life_goal == "health" and activity in ("sleep", "eat"):
             state.goal_progress = self._clamp(state.goal_progress + 0.01)
-        elif state.profile.life_goal == "social" and activity == "socialize":
+        elif state.profile.life_goal == "social" and activity in ("socialize", "leisure"):
             state.goal_progress = self._clamp(state.goal_progress + 0.02)
         for key in NEED_KEYS:
             setattr(state, key, self._clamp(getattr(state, key)))
@@ -263,25 +285,42 @@ class LifeSimulationEngine:
             state.last_transition_minute = self.simulation_minute
             self._record(state, "activity_changed", {"from": previous, "to": activity, "location_id": location})
 
-    def advance(self, minutes: int) -> dict:
+    def advance(self, minutes: int, request_id: Optional[str] = None) -> dict:
         if isinstance(minutes, bool) or not isinstance(minutes, int) or not 0 <= minutes <= MAX_ADVANCE_MINUTES:
             raise ValueError("minutes_must_be_integer_between_0_and_10080")
+        if request_id is not None and (not request_id or len(request_id) > 128):
+            raise ValueError("invalid_request_id")
         with self._lock:
+            dedup_key = "advance:" + request_id if request_id else None
+            if dedup_key:
+                cached = self.store.get_request_result(dedup_key)
+                if cached is not None:
+                    return cached
             self.events = []
             for _ in range(minutes):
                 self.simulation_minute += 1
                 for state in self.npcs.values():
                     self._tick_npc(state)
-            self.store.save(self.simulation_minute, list(self.npcs.values()), self.events)
-            return {"simulation_minute": self.simulation_minute, "advanced_minutes": minutes,
-                    "npc_count": len(self.npcs), "events": list(self.events)}
+            result = {"simulation_minute": self.simulation_minute, "advanced_minutes": minutes,
+                      "npc_count": len(self.npcs), "events": list(self.events)}
+            request_result = (dedup_key, result) if dedup_key else None
+            self.store.save(self.simulation_minute, list(self.npcs.values()), self.events, request_result)
+            return result
 
-    def interact(self, npc_id: str, player_id: str, interaction: str = "talk") -> dict:
+    def interact(self, npc_id: str, player_id: str, interaction: str = "talk",
+                 request_id: Optional[str] = None) -> dict:
         if interaction != "talk":
             raise ValueError("unsupported_interaction")
         if not player_id or len(player_id) > 128:
             raise ValueError("invalid_player_id")
+        if request_id is not None and (not request_id or len(request_id) > 128):
+            raise ValueError("invalid_request_id")
         with self._lock:
+            dedup_key = "interact:" + request_id if request_id else None
+            if dedup_key:
+                cached = self.store.get_request_result(dedup_key)
+                if cached is not None:
+                    return cached
             state = self.npcs.get(npc_id)
             if state is None:
                 raise KeyError("npc_not_found")
@@ -293,13 +332,15 @@ class LifeSimulationEngine:
             state.memories.append(memory)
             state.memories = state.memories[-100:]
             self.events = []
+            result = {"npc_id": npc_id, "interaction": interaction, "affinity": state.affinity[player_id],
+                      "social_need": state.social, "memory_recorded": True,
+                      "response_context": {"name": state.profile.display_name,
+                                           "occupation": state.profile.occupation,
+                                           "activity": state.current_activity}}
             self._record(state, "conversation", {"player_id": player_id, "interaction": interaction})
-            self.store.save(self.simulation_minute, [state], self.events)
-            return {"npc_id": npc_id, "interaction": interaction, "affinity": state.affinity[player_id],
-                    "social_need": state.social, "memory_recorded": True,
-                    "response_context": {"name": state.profile.display_name,
-                                         "occupation": state.profile.occupation,
-                                         "activity": state.current_activity}}
+            request_result = (dedup_key, result) if dedup_key else None
+            self.store.save(self.simulation_minute, [state], self.events, request_result)
+            return result
 
     def snapshot(self) -> dict:
         with self._lock:

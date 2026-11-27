@@ -63,9 +63,15 @@ The current Launcher/Host/Adapter bootstrap implements these endpoints:
 
 Every POST body must contain a non-empty unique `request_id`. Authenticated requests use the `X-GVL-Token` header. The Launcher creates a random per-user token at `%LOCALAPPDATA%/GtaVietLife/host.token`; the game Adapter reads the same token. The Host rejects non-loopback bind addresses.
 
-The current GTA Core reports only the capability `adapter.session`. It does not claim actor observation, spawning, navigation, interiors or vehicle control. Those capabilities remain unavailable until the corresponding in-world command/result path is implemented and verified.
+The current GTA Core reports only the capability `adapter.session`. It also imports the existing resident roster into the Engine Host through the authenticated simulation profile endpoint. This imports stable identity and schedule metadata only; it does not claim actor observation, spawning, navigation, interiors or vehicle control. Those capabilities remain unavailable until the corresponding in-world command/result path is implemented and verified.
 
-**Implementation boundary:** the current Host keeps one active adapter session in memory and provides lifecycle/connection status. It is not yet the complete authoritative NPC/world simulation or durable domain store.
+The Host now exposes authenticated NPC simulation endpoints:
+- `POST /engine/v1/simulation/npcs` — register a game-neutral NPC profile and validated schedule.
+- `POST /engine/v1/simulation/advance` — advance bounded simulation minutes; request IDs are deduplicated.
+- `POST /engine/v1/simulation/interact` — record a supported player conversation, relationship change and memory; request IDs are deduplicated.
+- `GET /engine/v1/simulation/snapshot` — inspect canonical NPC state and needs.
+
+**Implementation boundary:** the Host now owns durable NPC simulation state and runs its simulation clock independently, but it is not yet the complete authoritative city/world simulation. The existing GTA World module still executes the physical resident schedule. Semantic actor commands, GTA location coordinate mappings, NPC materialization/reconciliation and physical execution results are still unimplemented.
 
 ## 5. Observation submission
 

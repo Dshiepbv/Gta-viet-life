@@ -74,7 +74,7 @@ def handler_for(state, log):
                 if not isinstance(rid,str) or not rid: raise ValueError("request_id_required")
                 if self.path=="/engine/v1/handshake": return self.sendj(200,state.handshake(p))
                 if self.path=="/engine/v1/simulation/advance":
-                    result=state.simulation.advance(p.get("minutes"))
+                    result=state.simulation.advance(p.get("minutes"), rid)
                     return self.sendj(200,result)
                 if self.path=="/engine/v1/simulation/npcs":
                     raw=p.get("npc")
@@ -92,7 +92,7 @@ def handler_for(state, log):
                     return self.sendj(201,{"registered":True,"npc_id":profile.npc_id})
                 if self.path=="/engine/v1/simulation/interact":
                     result=state.simulation.interact(
-                        p.get("npc_id",""),p.get("player_id",""),p.get("interaction","talk"))
+                        p.get("npc_id",""),p.get("player_id",""),p.get("interaction","talk"),rid)
                     return self.sendj(200,result)
                 if self.path=="/engine/v1/heartbeat":
                     ok=state.heartbeat(str(p.get("session_id",""))); return self.sendj(200 if ok else 409,{"accepted":ok})

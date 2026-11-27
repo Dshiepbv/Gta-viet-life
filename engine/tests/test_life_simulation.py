@@ -75,6 +75,25 @@ class LifeSimulationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             engine.advance(1.5)
 
+    def test_schema_one_migrates_to_idempotency_schema_two(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "legacy.sqlite3"
+            import sqlite3
+            connection = sqlite3.connect(path)
+            connection.execute("CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+            connection.execute("CREATE TABLE npc_state (npc_id TEXT PRIMARY KEY, profile_json TEXT NOT NULL, state_json TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)")
+            connection.execute("CREATE TABLE life_events (event_id TEXT PRIMARY KEY, sim_minute INTEGER NOT NULL, npc_id TEXT NOT NULL, event_type TEXT NOT NULL, payload_json TEXT NOT NULL)")
+            connection.execute("INSERT INTO schema_meta(key,value) VALUES('schema_version','1')")
+            connection.execute("INSERT INTO schema_meta(key,value) VALUES('simulation_minute','12')")
+            connection.commit()
+            connection.close()
+            store = SQLiteLifeStore(path)
+            try:
+                self.assertEqual(store.get_wallclock_epoch(), None)
+                self.assertIsNone(store.get_request_result("not-seen"))
+            finally:
+                store.close()
+
     def test_need_driven_override(self):
         engine = LifeSimulationEngine()
         npc = engine.register_npc(profile())

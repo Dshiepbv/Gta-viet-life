@@ -28,8 +28,8 @@ public class GtaVietLifeCore : Script
     string hostToken = "";
     readonly object HostLock = new object();
     volatile bool hostConnected;
-    bool hostConnecting;
-    int nextHostHeartbeat;
+    bool hostConnecting, residentSyncing;
+    int nextHostHeartbeat, nextResidentSync;
     bool forward = true, logEvents = true, forwarding;
     long gameDay, lastSeenSeq;
     int lastMinute = -1, nextPublish, nextForward, nextSave;
@@ -101,6 +101,7 @@ public class GtaVietLifeCore : Script
     {
         int now = Game.GameTime;
         MaintainHostSession(now);
+        if (hostConnected && now > nextResidentSync) { nextResidentSync = now + 10000; SyncResidentProfiles(); }
         TimeSpan t = World.CurrentTimeOfDay;
         int minute = t.Hours * 60 + t.Minutes;
         if (lastMinute >= 0 && minute < lastMinute && lastMinute - minute > 600)
@@ -351,6 +352,76 @@ public class GtaVietLifeCore : Script
             Log("engine host handshake thanh cong, session=" + hostSessionId);
         }
         catch (Exception ex) { hostConnected = false; Log("engine host handshake chua thanh cong: " + ex.Message); }
+    }
+
+    static string JsonEscape(string value)
+    {
+        StringBuilder b = new StringBuilder();
+        foreach (char ch in value ?? "")
+        {
+            if (ch == '\\') b.Append("\\\\");
+            else if (ch == '"') b.Append("\\\"");
+            else if (ch == '\n') b.Append("\\n");
+            else if (ch == '\r') b.Append("\\r");
+            else if (ch == '\t') b.Append("\\t");
+            else if (ch < 32) b.Append("\\u").Append(((int)ch).ToString("x4", CultureInfo.InvariantCulture));
+            else b.Append(ch);
+        }
+        return b.ToString();
+    }
+
+    // Import legacy persistent residents into the game-neutral life engine.
+    // This syncs identity and schedule only; it does not claim physical NPC control.
+    void SyncResidentProfiles()
+    {
+        lock (HostLock)
+        {
+            if (residentSyncing || !hostConnected || string.IsNullOrEmpty(hostToken)) return;
+            residentSyncing = true;
+        }
+        Task.Run(delegate
+        {
+            try
+            {
+                string path = Path.Combine(Environment.CurrentDirectory, "GtaVietLifeResidents.txt");
+                if (!File.Exists(path)) return;
+                string[] lines = File.ReadAllLines(path, Encoding.UTF8);
+                foreach (string line in lines)
+                {
+                    if (string.IsNullOrWhiteSpace(line)) continue;
+                    string[] parts = line.Split('|');
+                    if (parts.Length < 3) continue;
+                    string npcId = parts[1].Trim();
+                    string name = parts[2].Trim();
+                    if (!npcId.StartsWith("res_", StringComparison.Ordinal) || name.Length == 0) continue;
+                    string home = npcId + ".home";
+                    string work = npcId + ".work";
+                    string lunch = npcId + ".lunch";
+                    string leisure = npcId + ".leisure";
+                    string body = "{\"request_id\":\"" + Guid.NewGuid().ToString("N") + "\",\"npc\":{" +
+                        "\"npc_id\":\"" + JsonEscape(npcId) + "\",\"display_name\":\"" + JsonEscape(name) +
+                        "\",\"home_location_id\":\"" + home + "\",\"occupation\":\"resident\",\"life_goal\":\"social\"," +
+                        "\"traits\":[\"community_resident\"],\"schedule\":[" +
+                        "{\"start_minute\":0,\"end_minute\":360,\"activity\":\"sleep\",\"location_id\":\"" + home + "\"}," +
+                        "{\"start_minute\":360,\"end_minute\":420,\"activity\":\"free_time\",\"location_id\":\"" + home + "\"}," +
+                        "{\"start_minute\":420,\"end_minute\":660,\"activity\":\"work\",\"location_id\":\"" + work + "\"}," +
+                        "{\"start_minute\":660,\"end_minute\":780,\"activity\":\"eat\",\"location_id\":\"" + lunch + "\"}," +
+                        "{\"start_minute\":780,\"end_minute\":1020,\"activity\":\"work\",\"location_id\":\"" + work + "\"}," +
+                        "{\"start_minute\":1020,\"end_minute\":1140,\"activity\":\"leisure\",\"location_id\":\"" + leisure + "\"}," +
+                        "{\"start_minute\":1140,\"end_minute\":1380,\"activity\":\"free_time\",\"location_id\":\"" + home + "\"}," +
+                        "{\"start_minute\":1380,\"end_minute\":1440,\"activity\":\"sleep\",\"location_id\":\"" + home + "\"}]}}";
+                    using (WebClient wc = new HostWebClient())
+                    {
+                        wc.Proxy = null; wc.Encoding = Encoding.UTF8;
+                        wc.Headers[HttpRequestHeader.ContentType] = "application/json; charset=utf-8";
+                        wc.Headers["X-GVL-Token"] = hostToken;
+                        wc.UploadString(hostServer + "/engine/v1/simulation/npcs", "POST", body);
+                    }
+                }
+            }
+            catch (Exception ex) { Log("dong bo cu dan vao life engine loi: " + ex.Message); }
+            finally { lock (HostLock) residentSyncing = false; }
+        });
     }
 
     void SendHostHeartbeat()

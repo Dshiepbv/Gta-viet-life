@@ -118,8 +118,12 @@ The branch now contains the first persistent NPC life-simulation implementation 
 - Schedule-driven activities and need-driven overrides (eating, sleeping and socializing).
 - Durable relationship affinity and bounded episodic memory for player conversations.
 - SQLite schema version 1, transactional NPC snapshots, simulation clock and idempotent event IDs.
-- Authenticated Host endpoints to register NPC profiles, advance simulation time, interact with an NPC and inspect a canonical snapshot.
+- Authenticated Host endpoints to register NPC profiles, advance simulation time, interact with an NPC and inspect a canonical snapshot; mutating simulation requests are deduplicated by request ID and persisted with the state transaction.
 - Host background clock advances one simulated minute per two wall-clock seconds while the Host is running. On restart it recovers at most 10,080 simulated minutes (seven in-game days) from the persisted wall-clock checkpoint.
+
+### GTA legacy resident profile bridge
+
+The GTA Core now reads the existing `GtaVietLifeResidents.txt` roster and imports stable resident IDs, names and a normalized daily schedule into the independent Engine Host. This is profile synchronization only. The legacy World module remains responsible for current physical Ped scheduling until semantic commands, location mapping and execution results are connected.
 
 ### Honest boundary
 
