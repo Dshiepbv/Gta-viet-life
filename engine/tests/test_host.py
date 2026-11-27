@@ -291,4 +291,18 @@ class HostTests(unittest.TestCase):
   self.assertEqual(player_state.affinity["npc.family"],85.0)
   self.assertEqual(npc_state.affinity["player.family"],85.0)
 
+ def test_durable_life_event_journal_recovers_and_deduplicates(self):
+  npc={"npc_id":"npc.event-recovery","display_name":"Lan","home_location_id":"home.event",
+       "occupation":"worker","schedule":[{"start_minute":0,"end_minute":1440,"activity":"work","location_id":"work.event"}]}
+  self.req("/engine/v1/simulation/npcs",{"request_id":"event-recovery-register","npc":npc})
+  self.state.simulation.advance(1,"event-recovery-advance")
+  pending_before=self.state.simulation.store.connection.execute(
+      "SELECT COUNT(*) AS n FROM life_events").fetchone()["n"]
+  processed=self.state.society.process_pending_life_events()
+  self.assertGreaterEqual(processed,1)
+  self.assertEqual(self.state.society.process_pending_life_events(),0)
+  pending_after=self.state.simulation.store.connection.execute(
+      "SELECT COUNT(*) AS n FROM world_processed_life_events").fetchone()["n"]
+  self.assertEqual(pending_after,pending_before)
+
 if __name__=="__main__":unittest.main()
