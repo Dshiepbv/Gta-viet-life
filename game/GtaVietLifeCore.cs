@@ -481,7 +481,6 @@ public class GtaVietLifeCore : Script
         if (string.IsNullOrEmpty(commandId) || string.IsNullOrEmpty(hostToken)) return;
         Task.Run(delegate
         {
-            bool accepted = false;
             try
             {
                 string body = "{\"request_id\":\"" + Guid.NewGuid().ToString("N") +
@@ -492,8 +491,7 @@ public class GtaVietLifeCore : Script
                     wc.Proxy = null; wc.Encoding = Encoding.UTF8;
                     wc.Headers[HttpRequestHeader.ContentType] = "application/json; charset=utf-8";
                     wc.Headers["X-GVL-Token"] = hostToken;
-                    string response = wc.UploadString(hostServer + "/engine/v1/adapter/commands/ack", "POST", body);
-                    accepted = response.IndexOf("\"accepted\":true", StringComparison.OrdinalIgnoreCase) >= 0;
+                    wc.UploadString(hostServer + "/engine/v1/adapter/commands/ack", "POST", body);
                 }
             }
             catch (Exception ex) { Log("ack lenh life engine loi: " + ex.Message); }
