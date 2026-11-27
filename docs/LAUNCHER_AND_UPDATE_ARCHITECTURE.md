@@ -86,20 +86,24 @@ Launcher must expose explicit states, not a single optimistic spinner:
 - **STOPPING** — graceful shutdown and durable flush.
 - **RECOVERY_REQUIRED** — interrupted update, invalid installation or failed rollback needs repair.
 
-### Mandatory READY gates
+### READY_TO_LAUNCH gates
 
-READY is permitted only when all are true:
-1. Installed package manifest is valid and all required files match their declared hashes.
-2. Game build and mod-runtime version are in the declared compatibility matrix.
-3. Engine Host process is alive and its health check succeeds.
-4. Host schema/migration check completes without unresolved error.
-5. Adapter has loaded in the active GTA process and identified the game build.
-6. Adapter/Host protocol versions are compatible.
-7. Required adapter capabilities for the release profile are negotiated.
-8. Session handshake succeeds and a heartbeat/health response is received within the configured timeout.
-9. No fatal persistence, security or startup error is present.
+1. Selected GTA executable exists.
+2. Expected ScriptHookVDotNet loader/runtime files are detected. This is a file-presence check only; exact Enhanced/Legacy compatibility is not yet proven by a version matrix.
+3. GTA Viet Life scripts are installed, and replaced project files are backed up. Save files and unrelated mods are untouched.
+4. Engine Host health succeeds.
+5. Legacy AI bridge /ping succeeds.
+6. No fatal local startup error is present.
 
-The UI must show which gate failed and the next repair action. Never show READY merely because the Launcher or Host process started.
+### IN_GAME_CONNECTED gates
+
+1. Adapter has loaded inside the active GTA V process.
+2. Authenticated gvl-engine/1 handshake succeeds.
+3. The Host accepts the adapter.session capability.
+4. A fresh heartbeat is received within the timeout.
+5. Host status identifies the active session.
+
+The UI must show which gate failed and the next repair action. Never report an in-game connection merely because files were copied or a process started.
 
 ## 4. Update and rollback protocol
 
