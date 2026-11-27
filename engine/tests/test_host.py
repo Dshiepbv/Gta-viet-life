@@ -73,4 +73,14 @@ class HostTests(unittest.TestCase):
   code,ack=self.req("/engine/v1/adapter/commands/ack",{"request_id":"ack-command","command_id":command["command_id"],"result":{"success":True}})
   self.assertEqual(code,200); self.assertTrue(ack["accepted"])
   self.assertEqual(self.req("/engine/v1/adapter/commands")[1]["commands"],[])
+  npc2={"npc_id":"npc.unsupported","display_name":"An","home_location_id":"home.unsupported","occupation":"worker",
+        "schedule":[{"start_minute":0,"end_minute":1440,"activity":"work","location_id":"unknown.location"}]}
+  self.assertEqual(self.req("/engine/v1/simulation/npcs",{"request_id":"npc-unsupported","npc":npc2})[0],201)
+  self.assertEqual(self.req("/engine/v1/simulation/advance",{"request_id":"advance-unsupported","minutes":1})[0],200)
+  commands=self.req("/engine/v1/adapter/commands")[1]["commands"]
+  self.assertEqual(len(commands),1)
+  code,report=self.req("/engine/v1/adapter/commands/ack",{"request_id":"report-unsupported","command_id":commands[0]["command_id"],
+      "result":{"success":False,"status":"unsupported","reason":"location_not_mapped"}})
+  self.assertEqual(code,200); self.assertTrue(report["accepted"])
+  self.assertEqual(self.req("/engine/v1/adapter/commands")[1]["commands"],[])
 if __name__=="__main__":unittest.main()
