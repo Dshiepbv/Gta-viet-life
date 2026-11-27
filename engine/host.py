@@ -20,6 +20,12 @@ class State:
         self.society = SocietySimulation(self.simulation.store.connection, self.simulation.store._lock,
             lambda: self.simulation.simulation_minute, self.simulation)
     def auth(self, token): return bool(token) and secrets.compare_digest(self.token, token)
+    def advance(self, minutes, request_id=None):
+        cached = self.simulation.store.get_request_result("advance:" + request_id) if request_id else None
+        result = self.simulation.advance(minutes, request_id)
+        if cached is None:
+            self.society.advance(minutes)
+        return result
     def handshake(self, p):
         rid=p.get("request_id")
         if not isinstance(rid,str) or not rid: raise ValueError("request_id_required")
@@ -49,7 +55,7 @@ class State:
             if world_minute is not None:
                 previous=self.last_world_minute
                 if previous is not None and world_minute>previous:
-                    self.simulation.advance(min(world_minute-previous,10080))
+                    self.advance(min(world_minute-previous,10080))
                 # A backward game-clock adjustment never rewinds durable NPC history.
                 self.last_world_minute=world_minute
                 # Refresh the offline checkpoint even while the game is paused.
@@ -115,7 +121,7 @@ def handler_for(state, log):
                 if not isinstance(rid,str) or not rid: raise ValueError("request_id_required")
                 if self.path=="/engine/v1/handshake": return self.sendj(200,state.handshake(p))
                 if self.path=="/engine/v1/simulation/advance":
-                    result=state.simulation.advance(p.get("minutes"), rid)
+                    result=state.advance(p.get("minutes"), rid)
                     return self.sendj(200,result)
                 if self.path=="/engine/v1/adapter/commands/ack":
                     command_id=p.get("command_id")
@@ -230,7 +236,7 @@ def main():
         elapsed=max(0.0,time.time()-last_epoch) if last_epoch is not None else 0.0
         catchup=min(int(elapsed/2.0),10080)
         if catchup:
-            state.simulation.advance(catchup)
+            state.advance(catchup)
             log.info("Recovered %s offline simulation minutes (cap 10080)",catchup)
         else:
             state.simulation.store.save(state.simulation.simulation_minute,[],[])
@@ -241,7 +247,7 @@ def main():
         while not stop.wait(2.0):
             try:
                 if not state.adapter_is_connected():
-                    state.simulation.advance(1)
+                    state.advance(1)
             except Exception:
                 log.exception("background life simulation tick failed")
     worker=threading.Thread(target=simulation_worker,name="gvl-life-simulation",daemon=True)
