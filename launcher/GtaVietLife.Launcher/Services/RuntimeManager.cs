@@ -29,6 +29,19 @@ public sealed class RuntimeManager:IDisposable {
    }
    File.Copy(f,t,true);
   }
+  var iconSource=Path.Combine(src,"GtaVietLifeIcons");
+  if(Directory.Exists(iconSource)){
+   var iconTarget=Path.Combine(sd,"GtaVietLifeIcons");
+   foreach(var icon in Directory.GetFiles(iconSource,"*",SearchOption.AllDirectories)){
+    var rel=Path.GetRelativePath(iconSource,icon);var dest=Path.Combine(iconTarget,rel);
+    if(File.Exists(dest)){
+     var a=SHA256.HashData(File.ReadAllBytes(dest));var b=SHA256.HashData(File.ReadAllBytes(icon));
+     if(System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(a,b))continue;
+     var backupFile=Path.Combine(backup,"GtaVietLifeIcons",rel);Directory.CreateDirectory(Path.GetDirectoryName(backupFile)!);File.Copy(dest,backupFile,true);
+    }
+    Directory.CreateDirectory(Path.GetDirectoryName(dest)!);File.Copy(icon,dest,true);
+   }
+  }
   return(true,"Đã phát hiện tệp ScriptHookVDotNet và cài module GTA Viet Life. Phiên bản runtime/game sẽ được xác nhận qua phiên Adapter; save game và mod khác được giữ nguyên.",sd);
  }
  public async Task StartAsync(CancellationToken ct){
