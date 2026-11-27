@@ -12,6 +12,7 @@ var token := ""
 var session_id := ""
 var request_counter := 0
 var resident: LifeResident
+var player: Node2D
 var locations := {
 	"home.godot": Vector2(170, 400),
 	"work.godot": Vector2(690, 190),
@@ -31,12 +32,17 @@ func _ready() -> void:
 	resident = LifeResident.new()
 	resident.position = locations["home.godot"]
 	add_child(resident)
+	player = Node2D.new()
+	player.position = Vector2(470, 300)
+	add_child(player)
 	set_process(true)
 	_boot.call_deferred()
 
 func _process(_delta: float) -> void:
+	var movement := Input.get_vector("ui_left", "ui_right", "ui_up", "ui_down")
+	player.position += movement * 190.0 * _delta
 	queue_redraw()
-	nearby = resident.global_position.distance_to(Vector2(470, 300)) < 85.0
+	nearby = resident.global_position.distance_to(player.global_position) < 85.0
 	if Input.is_action_just_pressed("ui_accept") and nearby and not busy:
 		_interact.call_deferred()
 
@@ -45,7 +51,8 @@ func _draw() -> void:
 		var p: Vector2 = locations[location_id]
 		draw_rect(Rect2(p - Vector2(35, 25), Vector2(70, 50)), Color(0.18, 0.22, 0.27), true)
 		draw_string(ThemeDB.fallback_font, p + Vector2(-25, 42), labels[location_id], HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color.WHITE)
-	draw_circle(Vector2(470, 300), 85.0, Color(0.2, 0.8, 0.5, 0.08))
+	draw_circle(player.position, 85.0, Color(0.2, 0.8, 0.5, 0.08))
+	draw_circle(player.position, 10.0, Color(0.95, 0.72, 0.15))
 	draw_string(ThemeDB.fallback_font, Vector2(20, 35), "GTA VIET LIFE — GODOT SECOND ADAPTER", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color.WHITE)
 	draw_string(ThemeDB.fallback_font, Vector2(20, 65), status_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(0.7, 0.9, 0.75))
 	draw_string(ThemeDB.fallback_font, Vector2(20, 95), "Move with arrow keys. Approach the green social area and press Enter to talk.", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color.WHITE)
