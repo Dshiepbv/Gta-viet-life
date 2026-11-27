@@ -62,6 +62,8 @@ public class GtaVietLifeCore : Script
             Action<int, string, string> earn = DefaultEarn;
             Set("GVL.Earn", earn);
         }
+        if (Get("GVL.PayCash") == null) Set("GVL.PayCash", new Func<int, string, string, bool>(DefaultPayCash));
+        if (Get("GVL.EarnCash") == null) Set("GVL.EarnCash", new Action<int, string, string>(DefaultEarnCash));
         Set("GVL.CoreVersion", 2);
         Set("GVL.Engine.Commands", new Queue<Dictionary<string, object>>());
         Set("GVL.Engine.Ack", new Action<string>(AckEngineCommand));
@@ -103,6 +105,23 @@ public class GtaVietLifeCore : Script
         if (amount <= 0) return;
         Game.Player.Money = Game.Player.Money + amount;
         Emit("ledger.income", "amount=" + amount + ";cat=" + Clean(cat) + ";note=" + Clean(note));
+    }
+
+    // Cash-only delegates preserve legacy in-game cash semantics while recording a shared ledger event.
+    static bool DefaultPayCash(int amount, string cat, string note)
+    {
+        if (amount <= 0) return true;
+        if (Game.Player.Money < amount) return false;
+        Game.Player.Money = Game.Player.Money - amount;
+        Emit("ledger.expense", "amount=" + amount + ";cat=" + Clean(cat) + ";note=" + Clean(note) + ";acct=cash");
+        return true;
+    }
+
+    static void DefaultEarnCash(int amount, string cat, string note)
+    {
+        if (amount <= 0) return;
+        Game.Player.Money = Game.Player.Money + amount;
+        Emit("ledger.income", "amount=" + amount + ";cat=" + Clean(cat) + ";note=" + Clean(note) + ";acct=cash");
     }
 
     void OnTick(object sender, EventArgs e)
