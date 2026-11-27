@@ -125,6 +125,9 @@ class SocietySimulation:
             raise ValueError("invalid_object_kind")
         if not isinstance(adapter_anchors, dict) or not adapter_anchors:
             raise ValueError("object_adapter_anchor_required")
+        for adapter_id, anchor in adapter_anchors.items():
+            _valid_id(adapter_id, "adapter_id")
+            _valid_id(anchor, "adapter_anchor")
         with self.lock, self.db:
             if not self.db.execute("SELECT 1 FROM world_buildings WHERE building_id=?", (building_id,)).fetchone():
                 raise KeyError("building_not_found")
@@ -205,8 +208,23 @@ class SocietySimulation:
         if status not in ("completed", "failed", "unsupported", "rejected", "cancelled"):
             raise ValueError("invalid_command_result")
         with self.lock, self.db:
+            row = self.db.execute("SELECT command_type,payload_json FROM world_command_outbox WHERE command_id=? AND status='pending'",
+                                  (command_id,)).fetchone()
+            if not row:
+                return False
             cur = self.db.execute("""UPDATE world_command_outbox SET status=?,result_json=?,completed_at=CURRENT_TIMESTAMP
                 WHERE command_id=? AND status='pending'""", (status, json.dumps(result), command_id))
+            if cur.rowcount == 1 and status == "completed" and row["command_type"] == "interaction.use_object":
+                payload = json.loads(row["payload_json"])
+                target_id = payload.get("target_id", "")
+                object_row = self.db.execute("SELECT state_json FROM world_objects WHERE object_id=?", (target_id,)).fetchone()
+                if object_row:
+                    state = json.loads(object_row["state_json"])
+                    state["uses"] = int(state.get("uses", 0)) + 1
+                    state["last_used_minute"] = int(self.minute_provider())
+                    state["last_actor_id"] = payload.get("actor_id", "")
+                    self.db.execute("UPDATE world_objects SET state_json=? WHERE object_id=?",
+                                    (json.dumps(state), target_id))
             return cur.rowcount == 1
 
     def create_account(self, account_id: str, owner_id: str, opening_balance: int = 0,
