@@ -77,6 +77,13 @@ class SocietySimulation:
                     inventory_json TEXT NOT NULL, employees_json TEXT NOT NULL,
                     is_open INTEGER NOT NULL DEFAULT 1,
                     FOREIGN KEY(property_id) REFERENCES world_properties(property_id));
+                CREATE TABLE IF NOT EXISTS world_employment_contracts(
+                    contract_id TEXT PRIMARY KEY, employee_id TEXT NOT NULL, employee_account_id TEXT NOT NULL,
+                    business_id TEXT NOT NULL, hourly_wage INTEGER NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'active', started_minute INTEGER NOT NULL,
+                    FOREIGN KEY(employee_account_id) REFERENCES world_accounts(account_id),
+                    FOREIGN KEY(business_id) REFERENCES world_businesses(business_id));
+                CREATE INDEX IF NOT EXISTS idx_employment_employee ON world_employment_contracts(employee_id,status);
                 CREATE TABLE IF NOT EXISTS world_traffic_segments(
                     segment_id TEXT PRIMARY KEY, road_class TEXT NOT NULL,
                     congestion REAL NOT NULL DEFAULT 0, capacity REAL NOT NULL DEFAULT 1,
@@ -631,6 +638,58 @@ class SocietySimulation:
                                 {"account_id": "system:legacy_counterparty", "amount": -sign}])
         return {"accepted": accepted, "duplicates": duplicates, "source": source_id}
 
+    def create_employment_contract(self, contract_id: str, employee_id: str,
+                                   employee_account_id: str, business_id: str,
+                                   hourly_wage: int) -> dict:
+        contract_id = _valid_id(contract_id, "contract_id")
+        employee_id = _valid_id(employee_id, "employee_id")
+        employee_account_id = _valid_id(employee_account_id, "employee_account_id")
+        business_id = _valid_id(business_id, "business_id")
+        if isinstance(hourly_wage, bool) or not isinstance(hourly_wage, int) or hourly_wage < 0:
+            raise ValueError("invalid_hourly_wage")
+        with self.lock, self.db:
+            if not self.db.execute("SELECT 1 FROM world_businesses WHERE business_id=?", (business_id,)).fetchone():
+                raise KeyError("business_not_found")
+            if not self.db.execute("SELECT 1 FROM world_accounts WHERE account_id=?", (employee_account_id,)).fetchone():
+                raise KeyError("employee_account_not_found")
+            old = self.db.execute("SELECT employee_id,employee_account_id,business_id,hourly_wage FROM world_employment_contracts WHERE contract_id=?",
+                                  (contract_id,)).fetchone()
+            identity = (employee_id, employee_account_id, business_id, hourly_wage)
+            if old:
+                if (old["employee_id"], old["employee_account_id"], old["business_id"], old["hourly_wage"]) != identity:
+                    raise ValueError("employment_contract_identity_conflict")
+            else:
+                self.db.execute("""INSERT INTO world_employment_contracts
+                    (contract_id,employee_id,employee_account_id,business_id,hourly_wage,started_minute)
+                    VALUES(?,?,?,?,?,?)""",
+                    (contract_id, employee_id, employee_account_id, business_id, hourly_wage,
+                     int(self.minute_provider())))
+        return {"contract_id": contract_id, "created": True}
+
+    def process_life_event(self, event: dict) -> Optional[dict]:
+        """Settle wages only for canonical work-hour events; ledger transaction IDs make replay safe."""
+        if not isinstance(event, dict) or event.get("event_type") != "work_hour_completed":
+            return None
+        employee_id = event.get("npc_id")
+        sim_minute = event.get("sim_minute")
+        if not isinstance(employee_id, str) or not isinstance(sim_minute, int):
+            return None
+        with self.lock, self.db:
+            contracts = self.db.execute("""SELECT c.contract_id,c.employee_account_id,c.hourly_wage,b.cash_account_id
+                FROM world_employment_contracts c JOIN world_businesses b ON b.business_id=c.business_id
+                WHERE c.employee_id=? AND c.status='active' ORDER BY c.contract_id""", (employee_id,)).fetchall()
+            results = []
+            for contract in contracts:
+                wage = contract["hourly_wage"]
+                if wage <= 0:
+                    continue
+                txid = "payroll:" + contract["contract_id"] + ":" + str(sim_minute)
+                results.append(self._post_transaction_locked(txid, "payroll",
+                    "Hourly wage for " + employee_id,
+                    [{"account_id": contract["cash_account_id"], "amount": -wage},
+                     {"account_id": contract["employee_account_id"], "amount": wage}]))
+            return {"employee_id": employee_id, "transactions": results}
+
     def advance(self, minutes: int) -> None:
         """Apply bounded time-based decay and lease expiry using the canonical simulation clock."""
         if isinstance(minutes, bool) or not isinstance(minutes, int) or minutes < 0 or minutes > 10080:
@@ -662,4 +721,6 @@ class SocietySimulation:
                 item.pop("adapter_anchors_json", None)
                 objects.append(item)
             traffic = [dict(r) for r in self.db.execute("SELECT * FROM world_traffic_segments ORDER BY segment_id")]
-            return {"buildings": buildings, "objects": objects, "properties": properties, "businesses": businesses, "traffic": traffic}
+            employment = [dict(r) for r in self.db.execute("SELECT * FROM world_employment_contracts ORDER BY contract_id")]
+            return {"buildings": buildings, "objects": objects, "properties": properties, "businesses": businesses,
+                    "employment": employment, "traffic": traffic}
