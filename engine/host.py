@@ -11,7 +11,7 @@ except ImportError:  # PyInstaller entry-point execution
 PROTOCOL="gvl-engine/1"; BUILD="0.1.0"; MAX_BODY=65536
 class State:
     def __init__(self, token, data_dir=None):
-        self.token=token; self.lock=threading.RLock(); self.session=None; self.started=time.time()
+        self.token=token; self.lock=threading.RLock(); self.session=None; self.last_world_minute=None; self.started=time.time()
         self.data_dir = Path(data_dir) if data_dir else None
         db_path = str(self.data_dir / "life-simulation.sqlite3") if self.data_dir else ":memory:"
         self.simulation = LifeSimulationEngine(SQLiteLifeStore(db_path))
@@ -26,18 +26,38 @@ class State:
         if not isinstance(sid,str) or not sid or len(sid)>128: raise ValueError("invalid_session_id")
         caps=p.get("capabilities",[])
         if not isinstance(caps,list) or any(not isinstance(x,str) for x in caps): raise ValueError("invalid_capabilities")
+        world_minute=p.get("world_minute")
+        if world_minute is not None and (isinstance(world_minute,bool) or not isinstance(world_minute,int) or world_minute<0):
+            raise ValueError("invalid_world_minute")
         with self.lock:
             self.session={"session_id":sid,"adapter_id":a["id"],"adapter_version":a["version"],
               "base_game":a.get("base_game","unknown"),"base_game_build":a.get("base_game_build","unknown"),
               "capabilities":sorted(set(caps)),"connected_at":time.time(),"last_heartbeat":time.time()}
+            self.last_world_minute=world_minute
+            if world_minute is not None:
+                self.simulation.set_clock_baseline(world_minute)
         return {"accepted":True,"protocol":PROTOCOL,"session_id":sid,"required_capabilities":["adapter.session"],"host_build":BUILD}
-    def heartbeat(self,sid):
+    def heartbeat(self,sid,world_minute=None):
+        if world_minute is not None and (isinstance(world_minute,bool) or not isinstance(world_minute,int) or world_minute<0):
+            raise ValueError("invalid_world_minute")
         with self.lock:
             if not self.session or self.session["session_id"]!=sid: return False
+            if world_minute is not None:
+                previous=self.last_world_minute
+                if previous is not None and world_minute>previous:
+                    self.simulation.advance(min(world_minute-previous,10080))
+                # A backward game-clock adjustment never rewinds durable NPC history.
+                self.last_world_minute=world_minute
+                # Refresh the offline checkpoint even while the game is paused.
+                self.simulation.store.save(self.simulation.simulation_minute,[],[])
             self.session["last_heartbeat"]=time.time(); return True
+    def adapter_is_connected(self):
+        with self.lock:
+            return bool(self.session and time.time()-self.session["last_heartbeat"]<=15)
     def close(self,sid):
         with self.lock:
-            if self.session and self.session["session_id"]==sid: self.session=None; return True
+            if self.session and self.session["session_id"]==sid:
+                self.session=None; self.last_world_minute=None; return True
             return False
     def snapshot(self):
         with self.lock: s=dict(self.session) if self.session else None
@@ -107,7 +127,7 @@ def handler_for(state, log):
                         p.get("npc_id",""),p.get("player_id",""),p.get("interaction","talk"),rid)
                     return self.sendj(200,result)
                 if self.path=="/engine/v1/heartbeat":
-                    ok=state.heartbeat(str(p.get("session_id",""))); return self.sendj(200 if ok else 409,{"accepted":ok})
+                    ok=state.heartbeat(str(p.get("session_id","")),p.get("world_minute")); return self.sendj(200 if ok else 409,{"accepted":ok})
                 if self.path=="/engine/v1/close":
                     return self.sendj(200,{"closed":state.close(str(p.get("session_id","")))})
                 if self.path=="/engine/v1/shutdown":
@@ -144,7 +164,8 @@ def main():
     def simulation_worker():
         while not stop.wait(2.0):
             try:
-                state.simulation.advance(1)
+                if not state.adapter_is_connected():
+                    state.simulation.advance(1)
             except Exception:
                 log.exception("background life simulation tick failed")
     worker=threading.Thread(target=simulation_worker,name="gvl-life-simulation",daemon=True)
