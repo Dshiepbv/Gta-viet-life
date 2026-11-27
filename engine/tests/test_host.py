@@ -26,7 +26,8 @@ class HostTests(unittest.TestCase):
      "adapter":{"id":"gta5.shvdn","version":"0.1.0"},"capabilities":["adapter.session"],"world_minute":600}
   self.assertTrue(self.state.handshake(p)["accepted"])
   self.assertEqual(self.state.simulation.simulation_minute,600)
-  self.assertTrue(self.state.heartbeat("clock-session",603))
+  code,r=self.req("/engine/v1/heartbeat",{"request_id":"clock-heartbeat","session_id":"clock-session","world_minute":603})
+  self.assertEqual(code,200); self.assertTrue(r["accepted"])
   self.assertEqual(self.state.simulation.simulation_minute,603)
   self.assertTrue(self.state.heartbeat("clock-session",603))
   self.assertEqual(self.state.simulation.simulation_minute,603)
