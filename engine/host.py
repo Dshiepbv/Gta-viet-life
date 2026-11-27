@@ -17,6 +17,9 @@ class State:
         self.data_dir = Path(data_dir) if data_dir else None
         db_path = str(self.data_dir / "life-simulation.sqlite3") if self.data_dir else ":memory:"
         self.simulation = LifeSimulationEngine(SQLiteLifeStore(db_path))
+        self.clock_mode = self.simulation.store.get_meta("clock_mode") or "host"
+        saved_game_minute = self.simulation.store.get_meta("last_game_world_minute")
+        self.last_world_minute = int(saved_game_minute) if saved_game_minute is not None else None
         self.society = SocietySimulation(self.simulation.store.connection, self.simulation.store._lock,
             lambda: self.simulation.simulation_minute, self.simulation)
     def auth(self, token): return bool(token) and secrets.compare_digest(self.token, token)
@@ -39,13 +42,31 @@ class State:
         world_minute=p.get("world_minute")
         if world_minute is not None and (isinstance(world_minute,bool) or not isinstance(world_minute,int) or world_minute<0):
             raise ValueError("invalid_world_minute")
+        adapter_id = a["id"]
         with self.lock:
-            self.session={"session_id":sid,"adapter_id":a["id"],"adapter_version":a["version"],
+            self.session={"session_id":sid,"adapter_id":adapter_id,"adapter_version":a["version"],
               "base_game":a.get("base_game","unknown"),"base_game_build":a.get("base_game_build","unknown"),
               "capabilities":sorted(set(caps)),"connected_at":time.time(),"last_heartbeat":time.time()}
-            self.last_world_minute=world_minute
-            if world_minute is not None:
-                self.simulation.set_clock_baseline(world_minute)
+            if adapter_id == "gta5.shvdn":
+                self.clock_mode = "gta5.game"
+                if world_minute is not None:
+                    previous = self.simulation.store.get_meta("last_game_world_minute")
+                    if previous is not None:
+                        delta = world_minute - int(previous)
+                        if delta > 0:
+                            self.advance(min(delta, 10080))
+                    elif not self.simulation.npcs:
+                        self.simulation.set_clock_baseline(world_minute)
+                    elif world_minute > self.simulation.simulation_minute:
+                        self.advance(min(world_minute - self.simulation.simulation_minute, 10080))
+                    self.last_world_minute = world_minute
+                    self.simulation.store.set_meta("last_game_world_minute", str(world_minute))
+            else:
+                self.clock_mode = "host" if world_minute is None else "adapter"
+                self.last_world_minute = world_minute
+                if world_minute is not None and not self.simulation.npcs:
+                    self.simulation.set_clock_baseline(world_minute)
+            self.simulation.store.set_meta("clock_mode", self.clock_mode)
         return {"accepted":True,"protocol":PROTOCOL,"session_id":sid,"required_capabilities":["adapter.session"],"host_build":BUILD}
     def heartbeat(self,sid,world_minute=None):
         if world_minute is not None and (isinstance(world_minute,bool) or not isinstance(world_minute,int) or world_minute<0):
@@ -58,12 +79,17 @@ class State:
                     self.advance(min(world_minute-previous,10080))
                 # A backward game-clock adjustment never rewinds durable NPC history.
                 self.last_world_minute=world_minute
+                if self.clock_mode == "gta5.game":
+                    self.simulation.store.set_meta("last_game_world_minute", str(world_minute))
                 # Refresh the offline checkpoint even while the game is paused.
                 self.simulation.store.save(self.simulation.simulation_minute,[],[])
             self.session["last_heartbeat"]=time.time(); return True
     def adapter_is_connected(self):
         with self.lock:
             return bool(self.session and self.last_world_minute is not None and time.time()-self.session["last_heartbeat"]<=15)
+    def uses_game_clock(self):
+        with self.lock:
+            return self.clock_mode == "gta5.game"
     def close(self,sid):
         with self.lock:
             if self.session and self.session["session_id"]==sid:
@@ -246,7 +272,9 @@ def main():
     try:
         last_epoch=state.simulation.store.get_wallclock_epoch()
         elapsed=max(0.0,time.time()-last_epoch) if last_epoch is not None else 0.0
-        catchup=min(int(elapsed/2.0),10080)
+        catchup=0 if state.uses_game_clock() else min(int(elapsed/2.0),10080)
+        if state.uses_game_clock():
+            log.info("GTA V game clock is authoritative; offline wall-clock catch-up is disabled")
         if catchup:
             state.advance(catchup)
             log.info("Recovered %s offline simulation minutes (cap 10080)",catchup)
@@ -258,7 +286,7 @@ def main():
     def simulation_worker():
         while not stop.wait(2.0):
             try:
-                if not state.adapter_is_connected():
+                if not state.adapter_is_connected() and not state.uses_game_clock():
                     state.advance(1)
             except Exception:
                 log.exception("background life simulation tick failed")
