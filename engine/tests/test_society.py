@@ -48,7 +48,12 @@ class SocietySimulationTests(unittest.TestCase):
             "use", "gta5.shvdn"
         )
         self.assertTrue(use["accepted"])
-        self.assertEqual(self.society.pending_commands()[0]["command_type"], "interaction.use_object")
+        object_command = self.society.pending_commands()[0]
+        self.assertEqual(object_command["command_type"], "interaction.use_object")
+        self.society.acknowledge_command(object_command["command_id"], {"success": True, "status": "completed"})
+        objects = self.society.snapshot()["objects"]
+        self.assertEqual(objects[0]["state"]["uses"], 1)
+        self.assertEqual(objects[0]["state"]["last_actor_id"], "player.main")
 
     def test_building_interaction_fails_closed_without_adapter_mapping(self):
         self.society.register_building("building.remote", "shop", "Remote shop", {}, ["enter"])
