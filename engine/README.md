@@ -39,7 +39,7 @@ The host currently provides health, adapter handshake, heartbeat, session status
 
 `life_simulation.py` provides a deterministic, game-neutral NPC model and SQLite persistence. It simulates schedules, hunger, energy, social need, stress and career/health/social life-goal progress; records activity transitions; persists relationship affinity and player-conversation memories; and exposes snapshots for adapter integration.
 
-The Engine Host advances one simulated minute every two seconds while running and performs bounded offline catch-up on restart. The current GTA Adapter is not yet connected to NPC registration, location mapping or physical command execution. This is an engine implementation increment, not a user acceptance release.
+The Engine Host advances one simulated minute every two seconds while running and performs bounded offline catch-up on restart. The current GTA Core imports resident identity/schedule profiles, while the Engine Host now creates durable `actor.set_activity` commands on activity/location transitions. Commands are available through authenticated polling and success acknowledgement endpoints, backed by SQLite schema v3. The GTA World script does not yet consume or execute this command stream; physical resident movement remains legacy-controlled. This is an engine-to-adapter protocol increment, not an end-to-end in-world control release or user acceptance build.
 
 Run all engine tests:
 
