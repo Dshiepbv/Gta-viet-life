@@ -134,3 +134,19 @@ This is the first engine-side NPC vertical-slice foundation, not a completed GTA
 - Engine unit tests cover schedule validation, needs, activity selection, relationship changes, persistence/reload and Host API flow.
 - Windows CI must compile Python modules and execute the full engine test suite before this increment is considered internally verified.
 - Live GTA acceptance remains blocked until the Adapter's observation/command/result path and verified location mappings are implemented.
+
+
+## NPC simulation increment — durable adapter command outbox
+
+The Engine Host now emits a durable semantic command whenever an NPC changes activity or semantic location:
+
+- SQLite schema v3 adds `command_outbox`, with stable command IDs, target NPC IDs, typed payloads, creation minute and pending/completed state.
+- The first command type is `actor.set_activity`; its payload includes the new activity, semantic location ID and transition minute.
+- `GET /engine/v1/adapter/commands` returns pending commands (bounded batch size).
+- `POST /engine/v1/adapter/commands/ack` records successful execution only.
+- Commands remain pending until acknowledged, giving at-least-once delivery across Host restart. The eventual GTA adapter must deduplicate by command ID before performing non-idempotent physical effects.
+- Migration from schema v1/v2 to v3 is automatic and additive; existing NPC, event and request-dedup data is retained.
+
+**Important current boundary:** this is a working engine-to-adapter command queue, not yet an end-to-end in-world control path. The GTA V script has not yet polled these commands or executed them against resident Peds. Existing physical resident movement remains controlled by `GtaVietLifeWorld.cs`. Current resident locations are generated/derived by legacy gameplay code (home and lunch positions are randomized street locations); they are not yet a verified city-wide location registry. Do not describe NPCs as Engine-controlled in GTA until the adapter executor, location mapping and observed execution acknowledgement are implemented and runtime-verified.
+
+Automated verification is being added for command creation, persistence across restart, acknowledgement and duplicate acknowledgement. Live GTA V runtime acceptance remains unavailable in the current build environment.
