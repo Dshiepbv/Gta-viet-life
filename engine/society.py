@@ -669,11 +669,12 @@ class SocietySimulation:
                 (uuid.uuid4().hex,"social.relationship_changed",actor_id,target_id,
                  json.dumps({"relation_type":relation_type,"strength":strength,"status":status}),now))
         if self.life_engine is not None:
-            left = self.life_engine.npcs[actor_id]
-            right = self.life_engine.npcs[target_id]
-            left.affinity[target_id] = float(strength)
-            right.affinity[actor_id] = float(strength)
-            self.life_engine.store.save(self.life_engine.simulation_minute,[left,right],[])
+            with self.life_engine._lock:
+                left = self.life_engine.npcs[actor_id]
+                right = self.life_engine.npcs[target_id]
+                left.affinity[target_id] = float(strength)
+                right.affinity[actor_id] = float(strength)
+                self.life_engine.store.save(self.life_engine.simulation_minute,[left,right],[])
         return {"actor_id":actor_id,"target_id":target_id,"relation_type":relation_type,
                 "strength":float(strength),"status":status,"updated_minute":now}
 
