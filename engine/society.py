@@ -353,7 +353,7 @@ class SocietySimulation:
                 if (existing["source"] != "property_purchase" or existing["description"] != property_id
                         or len(prior) != 2 or prior[0]["account_id"] != buyer_account_id
                         or prior[0]["amount"] != -price or prior[1]["amount"] != price
-                        or row["owner_account_id"] != buyer_account_id):
+                        or prior[1]["account_id"] == buyer_account_id):
                     raise ValueError("transaction_id_conflict")
                 return {"posted": True, "duplicate": True, "transaction_id": transaction_id}
             seller = row["owner_account_id"]
