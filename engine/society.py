@@ -273,6 +273,16 @@ class SocietySimulation:
         with self.lock, self.db:
             return self._post_transaction_locked(transaction_id, source, description, entries)
 
+    def ensure_account(self, account_id: str, owner_id: str, opening_balance: int = 0,
+                       allow_negative: bool = True, currency: str = "USD") -> dict:
+        """Create an opening balance once; repeated adapter sync never resets a live ledger."""
+        account_id = _valid_id(account_id, "account_id")
+        with self.lock:
+            row = self.db.execute("SELECT account_id FROM world_accounts WHERE account_id=?", (account_id,)).fetchone()
+            if row:
+                return self.account(account_id)
+        return self.create_account(account_id, owner_id, opening_balance, allow_negative, currency)
+
     def account(self, account_id: str) -> dict:
         with self.lock:
             row = self.db.execute("SELECT account_id,owner_id,balance,currency,allow_negative FROM world_accounts WHERE account_id=?",
