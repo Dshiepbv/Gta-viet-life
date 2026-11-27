@@ -124,11 +124,12 @@ class LifeSimulationTests(unittest.TestCase):
                 occupation="worker", schedule=(
                     ScheduleBlock(0, 1, "work", "work.coalesce"),
                     ScheduleBlock(1, 2, "leisure", "leisure.coalesce"),
-                    ScheduleBlock(2, 3, "sleep", "home.coalesce"),
+                    ScheduleBlock(2, 3, "eat", "lunch.coalesce"),
+                    ScheduleBlock(3, 5, "sleep", "home.coalesce"),
                 )
             )
             engine.register_npc(p)
-            engine.advance(3)
+            engine.advance(4)
             pending = engine.pending_commands()
             self.assertEqual(len(pending), 1)
             self.assertEqual(pending[0]["payload"]["activity"], "sleep")
