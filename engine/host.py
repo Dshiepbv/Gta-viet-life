@@ -65,6 +65,13 @@ def handler_for(state, log):
             if self.path=="/engine/v1/simulation/snapshot":
                 if not state.auth(self.headers.get("X-GVL-Token")): return self.sendj(401,{"error":"unauthorized"})
                 return self.sendj(200,state.simulation.snapshot())
+            if self.path=="/engine/v1/adapter/commands":
+                if not state.auth(self.headers.get("X-GVL-Token")): return self.sendj(401,{"error":"unauthorized"})
+                try:
+                    limit=int(self.headers.get("X-GVL-Limit","50"))
+                    return self.sendj(200,{"commands":state.simulation.pending_commands(limit)})
+                except (ValueError,TypeError) as exc:
+                    return self.sendj(400,{"error":str(exc)})
             return self.sendj(404,{"error":"not_found"})
         def do_POST(self):
             if not state.auth(self.headers.get("X-GVL-Token")): return self.sendj(401,{"error":"unauthorized"})
@@ -76,6 +83,11 @@ def handler_for(state, log):
                 if self.path=="/engine/v1/simulation/advance":
                     result=state.simulation.advance(p.get("minutes"), rid)
                     return self.sendj(200,result)
+                if self.path=="/engine/v1/adapter/commands/ack":
+                    command_id=p.get("command_id")
+                    result=p.get("result")
+                    accepted=state.simulation.complete_command(command_id,result)
+                    return self.sendj(200 if accepted else 409,{"accepted":accepted,"command_id":command_id})
                 if self.path=="/engine/v1/simulation/npcs":
                     raw=p.get("npc")
                     if not isinstance(raw,dict): raise ValueError("npc_object_required")
