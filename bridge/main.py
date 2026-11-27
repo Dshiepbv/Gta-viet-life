@@ -266,6 +266,8 @@ def make_handler(bridge: Bridge):
             self.wfile.write(data)
 
         def do_GET(self):
+            if self.path == "/health":
+                return self._send(json.dumps({"service": "gta-viet-life-ai-bridge", "status": "healthy"}), 200)
             try:
                 if self.path == "/contacts":
                     return self._send(bridge.social.contacts())

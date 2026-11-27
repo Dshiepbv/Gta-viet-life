@@ -56,8 +56,8 @@ public sealed class RuntimeManager:IDisposable {
    if(!hostStatus.RootElement.TryGetProperty("service",out var service)||service.GetString()!="gta-viet-life-engine")
     throw new InvalidOperationException("Cổng 5580 không thuộc GTA Viet Life Engine Host đã xác thực.");
   }
-  if(!await HealthyAsync("http://127.0.0.1:5577/ping",ct)){Kill(bridge);bridge=null;KillNamed("GtaVietLifeBridge");StartBridge();}
-  await WaitAsync("http://127.0.0.1:5577/ping",180,ct);
+  if(!await HealthyAsync("http://127.0.0.1:5577/health",ct)){Kill(bridge);bridge=null;KillNamed("GtaVietLifeBridge");StartBridge();}
+  await WaitAsync("http://127.0.0.1:5577/health",180,ct);
  }
  async Task<bool> HealthyAsync(string url,CancellationToken ct){try{using var r=await http.GetAsync(url,ct);return r.IsSuccessStatusCode;}catch{return false;}}
  void StartHost(){
@@ -90,10 +90,14 @@ public sealed class RuntimeManager:IDisposable {
   using var q=new HttpRequestMessage(HttpMethod.Get,"http://127.0.0.1:5580/engine/v1/status");q.Headers.Add("X-GVL-Token",Token);
   using var r=await http.SendAsync(q,ct);r.EnsureSuccessStatusCode();return JsonDocument.Parse(await r.Content.ReadAsStringAsync(ct));
  }
- public async Task<bool> BridgeHealthyAsync(){try{using var r=await http.GetAsync("http://127.0.0.1:5577/ping");return r.IsSuccessStatusCode;}catch{return false;}}
+ public async Task<bool> BridgeHealthyAsync(){
+  try{using var r=await http.GetAsync("http://127.0.0.1:5577/health");if(!r.IsSuccessStatusCode)return false;
+   using var d=JsonDocument.Parse(await r.Content.ReadAsStringAsync());return d.RootElement.GetProperty("service").GetString()=="gta-viet-life-ai-bridge";
+  }catch{return false;}
+ }
  public async Task RestartBridgeAsync(CancellationToken ct){
   Kill(bridge);bridge=null;KillNamed("GtaVietLifeBridge");StartBridge();
-  await WaitAsync("http://127.0.0.1:5577/ping",180,ct);
+  await WaitAsync("http://127.0.0.1:5577/health",180,ct);
  }
  static void KillNamed(string name){foreach(var p in Process.GetProcessesByName(name)){try{p.Kill(true);p.WaitForExit(3000);}catch{}}}
  public void Launch(string exe){Process.Start(new ProcessStartInfo(exe){UseShellExecute=true,WorkingDirectory=Path.GetDirectoryName(exe)!});}
