@@ -232,7 +232,7 @@ class SQLiteLifeStore:
 
     def record_dialogue_memory(self, npc_id: str, player_id: str,
                                player_message: str, npc_reply: str,
-                               request_id: Optional[str] = None) -> dict:
+                               request_id: Optional[str] = None, affinity_delta: int = 0) -> dict:
         """Persist the actual voice conversation without letting an LLM mutate canonical relationships."""
         if not player_id or len(player_id) > 128:
             raise ValueError("invalid_player_id")
@@ -242,6 +242,8 @@ class SQLiteLifeStore:
             raise ValueError("invalid_npc_reply")
         if request_id is not None and (not request_id or len(request_id) > 128):
             raise ValueError("invalid_request_id")
+        if isinstance(affinity_delta, bool) or not isinstance(affinity_delta, int) or not -2 <= affinity_delta <= 2:
+            raise ValueError("invalid_affinity_delta")
         dedup_key = "dialogue_memory:" + request_id if request_id else None
         with self._lock:
             if dedup_key:
@@ -251,6 +253,9 @@ class SQLiteLifeStore:
             state = self.npcs.get(npc_id)
             if state is None:
                 raise KeyError("npc_not_found")
+            if affinity_delta:
+                state.affinity[player_id] = round(max(-100.0, min(100.0,
+                    state.affinity.get(player_id, 0.0) + affinity_delta * 5.0)), 3)
             for kind, summary in (("player_dialogue", player_message), ("npc_dialogue", npc_reply)):
                 state.memories.append({
                     "minute": self.simulation_minute, "kind": kind,
@@ -259,7 +264,8 @@ class SQLiteLifeStore:
                 })
                 state.memories = state.memories[-100:]
                 self._record(state, kind, {"participant_id": player_id, "summary": summary[:160]})
-            result = {"memory_recorded": True, "npc_id": npc_id, "memory_count": len(state.memories)}
+            result = {"memory_recorded": True, "npc_id": npc_id, "memory_count": len(state.memories),
+                      "affinity": state.affinity.get(player_id, 0.0)}
             self.store.save(self.simulation_minute, list(self.npcs.values()), self.events,
                             (dedup_key, result) if dedup_key else None, self.commands)
             return result
