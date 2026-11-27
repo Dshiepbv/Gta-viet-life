@@ -25,3 +25,4 @@ try {
 finally {
   if(Test-Path $root){Remove-Item $root -Recurse -Force}
 }
+exit 0
