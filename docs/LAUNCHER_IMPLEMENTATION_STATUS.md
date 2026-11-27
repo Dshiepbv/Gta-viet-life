@@ -24,10 +24,13 @@
 ## Verification
 
 - Python Engine Host unit tests cover health, token authentication, handshake, heartbeat, protocol rejection and stale-session detection.
-- Python source compilation is part of Windows CI.\n- The modified GTA V Core compiles against the pinned ScriptHookVDotNet Enhanced v1.1.0.6 API v3 assembly; the compile reported one pre-existing obsolete API warning for World.CurrentTimeOfDay and no errors.\n- The WPF Launcher and self-contained updater compile successfully after the latest UI fix.
+- Python source compilation is part of Windows CI.
+- The modified GTA V Core compiles against the pinned ScriptHookVDotNet Enhanced v1.1.0.6 API v3 assembly; the compile reported one pre-existing obsolete API warning for World.CurrentTimeOfDay and no errors.
+- The WPF Launcher and self-contained updater compile successfully after the latest UI fix.
 - Windows CI has successfully published the .NET 8 Launcher and updater, packaged Engine Host and AI bridge, and generated an installer/portable ZIP in prior internal runs.
 - Additional CI gates now verify required portable-package contents and updater rollback behavior; the latest run is tracked in the repository Actions page.
-- The latest full Windows packaging run is rebuilding the installer after the compatibility-preflight changes.\n- No GTA V or ScriptHookVDotNet runtime test has been run in this environment.
+- The latest full Windows packaging run is rebuilding the installer after the compatibility-preflight changes.
+- No GTA V or ScriptHookVDotNet runtime test has been run in this environment.
 
 ## Remaining gates before final user acceptance
 
