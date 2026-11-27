@@ -154,7 +154,7 @@ class SocietySimulation:
                     raise KeyError("building_not_found")
                 allowed = json.loads(row["interactions_json"])
                 maps = json.loads(row["adapter_maps_json"]).get(adapter_id, {})
-                semantic_target = maps.get("entrance" if action in ("enter", "open") else "interior" if action in ("exit", "close") else "interaction")
+                semantic_target = maps.get("interior" if action in ("enter", "open") else "entrance" if action in ("exit", "close") else "interaction")
             elif target_kind == "object":
                 row = self.db.execute("SELECT * FROM world_objects WHERE object_id=?", (target_id,)).fetchone()
                 if not row:
