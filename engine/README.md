@@ -50,3 +50,10 @@ python -m unittest discover -s engine/tests -v
 ## Second-game adapter — M5 portability proof
 
 A Godot 4 reference adapter now lives in `adapters/godot/`. It uses the same Engine Host API and canonical NPC simulation as GTA V; it owns only native scene rendering, player input, movement and semantic-location mapping. The Host integration suite includes a Godot adapter identity path covering registration, command execution acknowledgement and persisted conversation memory. Run the unchanged engine tests with `python -m unittest discover -s engine/tests -v`. The actual Godot 4 runtime still requires a separate launch/acceptance run.
+
+
+## M0–M4 canonical world services
+
+The Engine Host also owns persistent world catalog and society services in the same SQLite database. engine/society.py provides adapter-mapped buildings and objects, a durable physical interaction outbox, double-entry cash/bank ledger, property ownership and leases, business inventory/sales, and traffic incidents/congestion. Traffic recovery and lease expiry advance with the same authoritative simulation clock as NPC life. Legacy GVL income/expense events are imported idempotently by source and sequence.
+
+M2 adds bounded dialogue context and actual voice memory. The cognition bridge can propose only a small affinity delta; the Engine applies it after validation. The second-game Godot reference adapter exercises the same world commands and Host APIs.
