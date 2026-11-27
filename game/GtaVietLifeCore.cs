@@ -34,6 +34,9 @@ public class GtaVietLifeCore : Script
     int nextResidentSync, nextEngineCommandPoll, nextWorldCommandPoll;
     bool engineCommandPolling, worldCommandPolling;
     readonly object EngineCommandLock = new object();
+    readonly object WorldPostQueueLock = new object();
+    readonly Queue<KeyValuePair<string, string>> worldPostQueue = new Queue<KeyValuePair<string, string>>();
+    bool worldPostWorker;
     readonly HashSet<string> queuedEngineCommandIds = new HashSet<string>();
     bool forward = true, logEvents = true, forwarding;
     long gameDay, lastSeenSeq, currentWorldMinute;
@@ -584,19 +587,34 @@ public class GtaVietLifeCore : Script
     {
         if (string.IsNullOrEmpty(path) || !path.StartsWith("/engine/v1/world/", StringComparison.Ordinal) ||
             string.IsNullOrEmpty(body) || !hostConnected || string.IsNullOrEmpty(hostToken)) return;
+        lock (WorldPostQueueLock)
+        {
+            worldPostQueue.Enqueue(new KeyValuePair<string, string>(path, body));
+            if (worldPostWorker) return;
+            worldPostWorker = true;
+        }
         Task.Run(delegate
         {
-            try
+            while (true)
             {
-                using (WebClient wc = new HostWebClient())
+                KeyValuePair<string, string> item;
+                lock (WorldPostQueueLock)
                 {
-                    wc.Proxy = null; wc.Encoding = Encoding.UTF8;
-                    wc.Headers[HttpRequestHeader.ContentType] = "application/json; charset=utf-8";
-                    wc.Headers["X-GVL-Token"] = hostToken;
-                    wc.UploadString(hostServer + path, "POST", body);
+                    if (worldPostQueue.Count == 0) { worldPostWorker = false; return; }
+                    item = worldPostQueue.Dequeue();
                 }
+                try
+                {
+                    using (WebClient wc = new HostWebClient())
+                    {
+                        wc.Proxy = null; wc.Encoding = Encoding.UTF8;
+                        wc.Headers[HttpRequestHeader.ContentType] = "application/json; charset=utf-8";
+                        wc.Headers["X-GVL-Token"] = hostToken;
+                        wc.UploadString(hostServer + item.Key, "POST", item.Value);
+                    }
+                }
+                catch (Exception ex) { Log("gui tuong tac the gioi toi engine loi: " + ex.Message); }
             }
-            catch (Exception ex) { Log("gui tuong tac the gioi toi engine loi: " + ex.Message); }
         });
     }
 
