@@ -1,7 +1,7 @@
 # GTA Viet Life — architecture audit and implementation status
 
 Date: 2026-11-27  
-Working branch: `codex/gta-viet-life-architecture-hardening`  
+Working branch: `main`  
 Baseline: `main` (existing GTA V Enhanced single-player mod)
 
 ## Compatibility constitution
@@ -166,3 +166,11 @@ The adapter path now includes an initial physical execution loop for resident ac
 **Scope boundary:** this is the first physical command loop for the existing resident feature, not a complete NPC behavior system. Activity-specific animations/scenarios, path completion observation, command leases/expiry/failure taxonomy, robust handling for unknown IDs, city-wide location registry, interiors, vehicles, arbitrary ambient NPCs and off-screen population materialization remain future work. The adapter currently acknowledges successful task issuance, not proof that the Ped reached its destination. No live GTA V runtime test has been performed in this environment.
 
 Release CI now includes a separate compile-check project for `GtaVietLifeWorld.cs` against the same pinned SHVDN Enhanced API, rather than compiling only GTA Core. This closes a previous verification gap where the World script was staged in packages but not independently compiled by CI.
+
+
+## Main integration update — 2026-11-27
+
+- PR #11 was squash-merged into `main` as `4819d89`; subsequent integration work is performed directly on `main`.
+- Windows verification is now triggered by pushes and pull requests targeting `main`, as well as manual dispatch and version tags.
+- The GTA Core reports an absolute in-game world minute in the adapter handshake and heartbeat. While a clock-aware adapter is live, the Engine Host pauses its wall-clock worker and advances NPC simulation only by observed positive GTA clock deltas. A paused GTA clock therefore does not advance NPC needs; a backward clock correction never rewinds persisted NPC history. Heartbeats refresh the offline checkpoint. Legacy adapters without the clock field retain wall-clock behavior.
+- This clock policy is internally covered by Host tests; actual GTA pause/sleep/time-jump behavior still requires live-game acceptance and is not claimed verified.
