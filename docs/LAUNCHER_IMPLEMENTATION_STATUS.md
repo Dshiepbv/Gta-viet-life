@@ -13,7 +13,7 @@
 - Script replacement and application updates are deferred while GTA V is running.
 - Random per-user authentication token, loopback Engine Host process management, authenticated protocol request IDs, handshake, heartbeat, close and status.
 - Legacy AI bridge starts as a separately packaged process, uses a per-user data/config directory and exposes an identity health endpoint. The legacy /ping route remains compatible with existing game scripts.
-- Launcher supervises local services, attempts recovery after health-check failures and exports diagnostics.
+- Launcher supervises local services, attempts recovery after health-check failures and exports redacted diagnostics from Launcher, Engine Host, AI bridge, GTA Viet Life Core and ScriptHook logs. Save files and configuration are excluded; users are warned that interaction logs may still contain content they should review before sharing.
 - Windows CI builds the self-contained Launcher and updater, packages Engine Host and AI bridge, creates an Inno Setup installer and a portable ZIP with SHA-256 checksum.
 
 ## Readiness semantics
@@ -24,12 +24,13 @@
 ## Verification
 
 - Python Engine Host unit tests cover health, token authentication, handshake, heartbeat, protocol rejection and stale-session detection.
+- Windows CI run #36 passed the complete build pipeline: pinned SHVDN Enhanced API checksum, GTA Core API compilation, Launcher/Updater compilation, Engine Host and AI bridge packaging, Inno Setup installer, portable package contents and updater rollback tests. Internal artifact: 402.4 MB (not distributed to the user).
 - Python source compilation is part of Windows CI.
 - The modified GTA V Core compiles against the pinned ScriptHookVDotNet Enhanced v1.1.0.6 API v3 assembly; the compile reported one pre-existing obsolete API warning for World.CurrentTimeOfDay and no errors.
 - The WPF Launcher and self-contained updater compile successfully after the latest UI fix.
 - Windows CI has successfully published the .NET 8 Launcher and updater, packaged Engine Host and AI bridge, and generated an installer/portable ZIP in prior internal runs.
 - Additional CI gates now verify required portable-package contents and updater rollback behavior; the latest run is tracked in the repository Actions page.
-- The latest full Windows packaging run is rebuilding the installer after the compatibility-preflight changes.
+- A subsequent CI run is rebuilding the package after the diagnostics-export improvement.
 - No GTA V or ScriptHookVDotNet runtime test has been run in this environment.
 
 ## Remaining gates before final user acceptance
