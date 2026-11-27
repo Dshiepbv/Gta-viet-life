@@ -323,13 +323,16 @@ public class GtaVietLifeCore : Script
             if (string.IsNullOrEmpty(hostToken)) throw new Exception("khong tim thay host.token");
             string gamePath = "";
             string gameVersion = "unknown";
-            string gameEdition = "gta5-legacy";
+            string gameEdition = "unknown";
             try
             {
                 gamePath = Process.GetCurrentProcess().MainModule.FileName;
                 gameVersion = FileVersionInfo.GetVersionInfo(gamePath).FileVersion ?? "unknown";
-                if (Path.GetFileName(gamePath).IndexOf("Enhanced", StringComparison.OrdinalIgnoreCase) >= 0)
+                string executableName = Path.GetFileName(gamePath);
+                if (executableName.IndexOf("Enhanced", StringComparison.OrdinalIgnoreCase) >= 0)
                     gameEdition = "gta5-enhanced";
+                else if (executableName.Equals("GTA5.exe", StringComparison.OrdinalIgnoreCase))
+                    gameEdition = "gta5-legacy";
             }
             catch { }
             string body = "{\"protocol\":\"gvl-engine/1\",\"request_id\":\"" + Guid.NewGuid().ToString("N") + "\",\"session_id\":\"" + hostSessionId +
