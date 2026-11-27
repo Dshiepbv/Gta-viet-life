@@ -214,3 +214,8 @@ The engine deliberately does not apply a need change when a command is only queu
 ## Employment and earned income
 
 The shared life clock now tracks completed canonical work hours. An active employment contract links an actor to a business, the employee's deposit account and an hourly wage through `POST /engine/v1/world/employment/contracts`. Every 60 simulated minutes in the actor's `work` activity emits a durable `work_hour_completed` event. Engine Host converts that event into a balanced business-to-employee ledger transaction. Payroll transaction IDs are deterministic per contract and simulation minute, so request replay cannot pay twice. This first payroll slice covers hourly wages; hiring/firing workflows, attendance exceptions, taxes, benefits, promotions and richer labor-market simulation remain future scope.
+
+
+## Persistent social and family graph
+
+The Society domain now stores explicit actor-to-actor ties with relation types (parent, child, sibling, spouse, romantic interest, friend, coworker, neighbor, acquaintance and rival), relationship strength and status (active, estranged, separated or ended). The relationship endpoint validates that both participants exist in the shared actor registry, persists the social edge and synchronizes symmetric affinity into both life records. This provides a canonical basis for family and social consequences; family formation, custody, household finances, births and relationship-specific autonomous behavior are not yet complete.
