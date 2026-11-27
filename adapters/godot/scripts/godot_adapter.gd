@@ -6,12 +6,13 @@ const ADAPTER_ID := "godot4.reference"
 const ADAPTER_VERSION := "0.1.0"
 const NPC_ID := "npc.godot.minh-an"
 const PLAYER_ID := "player.godot"
+const ResidentScript = preload("res://scripts/resident.gd")
 const POLL_SECONDS := 2.0
 
 var token := ""
 var session_id := ""
 var request_counter := 0
-var resident: LifeResident
+var resident: Node2D
 var player: Node2D
 var locations := {
 	"home.godot": Vector2(170, 400),
@@ -29,7 +30,7 @@ func _ready() -> void:
 	session_id = "godot-" + str(Time.get_ticks_usec())
 	http = HTTPRequest.new()
 	add_child(http)
-	resident = LifeResident.new()
+	resident = ResidentScript.new()
 	resident.position = locations["home.godot"]
 	add_child(resident)
 	player = Node2D.new()
