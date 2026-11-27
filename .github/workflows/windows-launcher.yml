@@ -2,10 +2,11 @@ name: Build GTA Viet Life Windows Launcher
 on:
   push:
     branches: [codex/gta-viet-life-architecture-hardening]
+    tags: ['v*']
     paths: ['launcher/**','engine/**','bridge/**','game/**','packaging/**','.github/workflows/windows-launcher.yml']
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
 jobs:
   build:
     runs-on: windows-latest
@@ -19,6 +20,13 @@ jobs:
         run: python -m unittest discover -s engine/tests -v
       - name: Publish Launcher
         run: dotnet publish launcher/GtaVietLife.Launcher/GtaVietLife.Launcher.csproj -c Release -r win-x64 --self-contained true -o publish/launcher
+      - name: Publish updater
+        run: dotnet publish launcher/GtaVietLife.Updater/GtaVietLife.Updater.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish/updater
+      - name: Stage updater and game scripts
+        shell: pwsh
+        run: |
+          Copy-Item publish/updater/GtaVietLife.Updater.exe publish/launcher/
+          Copy-Item game publish/game -Recurse -Force
       - name: Package Engine Host
         shell: pwsh
         run: |
@@ -33,15 +41,25 @@ jobs:
           pyinstaller --noconfirm --clean --onedir --name GtaVietLifeBridge --paths bridge --hidden-import llm --hidden-import memory --hidden-import stt --hidden-import tts --hidden-import overlay --hidden-import life --hidden-import social --add-data "bridge/config.example.json;." bridge/main.py
           New-Item -ItemType Directory -Force publish/runtime/bridge | Out-Null
           Copy-Item dist/GtaVietLifeBridge/* publish/runtime/bridge/ -Recurse -Force
-      - name: Stage game scripts
+          Copy-Item bridge/config.example.json publish/runtime/bridge/
+      - name: Build installer and update package
         shell: pwsh
         run: |
-          Copy-Item game publish/game -Recurse -Force
-          Copy-Item bridge/config.example.json publish/runtime/bridge/
+          choco install innosetup --no-progress -y
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" packaging/GtaVietLife.iss
+          Compress-Archive -Path publish/launcher/*,publish/runtime,publish/game -DestinationPath artifacts/GtaVietLife-Windows-x64.zip -Force
+          $hash=(Get-FileHash artifacts/GtaVietLife-Windows-x64.zip -Algorithm SHA256).Hash.ToLower()
+          "$hash  GtaVietLife-Windows-x64.zip" | Out-File artifacts/SHA256SUMS.txt -Encoding ascii
       - uses: actions/upload-artifact@v4
         with:
-          name: GtaVietLife-Windows-Internal
-          path: |
-            publish/launcher/**
-            publish/runtime/**
-            publish/game/**
+          name: GtaVietLife-Windows-Installer
+          path: artifacts/*
+      - name: Publish stable release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/GtaVietLife-Setup-*.exe
+            artifacts/GtaVietLife-Windows-x64.zip
+            artifacts/SHA256SUMS.txt
