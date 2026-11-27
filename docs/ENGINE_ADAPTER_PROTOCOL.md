@@ -167,3 +167,23 @@ The World script maps only the existing resident's verified home, work and lunch
 The `adapters/godot/` reference project consumes the same `gvl-engine/1` Host protocol as the GTA V adapter. It demonstrates adapter identity/capability declaration, NPC registration, durable semantic command polling, physical movement in a native scene, completion acknowledgement after arrival, and a player-to-NPC interaction routed back to the canonical Engine domain. Godot owns only its native scene coordinates and presentation. It does not own canonical NPC state or duplicate domain rules.
 
 The current Godot scene maps `home.godot`, `work.godot` and `park.godot` to local 2D positions. This mapping is adapter-local and is not shared with GTA. The project is a narrow portability reference, not a full second game. Runtime validation with Godot 4 remains an explicit acceptance gate; source presence and Host-side integration tests are not a substitute for launching the Godot project.
+
+
+## World interaction and society protocol (M3–M4)
+
+The same authenticated Host now exposes these game-neutral endpoints:
+
+- POST /engine/v1/world/buildings — register a building with adapter-local semantic entrance/interior mappings and allowed actions.
+- POST /engine/v1/world/objects — register a persistent object with per-adapter interaction anchors.
+- POST /engine/v1/world/interact — validate an actor/action/target and enqueue a durable space.transition or interaction.use_object command. A repeated request ID returns the original command result.
+- GET /engine/v1/world/commands — poll pending world commands. Each payload carries the intended adapter ID; adapters must ignore commands mapped for another game.
+- POST /engine/v1/world/commands/ack — report completed, failed, unsupported, rejected or cancelled execution. A successful object-use acknowledgement updates the canonical object's use state.
+- GET /engine/v1/world/snapshot — inspect the canonical building, object, property, business and traffic catalog.
+
+The GTA adapter maps its known residential entrances/interiors, furniture anchors, workplace and dynamic shop coordinates. It only reports a transition completed after the player is observed in the requested space. The Godot adapter maps its own scene coordinates and executes the same semantic command types. Semantic IDs are not coordinates; a missing adapter mapping fails closed.
+
+M4 endpoints provide double-entry transactions, accounts, property purchase/lease, business inventory/sales, traffic segment registration and incident reporting. The GTA Core sends legacy events through an independently persisted outbox; source + sequence IDs make retries idempotent. Cash and bank flows remain separate accounts. Opening wallet baselines are created once and never overwrite an active ledger balance.
+
+## Cognition bridge boundary (M2)
+
+POST /engine/v1/simulation/context returns bounded identity, current needs/activity, relationship, provenance-aware known facts and recent episodic memories. POST /engine/v1/simulation/memory records actual player speech and NPC reply. The Host accepts only an affinity delta in [-2, 2], scales and clamps it, and applies it to canonical relationship state. The bridge cannot write needs, money, property, traffic or arbitrary NPC state.
