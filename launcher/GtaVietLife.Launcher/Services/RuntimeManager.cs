@@ -82,7 +82,7 @@ public sealed class RuntimeManager:IDisposable {
  public async Task<bool> BridgeHealthyAsync(){try{using var r=await http.GetAsync("http://127.0.0.1:5577/ping");return r.IsSuccessStatusCode;}catch{return false;}}
  public void Launch(string exe){Process.Start(new ProcessStartInfo(exe){UseShellExecute=true,WorkingDirectory=Path.GetDirectoryName(exe)!});}
  public async Task StopAsync(){
-  try{using var q=new HttpRequestMessage(HttpMethod.Post,"http://127.0.0.1:5580/engine/v1/shutdown");q.Headers.Add("X-GVL-Token",Token);using var r=await http.SendAsync(q);}catch{}
+  try{using var q=new HttpRequestMessage(HttpMethod.Post,"http://127.0.0.1:5580/engine/v1/shutdown");q.Headers.Add("X-GVL-Token",Token);q.Content=new StringContent(System.Text.Json.JsonSerializer.Serialize(new{request_id=Guid.NewGuid().ToString("N")}),System.Text.Encoding.UTF8,"application/json");using var r=await http.SendAsync(q);}catch{}
   await Task.Delay(250);Kill(host);Kill(bridge);
  }
  static void Kill(Process? p){try{if(p is{HasExited:false})p.Kill(true);}catch{}}
