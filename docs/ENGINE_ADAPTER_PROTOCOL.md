@@ -244,3 +244,8 @@ GTA V work actions can register a bounded player activity through `POST /engine/
 ### GTA residential personal-care objects
 
 The GTA V residential catalog now registers bed, fridge, sofa, toilet and shower objects. The World adapter detects the corresponding native interior furniture, starts the sleep/shower/toilet action, and delays its successful command acknowledgement until the time-skip/action state has completed. Only then does the Life Engine apply the canonical energy, hydration, hygiene or bladder consequence. If the player is not inside the leased home or the native object is not detected, the command is not reported as completed.
+
+
+### Godot second-adapter player actor
+
+The Godot reference adapter now registers `player.godot` through the same actor API, reports its native player-body meters, and exposes bed, fridge, counter, toilet and shower object interactions. The Godot adapter owns only the local meter presentation and movement; object-use consequences and the persistent player/NPC relationship graph are applied by the shared Engine Host. This extends the M5 proof beyond NPC portability to the player-character life model.
