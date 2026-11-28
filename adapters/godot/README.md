@@ -43,3 +43,6 @@ The sample resident's daily schedule now routes sleep into the home interior and
 
 
 The sample NPC keeps its original stable home identity `home.godot` for existing save compatibility. The adapter accepts both the original home semantic ID and the newer interior ID when routing personal-care actions to physical anchors.
+
+
+The live CI smoke now also advances the canonical schedule and verifies that the resident physically reaches the bed anchor for sleep and the cafe counter for work, with command acknowledgements occurring after movement completes.

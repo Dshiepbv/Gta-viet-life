@@ -292,6 +292,22 @@ func _run_smoke_test() -> void:
 		push_error("Godot smoke: registered player actor missing from canonical snapshot.")
 		get_tree().quit(1)
 		return
+	await _request("/engine/v1/simulation/advance", {
+		"request_id": _next_request_id("smoke-sleep-tick"), "minutes": 1
+	})
+	await _poll_commands()
+	if resident.position.distance_to(locations["bed.anchor.godot"]) > 1.0:
+		push_error("Godot smoke: NPC did not reach its physical bed anchor.")
+		get_tree().quit(1)
+		return
+	await _request("/engine/v1/simulation/advance", {
+		"request_id": _next_request_id("smoke-work-shift"), "minutes": 500
+	})
+	await _poll_commands()
+	if resident.position.distance_to(locations["counter.anchor.godot"]) > 1.0:
+		push_error("Godot smoke: NPC did not reach its physical workplace anchor.")
+		get_tree().quit(1)
+		return
 	var queued := await _request("/engine/v1/world/interact", {
 		"request_id": _next_request_id("smoke-toilet"),
 		"actor_id": PLAYER_ID, "target_kind": "object", "target_id": "object.toilet.godot",
