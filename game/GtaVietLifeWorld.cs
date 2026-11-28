@@ -3564,7 +3564,7 @@ public class GtaVietLifeWorld : Script
     bool IsSupportedEngineResidentActivity(Resident resident, string activity, string locationId)
     {
         if (resident == null) return false;
-        bool knownActivity = activity == "sleep" || activity == "eat" || activity == "work" ||
+        bool knownActivity = activity == "sleep" || activity == "eat" || activity == "drink" || activity == "work" ||
             activity == "commute" || activity == "socialize" || activity == "leisure" ||
             activity == "free_time" || activity == "idle";
         bool knownLocation = locationId == "res_" + resident.Id + ".home" ||
@@ -3610,6 +3610,7 @@ public class GtaVietLifeWorld : Script
         {
             case "sleep": scenario = "WORLD_HUMAN_BUM_SLEEP"; break;
             case "eat": scenario = "WORLD_HUMAN_EATING"; break;
+            case "drink": scenario = "WORLD_HUMAN_DRINKING"; break;
             case "work": scenario = "WORLD_HUMAN_CLIPBOARD"; break;
             case "socialize": scenario = "WORLD_HUMAN_STAND_MOBILE"; break;
             case "leisure": scenario = "WORLD_HUMAN_PICNIC"; break;
