@@ -379,6 +379,33 @@ class LifeSimulationTests(unittest.TestCase):
         self.assertEqual(npc.current_activity, "shower")
         self.assertEqual(npc.location_id, "home.personal-care")
 
+    def test_personality_traits_change_social_recovery_and_work_stress(self):
+        engine = LifeSimulationEngine()
+        extrovert = engine.register_npc(NPCProfile(
+            npc_id="npc.extrovert", display_name="Extrovert", home_location_id="home.extrovert",
+            occupation="worker", traits=("extroverted",),
+            schedule=(ScheduleBlock(0, 1440, "socialize", "park.shared"),),
+        ))
+        introvert = engine.register_npc(NPCProfile(
+            npc_id="npc.introvert", display_name="Introvert", home_location_id="home.introvert",
+            occupation="worker", traits=("introverted",),
+            schedule=(ScheduleBlock(0, 1440, "socialize", "park.shared"),),
+        ))
+        anxious = engine.register_npc(NPCProfile(
+            npc_id="npc.anxious", display_name="Anxious", home_location_id="home.anxious",
+            occupation="worker", traits=("anxious",),
+            schedule=(ScheduleBlock(0, 1440, "work", "work.shared"),),
+        ))
+        calm = engine.register_npc(NPCProfile(
+            npc_id="npc.calm", display_name="Calm", home_location_id="home.calm",
+            occupation="worker", traits=("calm",),
+            schedule=(ScheduleBlock(0, 1440, "work", "work.shared"),),
+        ))
+        engine.advance(1)
+        self.assertGreater(extrovert.social, introvert.social)
+        self.assertGreater(anxious.stress, calm.stress)
+
+
 
 if __name__ == "__main__":
     unittest.main()

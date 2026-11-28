@@ -428,9 +428,21 @@ class LifeSimulationEngine:
                 state.energy -= 0.65
                 state.hunger += 0.75
                 state.thirst += 0.15
-            state.stress += 0.45 if activity == "work" else 0.2
+            work_stress = 0.45 if activity == "work" else 0.2
+            if "anxious" in state.profile.traits:
+                work_stress += 0.25
+            if "calm" in state.profile.traits:
+                work_stress = max(0.05, work_stress - 0.15)
+            state.stress += work_stress
         elif activity == "socialize":
-            state.social += 2.2
+            social_recovery = 2.2
+            if "extroverted" in state.profile.traits:
+                social_recovery += 0.8
+            if "introverted" in state.profile.traits:
+                social_recovery -= 0.7
+            if "friendly" in state.profile.traits:
+                social_recovery += 0.2
+            state.social += max(0.5, social_recovery)
             if not is_player:
                 state.energy -= 0.25
                 state.hunger += 0.35
@@ -441,8 +453,8 @@ class LifeSimulationEngine:
                 state.energy -= 0.2
                 state.hunger += 0.35
                 state.thirst += 0.03
-            state.social += 0.15
-            state.stress -= 0.25
+            state.social += 0.15 + (0.15 if "extroverted" in state.profile.traits else 0.0)
+            state.stress -= 0.25 + (0.1 if "calm" in state.profile.traits else 0.0)
         elif activity in ("shower", "bathe"):
             if not is_player:
                 state.hygiene += 3.5
@@ -461,7 +473,8 @@ class LifeSimulationEngine:
             if not is_player:
                 state.energy -= 0.3
             state.stress += 0.15
-            state.goal_progress = self._clamp(state.goal_progress + 0.015)
+            study_gain = 0.015 + (0.01 if "curious" in state.profile.traits or "disciplined" in state.profile.traits else 0.0)
+            state.goal_progress = self._clamp(state.goal_progress + study_gain)
         else:
             if not is_player:
                 state.energy -= 0.15
@@ -475,7 +488,8 @@ class LifeSimulationEngine:
             if state.work_minutes % 60 == 0:
                 self._record(state, "work_hour_completed", {"hours": 1, "total_work_minutes": state.work_minutes})
         if state.profile.life_goal == "career" and activity == "work":
-            state.goal_progress = self._clamp(state.goal_progress + 0.02)
+            career_gain = 0.02 + (0.01 if "ambitious" in state.profile.traits or "disciplined" in state.profile.traits else 0.0)
+            state.goal_progress = self._clamp(state.goal_progress + career_gain)
         elif state.profile.life_goal == "health" and activity in ("sleep", "eat"):
             state.goal_progress = self._clamp(state.goal_progress + 0.01)
         elif state.profile.life_goal == "social" and activity in ("socialize", "leisure"):
@@ -510,7 +524,11 @@ class LifeSimulationEngine:
             participants = sorted(groups[location_id], key=lambda item: item.profile.npc_id)
             for index in range(0, len(participants) - 1, 2):
                 left, right = participants[index], participants[index + 1]
+                shared_traits = set(left.profile.traits).intersection(right.profile.traits)
                 affinity_gain = 2.0 if left.profile.household_id and left.profile.household_id == right.profile.household_id else 1.0
+                affinity_gain += min(3, len(shared_traits)) * 0.25
+                if "rival" in left.profile.traits or "rival" in right.profile.traits:
+                    affinity_gain = -0.5
                 left.affinity[right.profile.npc_id] = round(max(-100.0, min(100.0, left.affinity.get(right.profile.npc_id, 0.0) + affinity_gain)), 3)
                 right.affinity[left.profile.npc_id] = round(max(-100.0, min(100.0, right.affinity.get(left.profile.npc_id, 0.0) + affinity_gain)), 3)
                 for actor, other in ((left, right), (right, left)):
@@ -653,7 +671,12 @@ class LifeSimulationEngine:
             if state is None:
                 raise KeyError("npc_not_found")
             old = state.affinity.get(player_id, 0.0)
-            state.affinity[player_id] = self._clamp(old + 2.0)
+            interaction_gain = 2.0
+            if "friendly" in state.profile.traits or "kind" in state.profile.traits:
+                interaction_gain += 1.0
+            if "introverted" in state.profile.traits:
+                interaction_gain -= 0.5
+            state.affinity[player_id] = self._clamp(old + interaction_gain)
             state.social = self._clamp(state.social + 12.0)
             memory = {"minute": self.simulation_minute, "kind": "player_conversation",
                       "participant_id": player_id, "summary": message[:500] if message else "Player spoke with NPC",
