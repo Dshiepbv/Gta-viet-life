@@ -37,7 +37,7 @@ public sealed class RuntimeManager:IDisposable {
    "Đã cài "+installed.Copied+" file, cất "+installed.Retired+" script .cs cũ vào "+installed.BackupDir+".";
   return(true,"GTA build "+gameVersion+". "+note+" Save game và save của mod được giữ nguyên. Tương thích thực tế chỉ xác nhận được khi Adapter kết nối trong game.",sd);
  }
- static bool GameRunning()=>Process.GetProcessesByName("GTA5").Length>0||Process.GetProcessesByName("GTA5_Enhanced").Length>0;
+ public static bool GameRunning()=>Process.GetProcessesByName("GTA5").Length>0||Process.GetProcessesByName("GTA5_Enhanced").Length>0;
  static string ReadShared(string path){
   using var stream=new FileStream(path,FileMode.Open,FileAccess.Read,FileShare.ReadWrite);
   using var reader=new StreamReader(stream);return reader.ReadToEnd();
@@ -126,7 +126,14 @@ public sealed class RuntimeManager:IDisposable {
   Kill(bridge);bridge=null;KillNamed("GtaVietLifeBridge");StartBridge();
   await WaitAsync("http://127.0.0.1:5577/health",180,ct);
  }
- static void KillNamed(string name){foreach(var p in Process.GetProcessesByName(name)){try{p.Kill(true);p.WaitForExit(3000);}catch{}}}
+ // Chỉ dừng tiến trình chạy từ thư mục cài này; tiến trình trùng tên ở nơi khác không bị đụng tới.
+ void KillNamed(string name){
+  var own=Path.GetFullPath(Path.Combine(root,"runtime"))+Path.DirectorySeparatorChar;
+  foreach(var p in Process.GetProcessesByName(name)){
+   try{if(p.MainModule?.FileName?.StartsWith(own,StringComparison.OrdinalIgnoreCase)==true){p.Kill(true);p.WaitForExit(3000);}}
+   catch(Exception ex){Log("Không dừng được "+name+": "+ex.Message);}
+  }
+ }
  public void Launch(string exe){
   // PlayGTAV.exe is the store-aware entry point; GTA5.exe alone fails on some store installs.
   var starter=Path.Combine(Path.GetDirectoryName(exe)!,"PlayGTAV.exe");
@@ -135,7 +142,15 @@ public sealed class RuntimeManager:IDisposable {
  }
  public async Task StopAsync(){
   try{using var q=new HttpRequestMessage(HttpMethod.Post,"http://127.0.0.1:5580/engine/v1/shutdown");q.Headers.Add("X-GVL-Token",Token);q.Content=new StringContent(System.Text.Json.JsonSerializer.Serialize(new{request_id=Guid.NewGuid().ToString("N")}),System.Text.Encoding.UTF8,"application/json");using var r=await http.SendAsync(q);}catch{}
-  await Task.Delay(250);Kill(host);Kill(bridge);KillNamed("GtaVietLifeBridge");
+  await WaitForExitAsync(host,5000);   // để Engine Host ghi xong dữ liệu trước khi buộc dừng
+  Kill(host);Kill(bridge);
+  await WaitForExitAsync(host,3000);await WaitForExitAsync(bridge,3000);
+  KillNamed("GtaVietLifeBridge");host=null;bridge=null;
+ }
+ static async Task WaitForExitAsync(Process? p,int milliseconds){
+  if(p==null)return;
+  try{using var limit=new CancellationTokenSource(milliseconds);await p.WaitForExitAsync(limit.Token);}
+  catch(OperationCanceledException){}catch(InvalidOperationException){}
  }
  static void Kill(Process? p){try{if(p is{HasExited:false})p.Kill(true);}catch{}}
  public static void Log(string s){try{Directory.CreateDirectory(LauncherSettings.Dir);File.AppendAllText(Path.Combine(LauncherSettings.Dir,"launcher.log"),$"[{DateTime.Now:O}] {s}{Environment.NewLine}");}catch{}}

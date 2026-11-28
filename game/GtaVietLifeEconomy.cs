@@ -76,7 +76,7 @@ public class GtaVietLifeEconomy : Script
     static readonly Vector3 ImpoundLot = new Vector3(409.5f, -1623.0f, 29.3f);
     const int ImpoundFee = 250, ImpoundPerDay = 25, TowFee = 200, RescueFee = 120, CanPrice = 30, OilChange = 40;
 
-    long lastSeen; bool caughtUp; int lastDayMinute = -1;
+    long lastSeen; bool caughtUp; readonly GvlDayWatch dayWatch = new GvlDayWatch();
     readonly List<Blip> blips = new List<Blip>();
     readonly Queue<Action> pending = new Queue<Action>();
     readonly Random rnd = new Random();
@@ -178,6 +178,41 @@ public class GtaVietLifeEconomy : Script
         ledger.Add(dayNo + "|" + acct + "|" + amt + "|" + cat + "|" + note.Replace("|", "/"));
         while (ledger.Count > 200) ledger.RemoveAt(0);
         if (acct != "no") Emit(amt >= 0 ? "ledger.income" : "ledger.expense", "amount=" + Math.Abs(amt) + ";cat=" + Clean(cat) + ";note=" + Clean(note) + ";acct=" + acct);
+        if (acct == "bank") bankSequence = CurrentSequence();
+    }
+
+    long bankSequence;          // seq cua thay doi ngan hang moi nhat
+    int debtReported;           // tong no da bao cho so cai
+    int nextTakeover;
+
+    static long CurrentSequence() { object o = Bus("GVL.EventSeq"); return o is long ? (long)o : 0; }
+
+    void SyncLedger(int now)
+    {
+        if (!modBank) return;
+        int debt = bankDebt + Sum();
+        if (debt != debtReported)
+        {
+            Emit("ledger.debt", "amount=" + ((long)debt - debtReported).ToString(CultureInfo.InvariantCulture));
+            debtReported = debt;
+        }
+        if (bankSequence > CurrentSequence()) bankSequence = 0;   // bo dem event duoc tao lai
+        long[] view = Bus("GVL.Ledger") as long[];
+        int action = GvlBankSync.Decide(view, bankSequence, bank);
+        if (action == GvlBankSync.TakeOver && now > nextTakeover)
+        {
+            nextTakeover = now + 30000;
+            Emit("bank.takeover", "balance=" + Math.Max(0, bank) + ";debt=" + Math.Max(0, debt));
+            bankSequence = CurrentSequence();
+            Save();
+        }
+        else if (action == GvlBankSync.Adopt)
+        {
+            Log("so du ngan hang theo so cai: " + bank + " -> " + view[1]);
+            Notify("~b~Ngan hang:~s~ so du cap nhat theo so cai: $" + view[1] + ".");
+            bank = (int)view[1];
+            Save();
+        }
     }
     void Cash(int amt, string cat, string note) { Game.Player.Money = Game.Player.Money + amt; Post("cash", amt, cat, note); }
     void Deposit(int amt, string cat, string note) { bank += amt; Post("bank", amt, cat, note); }
@@ -214,7 +249,7 @@ public class GtaVietLifeEconomy : Script
         if (me == null || !me.Exists()) return;
         int now = Game.GameTime;
         while (pending.Count > 0) { Action a = pending.Dequeue(); try { a(); } catch (Exception ex) { Log("viec cho loi: " + ex); } }
-        if (!ModOn()) { if (menuOpen) CloseMenu(); return; }
+        if (!ModOn()) { if (menuOpen) CloseMenu(); BusSet("GVL.Impounded", null); BusSet("GVL.Mortgage", null); return; }
         RegisterPay();
         if (!caughtUp) CatchUp();
         UpdateDay();
@@ -222,11 +257,16 @@ public class GtaVietLifeEconomy : Script
         try { if (modImpound) UpdateParking(me, now); } catch (Exception ex) { Log("cau xe loi: " + ex.Message); }
         if (now > nextPumpCheck) { nextPumpCheck = now + 1000; ScanPlaces(me); }
         if (rescueAt > 0 && now > rescueAt) { rescueAt = 0; FinishRescue(); }
+        try { SettleCollateral(); } catch (Exception ex) { Log("doi soat the chap loi: " + ex.Message); }
+        try { SyncLedger(now); } catch (Exception ex) { Log("dong bo so cai loi: " + ex.Message); }
         BusSet("GVL.Bank", bank);
         BusSet("GVL.Credit", credit);
+        BusSet("GVL.Mortgage", LoanSumKind(1));
+        BusSet("GVL.Impounded", ImpoundedKeys());
         if (now > nextSave) { nextSave = now + 60000; Save(); }
         if (BusFlag("GVL.WorldMenu") || BusFlag("GVL.PersonalMenu")) { if (menuOpen) CloseMenu(); }
         DrawHud(me);
+        if (menuOpen && !OwnsMenu()) CloseMenu();
         if (menuOpen) DrawMenu();
     }
     int nextSave;
@@ -243,8 +283,7 @@ public class GtaVietLifeEconomy : Script
     {
         TimeSpan t = World.CurrentTimeOfDay;
         int m = t.Hours * 60 + t.Minutes;
-        if (lastDayMinute >= 0 && m < lastDayMinute && lastDayMinute - m > 600) DailyTick(false);
-        lastDayMinute = m;
+        if (dayWatch.NewDay(GvlDayWatch.CoreDay(), m)) DailyTick(false);
     }
 
     string DailyTick(bool offline)
@@ -294,6 +333,42 @@ public class GtaVietLifeEconomy : Script
         if (r.Length > 0 && !offline) Notify("~b~Ngan hang:~s~" + r);
         Save();
         return r;
+    }
+
+    // nhan ket qua tu file Doi song: tien ban nha tra bot vay the chap, phan phat mai con thieu thanh no
+    void SettleCollateral()
+    {
+        object repayValue = Bus("GVL.MortgageRepay");
+        int repay = repayValue is int ? (int)repayValue : 0;
+        object shortValue = Bus("GVL.SeizeShortfall");
+        int shortfall = shortValue is int ? (int)shortValue : 0;
+        if (repay <= 0 && shortfall <= 0) return;
+        BusSet("GVL.MortgageRepay", 0); BusSet("GVL.SeizeShortfall", 0);
+        for (int i = loans.Count - 1; i >= 0 && repay > 0; i--)
+        {
+            Loan l = loans[i];
+            if (l.Kind != 1) continue;
+            int paid = Math.Min(l.Left, repay);
+            l.Left -= paid; repay -= paid;
+            Emit("econ.repay", "amount=" + paid + ";left=" + l.Left);
+            Post("no", -paid, "vay", "tra no the chap tu tien ban tai san");
+            if (l.Left <= 0) loans.RemoveAt(i);
+        }
+        if (repay > 0) Deposit(repay, "hoan tien", "tien ban tai san du sau khi tat toan");
+        if (shortfall > 0)
+        {
+            bankDebt += shortfall;
+            Post("no", -shortfall, "siet no", "phat mai chua du, ghi no xau");
+            Notify("~r~Phat mai chua du:~s~ con no xau $" + shortfall + ".");
+        }
+        Save();
+    }
+
+    string[] ImpoundedKeys()
+    {
+        string[] keys = new string[impounded.Count];
+        for (int i = 0; i < keys.Length; i++) keys[i] = impounded[i].Hash + "|" + impounded[i].Plate.Trim();
+        return keys;
     }
 
     // siet no: lay tai khoan, tien mat, roi yeu cau file Doi song ban tai san the chap; phan con lai thanh no xau
@@ -725,6 +800,11 @@ public class GtaVietLifeEconomy : Script
     void Item(string label, Action act) { menuLabels.Add(label); menuActions.Add(act); }
     void Info(string label) { menuLabels.Add(label); menuActions.Add(null); }
     void CloseMenu() { menuOpen = false; BusSet("GVL.EconMenu", false); }
+    // Mot phim so chi duoc chay mot menu: menu mo sau cung giu quyen.
+    bool OwnsMenu() { return (AppDomain.CurrentDomain.GetData("GVL.MenuOwner") as string) == "econ"; }
+    void TakeMenu() { AppDomain.CurrentDomain.SetData("GVL.MenuOwner", "econ"); }
+
+
     int NextActionable(int from, int dir)
     {
         int n = menuActions.Count;
@@ -738,11 +818,12 @@ public class GtaVietLifeEconomy : Script
         if (e.KeyCode == menuKey)
         {
             if (BusFlag("GVL.WorldMenu") || BusFlag("GVL.PersonalMenu")) return;
-            if (!menuOpen) { menuOpen = true; BusSet("GVL.EconMenu", true); pending.Enqueue(ShowMain); }
+            if (!menuOpen) { TakeMenu(); menuOpen = true; BusSet("GVL.EconMenu", true); pending.Enqueue(ShowMain); }
             else if (menuBack != null) menuBack();
             else CloseMenu();
             return;
         }
+        if (menuOpen && !OwnsMenu()) CloseMenu();
         if (!menuOpen) return;
         if (e.KeyCode == Keys.Back) { if (menuBack != null) menuBack(); else CloseMenu(); return; }
         if (menuSel < 0 || menuSel >= menuActions.Count || menuActions[menuSel] == null) menuSel = NextActionable(-1, 1);
@@ -830,6 +911,7 @@ public class GtaVietLifeEconomy : Script
             CultureInfo ci = CultureInfo.InvariantCulture;
             List<string> l = new List<string>();
             l.Add("seen=" + NowEpoch());
+            l.Add("bankseq=" + bankSequence); l.Add("debtseen=" + debtReported);
             l.Add("bank=" + bank); l.Add("bankdebt=" + bankDebt); l.Add("credit=" + credit); l.Add("day=" + dayNo); l.Add("bad=" + badUntil); l.Add("cans=" + cans);
             foreach (Loan o in loans) l.Add("loan=" + o.Kind + "," + o.Principal + "," + o.Left + "," + o.Periods + "," + o.Due + "," + o.Late + "," + o.Rate.ToString(ci));
             foreach (Car c in cars.Values) l.Add("car=" + c.Key.Replace(",", ".") + "," + c.Fuel.ToString("0.0", ci) + "," + c.Cap.ToString("0", ci) + "," + c.Oil.ToString("0.0", ci) + "," + c.Km.ToString("0.00", ci));
@@ -856,6 +938,8 @@ public class GtaVietLifeEconomy : Script
         switch (k)
         {
             case "seen": lastSeen = long.Parse(v); break;
+            case "bankseq": bankSequence = long.Parse(v); break;
+            case "debtseen": debtReported = int.Parse(v); break;
             case "bank": bank = int.Parse(v); break;
             case "bankdebt": bankDebt = int.Parse(v); break;
             case "credit": credit = Math.Max(300, Math.Min(850, int.Parse(v))); break;

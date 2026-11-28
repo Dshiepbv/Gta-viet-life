@@ -74,7 +74,11 @@ const pinGet=()=>localStorage.getItem("pin")||"";
 async function load(){try{
   if(API){let pin=pinGet();if(!pin){pin=prompt("Nhap ma PIN")||"";localStorage.setItem("pin",pin)}
     D=await http("GET",API+"?a=data&pin="+encodeURIComponent(pin));if(D.needPin&&D.error==="Sai ma PIN")localStorage.removeItem("pin")}
-  else D=await http("GET","/data")}catch(e){D=null}render()}
+  else{D=await http("POST","/data",JSON.stringify({pin:pinGet()}));
+    if(D.needPin&&D.error){localStorage.removeItem("pin");
+      if(!asked){asked=true;const p=prompt("Nhap ma PIN dashboard")||"";if(p){localStorage.setItem("pin",p);asked=false;D=await http("POST","/data",JSON.stringify({pin:p}))}}}}
+  }catch(e){D=null}render()}
+let asked=false;
 function est(d){ // uoc tinh khi game tat: cung cong thuc bu-khi-mo-lai
   const el=Math.max(0,Date.now()/1000-d.ts), off=el>300;
   const h=(d.hist||[]).slice(-7), avg=h.length?h.reduce((a,x)=>a+x[6],0)/h.length:0;

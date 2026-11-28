@@ -14,12 +14,19 @@ import time
 import uuid
 from typing import Any, Callable, Dict, Optional
 
+try:
+    from .life_simulation import atomic
+except ImportError:  # PyInstaller entry-point execution
+    from life_simulation import atomic
+
 
 LOG = logging.getLogger("gvl.engine")
 MAX_ID = 128
 MAX_TEXT = 500
 SYNC_RETENTION_SECONDS = 3600
 PRUNE_EVERY_SYNCS = 200
+# A physical command nobody carried out within this many game minutes no longer reflects intent.
+COMMAND_TTL_MINUTES = 30
 MAX_AMOUNT = 10 ** 15
 CURRENCIES = ("USD", "VND")
 # Transaction ids with these prefixes are created by the engine itself.
@@ -133,6 +140,10 @@ class SocietySimulation:
                     target_id TEXT, payload_json TEXT NOT NULL, sim_minute INTEGER NOT NULL);
                 CREATE TABLE IF NOT EXISTS world_processed_life_events(
                     event_id TEXT PRIMARY KEY, processed_minute INTEGER NOT NULL);
+                CREATE TABLE IF NOT EXISTS world_source_progress(
+                    source_id TEXT PRIMARY KEY, sequence INTEGER NOT NULL);
+                CREATE TABLE IF NOT EXISTS world_ledger_owners(
+                    scope TEXT PRIMARY KEY, source_id TEXT NOT NULL, sequence INTEGER NOT NULL);
                 CREATE TABLE IF NOT EXISTS world_account_openings(
                     account_id TEXT PRIMARY KEY, source_id TEXT NOT NULL, sequence INTEGER NOT NULL,
                     balance INTEGER NOT NULL);
@@ -156,6 +167,13 @@ class SocietySimulation:
                     WHERE account_id=world_businesses.cash_account_id),0)""")
             self.db.execute("INSERT OR IGNORE INTO world_accounts(account_id,owner_id,balance,allow_negative,currency) VALUES('system:opening_equity','system',0,1,'USD')")
 
+    def _write(self):
+        return atomic(self.db, self.lock)
+
+    def _write_with_life(self):
+        """For changes touching NPC state too: lock order is life engine, then database."""
+        return self.life_engine.transaction() if self.life_engine is not None else self._write()
+
     def register_building(self, building_id: str, category: str, name: str,
                           adapter_maps: dict, interactions: list) -> dict:
         building_id = _valid_id(building_id, "building_id")
@@ -171,7 +189,7 @@ class SocietySimulation:
                 raise ValueError("invalid_adapter_mapping")
         if not isinstance(interactions, list) or len(interactions) > 32 or any(x not in ("enter", "exit", "inspect", "open", "close") for x in interactions):
             raise ValueError("invalid_building_interactions")
-        with self.lock, self.db:
+        with self._write():
             old = self.db.execute("SELECT category,name FROM world_buildings WHERE building_id=?", (building_id,)).fetchone()
             if old and (old["category"] != category or old["name"] != name):
                 raise ValueError("building_identity_conflict")
@@ -194,14 +212,25 @@ class SocietySimulation:
         for adapter_id, anchor in adapter_anchors.items():
             _valid_id(adapter_id, "adapter_id")
             _valid_id(anchor, "adapter_anchor")
-        with self.lock, self.db:
+        with self._write():
             if not self.db.execute("SELECT 1 FROM world_buildings WHERE building_id=?", (building_id,)).fetchone():
                 raise KeyError("building_not_found")
             self.db.execute("""INSERT INTO world_objects(object_id,building_id,kind,adapter_anchors_json,state_json)
                 VALUES(?,?,?,?,?) ON CONFLICT(object_id) DO UPDATE SET
-                adapter_anchors_json=excluded.adapter_anchors_json,state_json=excluded.state_json""",
+                adapter_anchors_json=excluded.adapter_anchors_json""",
                 (object_id, building_id, kind, json.dumps(adapter_anchors), json.dumps(initial_state or {})))
         return {"object_id": object_id, "registered": True}
+
+    def _receipt(self, kind: str, request_id: str, marker: str) -> Optional[dict]:
+        """Replay answer for one endpoint; also reads receipts that earlier builds stored unscoped."""
+        for key in (kind + ":" + request_id, request_id):
+            row = self.db.execute("SELECT response_json FROM world_request_dedup WHERE request_id=?",
+                                  (key,)).fetchone()
+            if row:
+                response = json.loads(row["response_json"])
+                if marker in response:
+                    return response
+        return None
 
     def interact(self, request_id: str, actor_id: str, target_kind: str, target_id: str,
                  action: str, adapter_id: str, payload: Optional[dict] = None) -> dict:
@@ -213,10 +242,10 @@ class SocietySimulation:
             raise ValueError("unsupported_world_interaction")
         if not isinstance(payload or {}, dict) or len(json.dumps(payload or {})) > 8000:
             raise ValueError("invalid_interaction_payload")
-        with self.lock, self.db:
-            cached = self.db.execute("SELECT response_json FROM world_request_dedup WHERE request_id=?", (request_id,)).fetchone()
+        with self._write():
+            cached = self._receipt("interact", request_id, "command_id")
             if cached:
-                return json.loads(cached["response_json"])
+                return cached
             if target_kind == "building":
                 row = self.db.execute("SELECT * FROM world_buildings WHERE building_id=?", (target_id,)).fetchone()
                 if not row:
@@ -246,25 +275,36 @@ class SocietySimulation:
             self.db.execute("""INSERT INTO world_command_outbox
                 (command_id,request_id,actor_id,command_type,payload_json,created_minute)
                 VALUES(?,?,?,?,?,?)""",
-                (command_id, request_id, actor_id, command_type, json.dumps(command_payload, ensure_ascii=False),
+                (command_id, "interact:" + request_id, actor_id, command_type, json.dumps(command_payload, ensure_ascii=False),
                  int(self.minute_provider())))
             self.db.execute("INSERT INTO world_request_dedup(request_id,response_json) VALUES(?,?)",
-                            (request_id, json.dumps(response)))
+                            ("interact:" + request_id, json.dumps(response)))
             self.db.execute("INSERT INTO world_event_journal(event_id,event_type,actor_id,target_id,payload_json,sim_minute) VALUES(?,?,?,?,?,?)",
                             (uuid.uuid4().hex, "world.interaction_requested", actor_id, target_id,
                              json.dumps(command_payload, ensure_ascii=False), int(self.minute_provider())))
             return response
 
-    def pending_commands(self, limit: int = 50) -> list:
+    def _expire_commands_locked(self) -> None:
+        self.db.execute("""UPDATE world_command_outbox SET status='expired',completed_at=CURRENT_TIMESTAMP
+            WHERE status='pending' AND created_minute<=?""",
+            (int(self.minute_provider()) - COMMAND_TTL_MINUTES,))
+
+    def pending_commands(self, limit: int = 50, adapter_id: Optional[str] = None) -> list:
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 200:
             raise ValueError("invalid_command_limit")
-        with self.lock:
+        if adapter_id:
+            adapter_id = _valid_id(adapter_id, "adapter_id")
+        with self._write():
+            self._expire_commands_locked()
             rows = self.db.execute("""SELECT command_id,actor_id,command_type,payload_json,created_minute
-                FROM world_command_outbox WHERE status='pending' ORDER BY created_minute,command_id LIMIT ?""",
-                (limit,)).fetchall()
+                FROM world_command_outbox WHERE status='pending'
+                AND (? IS NULL OR json_extract(payload_json,'$.adapter_id')=?)
+                ORDER BY created_minute,command_id LIMIT ?""",
+                (adapter_id or None, adapter_id or None, limit)).fetchall()
             return [{"command_id": r["command_id"], "npc_id": r["actor_id"],
                      "command_type": r["command_type"], "payload": json.loads(r["payload_json"]),
-                     "created_minute": r["created_minute"]} for r in rows]
+                     "created_minute": r["created_minute"],
+                     "expires_at_world_minute": r["created_minute"] + COMMAND_TTL_MINUTES} for r in rows]
 
     def acknowledge_command(self, command_id: str, result: dict) -> bool:
         _valid_id(command_id, "command_id")
@@ -273,8 +313,8 @@ class SocietySimulation:
         status = "completed" if result.get("success") is True else result.get("status")
         if status not in ("completed", "failed", "unsupported", "rejected", "cancelled"):
             raise ValueError("invalid_command_result")
-        physical_effect = None
-        with self.lock, self.db:
+        with self._write_with_life():
+            self._expire_commands_locked()
             row = self.db.execute("SELECT command_type,payload_json FROM world_command_outbox WHERE command_id=? AND status='pending'",
                                   (command_id,)).fetchone()
             if not row:
@@ -292,10 +332,9 @@ class SocietySimulation:
                     state["last_actor_id"] = payload.get("actor_id", "")
                     self.db.execute("UPDATE world_objects SET state_json=? WHERE object_id=?",
                                     (json.dumps(state), target_id))
-                    physical_effect = (payload.get("actor_id", ""), object_row["kind"])
-        if physical_effect and self.life_engine is not None:
-            self.life_engine.apply_physical_interaction(*physical_effect)
-        return cur.rowcount == 1
+                    if self.life_engine is not None:
+                        self.life_engine.apply_physical_interaction(payload.get("actor_id", ""), object_row["kind"])
+            return cur.rowcount == 1
 
     def create_account(self, account_id: str, owner_id: str, opening_balance: int = 0,
                        allow_negative: bool = False, currency: str = "USD") -> dict:
@@ -307,7 +346,7 @@ class SocietySimulation:
             raise ValueError("invalid_account_policy")
         if opening_balance > MAX_AMOUNT:
             raise ValueError("amount_out_of_range")
-        with self.lock, self.db:
+        with self._write():
             if self.db.execute("SELECT 1 FROM world_accounts WHERE account_id=?", (account_id,)).fetchone():
                 raise ValueError("account_already_exists")
             self.db.execute("INSERT INTO world_accounts(account_id,owner_id,balance,allow_negative,currency) VALUES(?,?,0,?,?)",
@@ -396,7 +435,7 @@ class SocietySimulation:
 
     def post_transaction(self, transaction_id: str, source: str, description: str, entries: list) -> dict:
         transaction_id = _public_transaction_id(transaction_id)
-        with self.lock, self.db:
+        with self._write():
             return self._post_transaction_locked(transaction_id, source, description, entries)
 
     def ensure_account(self, account_id: str, owner_id: str, opening_balance: int = 0,
@@ -419,7 +458,7 @@ class SocietySimulation:
             raise ValueError("amount_out_of_range")
         if not isinstance(allow_negative, bool) or currency not in CURRENCIES:
             raise ValueError("invalid_account_policy")
-        with self.lock, self.db:
+        with self._write():
             self.db.execute("""INSERT OR IGNORE INTO world_accounts
                 (account_id,owner_id,balance,allow_negative,currency) VALUES(?,?,0,?,?)""",
                 (account_id, owner_id, 1 if allow_negative else 0, currency))
@@ -479,7 +518,7 @@ class SocietySimulation:
     def create_property(self, property_id: str, building_id: str, owner_account_id: str,
                         value: int, rent: int) -> dict:
         property_id = _valid_id(property_id, "property_id")
-        with self.lock, self.db:
+        with self._write():
             if not self.db.execute("SELECT 1 FROM world_buildings WHERE building_id=?", (building_id,)).fetchone():
                 raise KeyError("building_not_found")
             if not self.db.execute("SELECT 1 FROM world_accounts WHERE account_id=?", (owner_account_id,)).fetchone():
@@ -501,7 +540,7 @@ class SocietySimulation:
         transaction_id = _public_transaction_id(transaction_id)
         if isinstance(price, bool) or not isinstance(price, int) or price <= 0:
             raise ValueError("invalid_purchase_price")
-        with self.lock, self.db:
+        with self._write():
             row = self.db.execute("SELECT owner_account_id FROM world_properties WHERE property_id=?", (property_id,)).fetchone()
             if not row:
                 raise KeyError("property_not_found")
@@ -536,7 +575,7 @@ class SocietySimulation:
             raise ValueError("invalid_rent")
         if isinstance(lease_minutes, bool) or not isinstance(lease_minutes, int) or not 1 <= lease_minutes <= 525600:
             raise ValueError("invalid_lease_duration")
-        with self.lock, self.db:
+        with self._write():
             row = self.db.execute("SELECT owner_account_id,tenant_account_id,lease_until FROM world_properties WHERE property_id=?", (property_id,)).fetchone()
             if not row:
                 raise KeyError("property_not_found")
@@ -558,7 +597,7 @@ class SocietySimulation:
     def create_business(self, business_id: str, property_id: str, owner_account_id: str,
                         cash_account_id: str, category: str) -> dict:
         business_id = _valid_id(business_id, "business_id")
-        with self.lock, self.db:
+        with self._write():
             if not self.db.execute("SELECT 1 FROM world_properties WHERE property_id=?", (property_id,)).fetchone():
                 raise KeyError("property_not_found")
             if not self.db.execute("SELECT 1 FROM world_accounts WHERE account_id=?", (owner_account_id,)).fetchone():
@@ -590,7 +629,7 @@ class SocietySimulation:
             if isinstance(qty, bool) or not isinstance(qty, int) or qty < 0:
                 raise ValueError("invalid_inventory_quantity")
             normalized[item_id] = qty
-        with self.lock, self.db:
+        with self._write():
             cur = self.db.execute("UPDATE world_businesses SET inventory_json=? WHERE business_id=?",
                                   (json.dumps(normalized), business_id))
             if cur.rowcount != 1:
@@ -617,12 +656,10 @@ class SocietySimulation:
             if isinstance(quantity, bool) or not isinstance(quantity, int) or quantity < 0:
                 raise ValueError("invalid_inventory_quantity")
             normalized[item_id] = quantity
-        with self.lock, self.db:
-            cached = self.db.execute(
-                "SELECT response_json FROM world_request_dedup WHERE request_id=?", (request_id,)
-            ).fetchone()
+        with self._write():
+            cached = self._receipt("sync", request_id, "synced")
             if cached:
-                return json.loads(cached["response_json"])
+                return cached
             row = self.db.execute(
                 """SELECT b.cash_account_id,b.native_cash_balance,p.building_id,bu.adapter_maps_json
                 FROM world_businesses b
@@ -660,7 +697,7 @@ class SocietySimulation:
                       "payroll_settled": payroll_settled}
             self.db.execute(
                 "INSERT INTO world_request_dedup(request_id,response_json,kind,created_at) VALUES(?,?,'sync',?)",
-                (request_id, json.dumps(result, ensure_ascii=False), int(time.time())),
+                ("sync:" + request_id, json.dumps(result, ensure_ascii=False), int(time.time())),
             )
             self.db.execute(
                 """INSERT INTO world_event_journal
@@ -683,7 +720,7 @@ class SocietySimulation:
         transaction_id = _public_transaction_id(transaction_id, "sale:")
         item_id = _valid_id(item_id, "item_id")
         description = "%s|%s|%d" % (business_id, item_id, quantity)
-        with self.lock, self.db:
+        with self._write():
             row = self.db.execute("SELECT cash_account_id,inventory_json,is_open FROM world_businesses WHERE business_id=?",
                                   (business_id,)).fetchone()
             if not row:
@@ -713,7 +750,7 @@ class SocietySimulation:
         segment_id = _valid_id(segment_id, "segment_id")
         if not isinstance(road_class, str) or not road_class or not 0.1 <= float(capacity) <= 10000:
             raise ValueError("invalid_traffic_segment")
-        with self.lock, self.db:
+        with self._write():
             self.db.execute("""INSERT INTO world_traffic_segments(segment_id,road_class,capacity,updated_minute)
                 VALUES(?,?,?,?) ON CONFLICT(segment_id) DO UPDATE SET road_class=excluded.road_class,
                 capacity=excluded.capacity""", (segment_id, road_class, float(capacity), int(self.minute_provider())))
@@ -726,7 +763,7 @@ class SocietySimulation:
             raise ValueError("invalid_incident_severity")
         if not isinstance(kind, str) or not kind or len(kind) > 64 or len(details) > MAX_TEXT:
             raise ValueError("invalid_traffic_incident")
-        with self.lock, self.db:
+        with self._write_with_life():
             existing = self.db.execute("SELECT 1 FROM world_traffic_incidents WHERE incident_id=?", (incident_id,)).fetchone()
             if existing:
                 return {"recorded": True, "duplicate": True, "incident_id": incident_id}
@@ -763,10 +800,11 @@ class SocietySimulation:
         accepted = 0
         duplicates = 0
         rejected = []
-        with self.lock, self.db:
+        with self._write():
             self.db.execute("INSERT OR IGNORE INTO world_accounts(account_id,owner_id,balance,allow_negative,currency) VALUES('legacy:player_cash','player.main',0,1,'USD')")
             self.db.execute("INSERT OR IGNORE INTO world_accounts(account_id,owner_id,balance,allow_negative,currency) VALUES('legacy:player_bank','player.main',0,1,'USD')")
             self.db.execute("INSERT OR IGNORE INTO world_accounts(account_id,owner_id,balance,allow_negative,currency) VALUES('system:legacy_counterparty','system',0,1,'USD')")
+            self.db.execute("INSERT OR IGNORE INTO world_accounts(account_id,owner_id,balance,allow_negative,currency) VALUES('legacy:player_debt','player.main',0,1,'USD')")
             for event in events:
                 self.db.execute("SAVEPOINT legacy_event")
                 try:
@@ -779,6 +817,9 @@ class SocietySimulation:
                     rejected.append({"sequence": sequence, "error": str(exc).strip("'")})
                     continue
                 self.db.execute("RELEASE legacy_event")
+                self.db.execute("""INSERT INTO world_source_progress(source_id,sequence) VALUES(?,?)
+                    ON CONFLICT(source_id) DO UPDATE SET sequence=MAX(sequence,excluded.sequence)""",
+                    (source_id, event["sequence"]))
                 if imported:
                     accepted += 1
                 else:
@@ -808,6 +849,15 @@ class SocietySimulation:
             return False
         if event_type == "wallet.observed":
             self._reconcile_wallet_locked(source_id, seq, raw)
+        elif event_type == "bank.takeover":
+            self._take_over_bank_locked(source_id, seq, raw)
+        elif event_type == "ledger.debt":
+            fields = dict(item.split("=", 1) for item in raw.split(";") if "=" in item)
+            change = int(fields.get("amount", ""))
+            if change:
+                self._post_transaction_locked("legacy-ledger:" + source_id + ":" + str(seq), "debt",
+                    "bank debt change", [{"account_id": "legacy:player_debt", "amount": change},
+                                         {"account_id": "system:legacy_counterparty", "amount": -change}])
         if event_type in ("ledger.income", "ledger.expense"):
             fields = {}
             for item in raw.split(";"):
@@ -848,10 +898,50 @@ class SocietySimulation:
                     {"account_id": "legacy:player_cash", "amount": difference},
                     {"account_id": "system:wallet_reconcile", "amount": -difference}])
 
+    def _take_over_bank_locked(self, source_id: str, seq: int, raw: str) -> None:
+        """First contact with a game counter: its bank book is the starting truth, after that the ledger is."""
+        owner = self.db.execute("SELECT source_id FROM world_ledger_owners WHERE scope='bank'").fetchone()
+        if owner and owner["source_id"] == source_id:
+            return
+        fields = dict(item.split("=", 1) for item in raw.split(";") if "=" in item)
+        targets = (("legacy:player_bank", int(fields.get("balance", ""))),
+                   ("legacy:player_debt", int(fields.get("debt", ""))))
+        if any(not 0 <= value <= 2_147_483_647 for _, value in targets):
+            raise ValueError("invalid_bank_takeover")
+        counter = self._ensure_system_account_locked("bank_reconcile", "USD")
+        for account_id, value in targets:
+            current = self.db.execute("SELECT balance FROM world_accounts WHERE account_id=?",
+                                      (account_id,)).fetchone()["balance"]
+            if value != current:
+                self._post_transaction_locked(
+                    "reconcile:%s:%s:%d" % (account_id.rsplit("_", 1)[1], source_id, seq), "reconcile",
+                    "bank takeover", [{"account_id": account_id, "amount": value - current},
+                                      {"account_id": counter, "amount": current - value}])
+            # Everything up to this event is inside the balance: a late opening must not add it again.
+            self.db.execute("""INSERT OR REPLACE INTO world_account_openings(account_id,source_id,sequence,balance)
+                VALUES(?,?,?,?)""", (account_id, source_id, seq, value))
+        self.db.execute("""INSERT OR REPLACE INTO world_ledger_owners(scope,source_id,sequence)
+            VALUES('bank',?,?)""", (source_id, seq))
+
+    def player_ledger(self, source_id: str) -> dict:
+        """Bank book as the ledger knows it, with the newest event of this source already applied."""
+        source_id = _valid_id(source_id, "source_id")
+        with self.lock:
+            def balance(account_id):
+                row = self.db.execute("SELECT balance FROM world_accounts WHERE account_id=?",
+                                      (account_id,)).fetchone()
+                return row["balance"] if row else 0
+            owner = self.db.execute("SELECT source_id FROM world_ledger_owners WHERE scope='bank'").fetchone()
+            progress = self.db.execute("SELECT sequence FROM world_source_progress WHERE source_id=?",
+                                       (source_id,)).fetchone()
+            return {"owned": bool(owner and owner["source_id"] == source_id),
+                    "bank": balance("legacy:player_bank"), "debt": balance("legacy:player_debt"),
+                    "applied_sequence": progress["sequence"] if progress else 0}
+
     def prune_sync_history(self, now: Optional[float] = None) -> int:
         """Drop replay receipts and telemetry of periodic business snapshots older than the retention window."""
         cutoff = int((time.time() if now is None else now) - SYNC_RETENTION_SECONDS)
-        with self.lock, self.db:
+        with self._write():
             removed = self.db.execute(
                 "DELETE FROM world_request_dedup WHERE kind='sync' AND created_at<?", (cutoff,)).rowcount
             self.db.execute("""DELETE FROM world_event_journal
@@ -874,7 +964,7 @@ class SocietySimulation:
         if self.life_engine is not None and (actor_id not in self.life_engine.npcs or target_id not in self.life_engine.npcs):
             raise KeyError("relationship_actor_not_found")
         now = int(self.minute_provider())
-        with self.lock, self.db:
+        with self._write_with_life():
             self.db.execute("""INSERT INTO world_social_relationships
                 (actor_id,target_id,relation_type,strength,status,updated_minute) VALUES(?,?,?,?,?,?)
                 ON CONFLICT(actor_id,target_id) DO UPDATE SET relation_type=excluded.relation_type,
@@ -884,8 +974,7 @@ class SocietySimulation:
                 (event_id,event_type,actor_id,target_id,payload_json,sim_minute) VALUES(?,?,?,?,?,?)""",
                 (uuid.uuid4().hex,"social.relationship_changed",actor_id,target_id,
                  json.dumps({"relation_type":relation_type,"strength":strength,"status":status}),now))
-        if self.life_engine is not None:
-            with self.life_engine._lock:
+            if self.life_engine is not None:
                 left = self.life_engine.npcs[actor_id]
                 right = self.life_engine.npcs[target_id]
                 left.affinity[target_id] = float(strength)
@@ -903,7 +992,7 @@ class SocietySimulation:
         business_id = _valid_id(business_id, "business_id")
         if isinstance(hourly_wage, bool) or not isinstance(hourly_wage, int) or hourly_wage < 0:
             raise ValueError("invalid_hourly_wage")
-        with self.lock, self.db:
+        with self._write():
             if not self.db.execute("SELECT 1 FROM world_businesses WHERE business_id=?", (business_id,)).fetchone():
                 raise KeyError("business_not_found")
             if not self.db.execute("SELECT 1 FROM world_accounts WHERE account_id=?", (employee_account_id,)).fetchone():
@@ -960,7 +1049,7 @@ class SocietySimulation:
         return settled
 
     def settle_pending_payroll(self) -> list:
-        with self.lock, self.db:
+        with self._write():
             return self._settle_pending_payroll_locked()
 
     def process_life_event(self, event: dict) -> Optional[dict]:
@@ -970,7 +1059,7 @@ class SocietySimulation:
         event_id = event.get("event_id")
         if not isinstance(event_id, str) or not event_id:
             raise ValueError("life_event_id_required")
-        with self.lock, self.db:
+        with self._write():
             if self.db.execute("SELECT 1 FROM world_processed_life_events WHERE event_id=?", (event_id,)).fetchone():
                 return {"event_id": event_id, "duplicate": True}
             result = None
@@ -1029,7 +1118,7 @@ class SocietySimulation:
         if minutes == 0:
             return
         now = int(self.minute_provider())
-        with self.lock, self.db:
+        with self._write():
             self.db.execute("UPDATE world_traffic_segments SET congestion=MAX(0,congestion-?),updated_minute=?",
                             (minutes * 0.5, now))
             self.db.execute("UPDATE world_properties SET tenant_account_id=NULL,lease_until=0 "

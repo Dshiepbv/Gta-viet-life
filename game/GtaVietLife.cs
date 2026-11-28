@@ -148,6 +148,11 @@ public class GtaVietLife : Script
             }
             Ped p = FindNearestPed();
             if (p == null) { Notify("Khong co ai o gan de noi chuyen."); return; }
+            if (releasePed != null)
+            {
+                if (releasePed != p) Unhold(releasePed);   // nguoi truoc chua duoc tha
+                releasePed = null;
+            }
             target = p;
             recording = true;
             Hold(p);
@@ -201,7 +206,7 @@ public class GtaVietLife : Script
             catch (Exception ex)
             {
                 Log("/stop loi: " + ex);
-                mainThread.Enqueue(() => { waiting = false; Notify("~r~Khong goi duoc cau noi AI:~s~ " + Short(ex)); });
+                mainThread.Enqueue(() => { waiting = false; Unhold(p); Notify("~r~Khong goi duoc cau noi AI:~s~ " + Short(ex)); });
                 return;
             }
             mainThread.Enqueue(() => HandleReply(p, resp));
@@ -631,6 +636,7 @@ public class GtaVietLife : Script
     void ReleaseLater(Ped p, int ms)
     {
         if (p == null) return;
+        if (releasePed != null && releasePed != p) Unhold(releasePed);
         releasePed = p;
         releaseAt = Game.GameTime + ms;
     }

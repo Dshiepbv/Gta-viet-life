@@ -33,7 +33,8 @@ public class GtaVietLifeCore : Script
     bool hostConnecting, residentSyncing, playerSyncing;
     long nextHostHeartbeatTicks;
     int nextResidentSync, nextEngineCommandPoll, nextWorldCommandPoll, nextWalletBaselineSync, nextWorldPostRetry;
-    bool engineCommandPolling, worldCommandPolling;
+    bool engineCommandPolling, worldCommandPolling, ledgerPolling;
+    int nextLedgerPoll;
     readonly object EngineCommandLock = new object();
     readonly object WorldPostQueueLock = new object();
     readonly GvlPostQueue worldPostQueue = new GvlPostQueue();
@@ -165,6 +166,8 @@ public class GtaVietLifeCore : Script
         if (hostConnected && now > nextEngineCommandPoll) { nextEngineCommandPoll = now + 2000; PollEngineCommands(); }
         if (hostConnected && now > nextWorldCommandPoll) { nextWorldCommandPoll = now + 2000; PollEngineWorldCommands(); }
         if (hostConnected && now > nextWorldPostRetry) { nextWorldPostRetry = now + 5000; StartWorldPostWorker(); }
+        if (!hostConnected) Set("GVL.Ledger", null);
+        else if (now > nextLedgerPoll) { nextLedgerPoll = now + 5000; PollPlayerLedger(); }
 
         if (now > nextPublish)
         {
@@ -396,6 +399,9 @@ public class GtaVietLifeCore : Script
             Log("khong doc duoc " + SaveFile + "; giu nguyen file, hang doi moi KHONG duoc luu");
         // Mat file thi bo dem ngay va seq quay ve 0: dung dinh danh moi de engine khong coi la trung.
         // File do ban cu ghi khong co clock_id va tiep tuc dung nguon cu.
+        // Ban sao .bak co bo dem seq cu hon: dung nguon moi de event moi khong bi coi la trung.
+        if (store.LoadedBackup) clockId = "";
+        if (store.LoadedBackup) existed = false;
         if (clockId.Length == 0)
             clockId = existed && !store.Blocked ? LegacyClockId : Guid.NewGuid().ToString("N").Substring(0, 12);
         object current = Get("GVL.EventSeq");
@@ -625,6 +631,39 @@ public class GtaVietLifeCore : Script
         });
     }
 
+    bool EventsWaiting() { lock (OutboxLock) return engineEventForwarding || engineOutbox.Count > 0; }
+
+    void PollPlayerLedger()
+    {
+        if (EventsWaiting()) { Set("GVL.Ledger", null); return; }
+        lock (HostLock)
+        {
+            if (ledgerPolling || string.IsNullOrEmpty(hostToken)) return;
+            ledgerPolling = true;
+        }
+        string source = GvlSource.Id(clockId);
+        Task.Run(delegate
+        {
+            try
+            {
+                using (WebClient wc = new HostWebClient())
+                {
+                    wc.Proxy = null; wc.Encoding = Encoding.UTF8;
+                    wc.Headers["X-GVL-Token"] = hostToken;
+                    wc.Headers["X-GVL-Source"] = source;
+                    string response = wc.DownloadString(hostServer + "/engine/v1/world/ledger/player");
+                    Dictionary<string, object> root = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(response);
+                    if (!EventsWaiting())
+                        Set("GVL.Ledger", new long[] { Convert.ToBoolean(root["owned"]) ? 1L : 0L,
+                            Convert.ToInt64(root["bank"], CultureInfo.InvariantCulture),
+                            Convert.ToInt64(root["applied_sequence"], CultureInfo.InvariantCulture) });
+                }
+            }
+            catch (Exception ex) { Set("GVL.Ledger", null); Log("doc so cai ngan hang loi: " + ex.Message); }
+            finally { lock (HostLock) ledgerPolling = false; }
+        });
+    }
+
     void PollEngineCommands()
     {
         lock (HostLock)
@@ -787,6 +826,7 @@ public class GtaVietLifeCore : Script
                 {
                     wc.Proxy = null; wc.Encoding = Encoding.UTF8;
                     wc.Headers["X-GVL-Token"] = hostToken;
+                    wc.Headers["X-GVL-Adapter"] = "gta5.shvdn";
                     string response = wc.DownloadString(hostServer + "/engine/v1/world/commands");
                     JavaScriptSerializer json = new JavaScriptSerializer();
                     Dictionary<string, object> root = json.Deserialize<Dictionary<string, object>>(response);

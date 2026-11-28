@@ -5,7 +5,9 @@ the GTA adapter must map semantic locations and execute physical actions separat
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
+import functools
 import json
 import sqlite3
 import threading
@@ -132,10 +134,26 @@ class NPCState:
             self.location_id = self.profile.home_location_id
 
 
+@contextmanager
+def atomic(connection: sqlite3.Connection, lock):
+    """One write transaction; a nested use joins the outer one instead of committing it early."""
+    with lock:
+        if connection.in_transaction:
+            yield
+            return
+        connection.execute("BEGIN IMMEDIATE")
+        try:
+            yield
+            connection.commit()
+        except BaseException:
+            connection.rollback()
+            raise
+
+
 class SQLiteLifeStore:
     """Versioned, transactional persistence for canonical NPC state and events."""
 
-    SCHEMA_VERSION = 4
+    SCHEMA_VERSION = 5
 
     def __init__(self, path: str | Path = ":memory:") -> None:
         self._lock = threading.RLock()
@@ -186,7 +204,7 @@ class SQLiteLifeStore:
     def prune_volatile_requests(self) -> int:
         """Delete expired receipts of high-frequency idempotent requests; durable receipts are kept."""
         removed = 0
-        with self._lock, self.connection:
+        with atomic(self.connection, self._lock):
             for prefix in VOLATILE_REQUEST_PREFIXES:
                 removed += self.connection.execute(
                     """DELETE FROM request_dedup WHERE request_id>=? AND request_id<?
@@ -225,8 +243,9 @@ class SQLiteLifeStore:
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, completed_at TEXT)""")
                 self.connection.execute("CREATE INDEX IF NOT EXISTS idx_command_outbox_status ON command_outbox(status, created_minute)")
                 version = 3
-            # Version 4 adds the ledger guards and opening-balance records owned by the society module.
-            version = max(version, 4)
+            # Versions 4 and 5 add tables owned by the society module (ledger guards, openings,
+            # event progress and bank ownership); the version marks that a backup was taken first.
+            version = max(version, 5)
             self.connection.execute(
                 "INSERT OR REPLACE INTO schema_meta(key,value) VALUES('schema_version',?)", (str(version),)
             )
@@ -275,7 +294,7 @@ class SQLiteLifeStore:
     def save(self, sim_minute: int, states: Sequence[NPCState], events: Sequence[dict],
              request_result: Optional[tuple[str, dict]] = None,
              commands: Sequence[dict] = ()) -> None:
-        with self._lock, self.connection:
+        with atomic(self.connection, self._lock):
             for state in states:
                 p = asdict(state.profile)
                 s = {
@@ -350,7 +369,7 @@ class SQLiteLifeStore:
 
     def complete_command(self, command_id: str, result: dict) -> bool:
         status = "completed" if result.get("success") is True else result.get("status")
-        with self._lock, self.connection:
+        with atomic(self.connection, self._lock):
             cur = self.connection.execute(
                 """UPDATE command_outbox SET status=?,result_json=?,completed_at=CURRENT_TIMESTAMP
                 WHERE command_id=? AND status='pending'""",
@@ -370,7 +389,7 @@ class SQLiteLifeStore:
             raise ValueError("invalid_meta_key")
         if not isinstance(value, str) or len(value) > 256:
             raise ValueError("invalid_meta_value")
-        with self._lock, self.connection:
+        with atomic(self.connection, self._lock):
             self.connection.execute("INSERT OR REPLACE INTO schema_meta(key,value) VALUES(?,?)", (key, value))
 
     def get_wallclock_epoch(self) -> Optional[float]:
@@ -383,21 +402,49 @@ class SQLiteLifeStore:
             self.connection.close()
 
 
+def _transactional(method):
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        with self.transaction():
+            return method(self, *args, **kwargs)
+    return wrapper
+
+
 class LifeSimulationEngine:
     """Deterministic minute-step NPC life rules; game-neutral and restart-safe."""
 
     def __init__(self, store: Optional[SQLiteLifeStore] = None) -> None:
         self.store = store or SQLiteLifeStore()
         self._lock = threading.RLock()
-        self.simulation_minute, loaded = self.store.load()
-        self.npcs: Dict[str, NPCState] = {s.profile.npc_id: s for s in loaded}
+        self.npcs: Dict[str, NPCState] = {}
         self.events: List[dict] = []
         self.commands: List[dict] = []
+        self.reload()
+
+    def reload(self) -> None:
+        """Make memory match what is durably stored."""
+        with self._lock:
+            self.simulation_minute, loaded = self.store.load()
+            self.npcs.clear()
+            self.npcs.update({s.profile.npc_id: s for s in loaded})
+
+    @contextmanager
+    def transaction(self):
+        """Change state and storage together: a failure restores both."""
+        with self._lock:
+            try:
+                with atomic(self.store.connection, self.store._lock):
+                    yield
+            except BaseException:
+                if not self.store.connection.in_transaction:
+                    self.reload()
+                raise
 
     @staticmethod
     def _clamp(value: float) -> float:
         return round(max(0.0, min(100.0, value)), 3)
 
+    @_transactional
     def set_clock_baseline(self, minute: int) -> bool:
         """Align an empty simulation to the first live game-clock observation."""
         if isinstance(minute, bool) or not isinstance(minute, int) or minute < 0:
@@ -409,6 +456,7 @@ class LifeSimulationEngine:
             self.store.save(minute, [], [])
             return True
 
+    @_transactional
     def register_npc(self, profile: NPCProfile) -> NPCState:
         with self._lock:
             existing = self.npcs.get(profile.npc_id)
@@ -615,6 +663,7 @@ class LifeSimulationEngine:
                         "affinity_gain": affinity_gain,
                     })
 
+    @_transactional
     def advance(self, minutes: int, request_id: Optional[str] = None) -> dict:
         if isinstance(minutes, bool) or not isinstance(minutes, int) or not 0 <= minutes <= MAX_ADVANCE_MINUTES:
             raise ValueError("minutes_must_be_integer_between_0_and_10080")
@@ -639,6 +688,7 @@ class LifeSimulationEngine:
             self.store.save(self.simulation_minute, list(self.npcs.values()), self.events, request_result, self.commands)
             return result
 
+    @_transactional
     def record_dialogue_memory(self, npc_id: str, player_id: str,
                                player_message: str, npc_reply: str,
                                request_id: Optional[str] = None, affinity_delta: int = 0) -> dict:
@@ -722,6 +772,7 @@ class LifeSimulationEngine:
                 "knowledge_boundary": "Only known_facts and recent_memories are established knowledge. Do not claim unlisted events, unseen locations or private facts. Any proposed world action must be validated by the Engine.",
             }
 
+    @_transactional
     def interact(self, npc_id: str, player_id: str, interaction: str = "talk",
                  request_id: Optional[str] = None, message: str = "") -> dict:
         if interaction != "talk":
@@ -777,6 +828,7 @@ class LifeSimulationEngine:
             self.store.save(self.simulation_minute, states_to_save, self.events, request_result)
             return result
 
+    @_transactional
     def record_player_work(self, actor_id: str, duration_minutes: int,
                            request_id: Optional[str] = None) -> dict:
         if not isinstance(actor_id, str) or not actor_id or len(actor_id) > 128:
@@ -814,6 +866,7 @@ class LifeSimulationEngine:
                             (dedup_key, result) if dedup_key else None)
             return result
 
+    @_transactional
     def set_player_activity(self, actor_id: str, activity: str, location_id: str,
                             duration_minutes: int, request_id: Optional[str] = None) -> dict:
         if not isinstance(actor_id, str) or not actor_id or len(actor_id) > 128:
@@ -853,6 +906,7 @@ class LifeSimulationEngine:
                             (dedup_key, result) if dedup_key else None)
             return result
 
+    @_transactional
     def observe_player_state(self, actor_id: str, observed: dict, request_id: Optional[str] = None) -> dict:
         """Accept adapter-observed player body meters; the game remains authoritative for native player physiology."""
         if not isinstance(actor_id, str) or not actor_id or len(actor_id) > 128:
@@ -887,6 +941,7 @@ class LifeSimulationEngine:
                             (dedup_key, result) if dedup_key else None)
             return result
 
+    @_transactional
     def apply_physical_interaction(self, actor_id: str, object_kind: str) -> dict:
         """Apply canonical human-life consequences only after the adapter confirms a physical object use."""
         if not isinstance(actor_id, str) or not actor_id or len(actor_id) > 128:
@@ -935,6 +990,7 @@ class LifeSimulationEngine:
     def pending_commands(self, limit: int = 50) -> List[dict]:
         return self.store.pending_commands(limit)
 
+    @_transactional
     def complete_command(self, command_id: str, result: dict) -> bool:
         if not isinstance(command_id, str) or not command_id or len(command_id) > 128:
             raise ValueError("invalid_command_id")

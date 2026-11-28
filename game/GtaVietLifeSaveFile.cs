@@ -4,6 +4,50 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
+// <gvl-testable:daywatch>
+// Core la noi dem ngay. Khong co Core thi tu nhan biet luc dong ho vong qua nua dem.
+internal sealed class GvlDayWatch
+{
+    long lastCoreDay = -1;
+    int lastMinute = -1;
+
+    public static long CoreDay()
+    {
+        long[] clock = AppDomain.CurrentDomain.GetData("GVL.Clock") as long[];
+        return clock != null && clock.Length > 1 ? clock[1] : -1L;
+    }
+
+    // true dung mot lan moi khi sang ngay moi. coreDay < 0 nghia la khong co Core.
+    public bool NewDay(long coreDay, int minute)
+    {
+        bool wrapped = lastMinute >= 0 && minute < lastMinute && lastMinute - minute > 600;
+        lastMinute = minute;
+        if (coreDay < 0) { lastCoreDay = -1; return wrapped; }
+        bool advanced = lastCoreDay >= 0 && coreDay > lastCoreDay;
+        lastCoreDay = coreDay;
+        return advanced;
+    }
+}
+// </gvl-testable:daywatch>
+
+// <gvl-testable:banksync>
+// Tat Engine van choi: moi thay doi thanh event luu ben va gui bu. Khi so cai da nhan het thi so cai la chuan.
+internal static class GvlBankSync
+{
+    public const int None = 0, TakeOver = 1, Adopt = 2;
+
+    // ledger = { da nhan quyen (0/1), so du ngan hang, seq moi nhat so cai da ap dung }; null khi chua dong bo xong.
+    public static int Decide(long[] ledger, long lastBankSequence, long gameBank)
+    {
+        if (ledger == null || ledger.Length < 3) return None;
+        if (ledger[0] == 0) return TakeOver;
+        if (ledger[2] < lastBankSequence) return None;           // con thay doi cua game chua toi so cai
+        if (ledger[1] < 0 || ledger[1] > int.MaxValue) return None;
+        return ledger[1] == gameBank ? None : Adopt;
+    }
+}
+// </gvl-testable:banksync>
+
 // <gvl-testable:savefile>
 // Ghi qua file tam roi File.Replace, giu ban .bak. Tai loi ca hai thi khong bao gio ghi de.
 internal sealed class GvlSaveFile
@@ -22,6 +66,7 @@ internal sealed class GvlSaveFile
     }
 
     public bool Blocked { get; private set; }
+    public bool LoadedBackup { get; private set; }
     public string BackupPath { get { return path + ".bak"; } }
     public string BrokenPath { get { return path + ".broken"; } }
 
@@ -47,6 +92,7 @@ internal sealed class GvlSaveFile
             Report("khong doc duoc " + path + " lan ban sao; giu nguyen file, khong ghi de");
             return false;
         }
+        LoadedBackup = source != path;
         int bad = 0;
         foreach (string line in lines)
         {

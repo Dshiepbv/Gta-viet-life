@@ -10,5 +10,7 @@
     <Compile Include="Program.cs" />
     <Compile Include="../../GtaVietLife.Launcher/Services/PackageManifest.cs" />
     <Compile Include="../../GtaVietLife.Launcher/Services/ScriptInstaller.cs" />
+    <Compile Include="../../GtaVietLife.Launcher/Services/DiagnosticsBundle.cs" />
+    <Compile Include="../../GtaVietLife.Launcher/Services/GameLocator.cs" />
   </ItemGroup>
 </Project>

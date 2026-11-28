@@ -376,13 +376,52 @@ static class Harness
         Check(GvlSource.Id("abc") == "gta5.shvdn:abc", "new counters get their own source");
     }
 
+    static void Business()
+    {
+        List<int[]> c = new List<int[]>();
+        c.Add(new[] { 0, 0 }); c.Add(new[] { 1, 1 }); c.Add(new[] { 2, 2 });
+        Check(GvlShopContracts.RemoveShop(c, 1) == 1 && c.Count == 2, "contract of the closed shop is cancelled");
+        Check(c[0][1] == 0 && c[1][0] == 2 && c[1][1] == 1, "later depots shift with their shop");
+        Check(GvlCollateral.RepayOnSale(60000, 100000, 92000) == 0, "enough collateral left");
+        Check(GvlCollateral.RepayOnSale(60000, 50000, 46000) == 30000, "excess is repaid from the sale");
+        Check(GvlCollateral.RepayOnSale(60000, 0, 46000) == 46000, "never more than the proceeds");
+        Check(GvlCollateral.RepayOnSale(0, 0, 100) == 0, "no loan");
+        Check(GvlCollateral.RepayOnSale(int.MaxValue, int.MaxValue, 5) == 5, "no overflow");
+    }
+
+    static void Days()
+    {
+        GvlDayWatch core = new GvlDayWatch();
+        Check(!core.NewDay(5, 600), "first sight of the core day is a baseline");
+        Check(!core.NewDay(5, 10), "the core decides, not the clock");
+        Check(core.NewDay(6, 20) && !core.NewDay(6, 30), "one tick per core day");
+        Check(!core.NewDay(2, 40) && core.NewDay(3, 50), "a lower counter only moves the baseline");
+        GvlDayWatch alone = new GvlDayWatch();
+        Check(!alone.NewDay(-1, 1430) && alone.NewDay(-1, 5), "without core the midnight wrap counts");
+        Check(!alone.NewDay(-1, 600) && !alone.NewDay(-1, 500), "a small rewind is not a day");
+        Check(GvlDayWatch.CoreDay() == -1, "no clock published");
+        AppDomain.CurrentDomain.SetData("GVL.Clock", new long[] { 0, 9, 0, 0, 0, 0 });
+        Check(GvlDayWatch.CoreDay() == 9, "reads the published day");
+    }
+
+    static void Bank()
+    {
+        Check(GvlBankSync.Decide(null, 0, 100) == GvlBankSync.None, "offline: keep playing with the game figure");
+        Check(GvlBankSync.Decide(new long[] { 0, 0, 0 }, 0, 100) == GvlBankSync.TakeOver, "ledger not initialised");
+        Check(GvlBankSync.Decide(new long[] { 1, 700, 4 }, 5, 100) == GvlBankSync.None, "own change not applied yet");
+        Check(GvlBankSync.Decide(new long[] { 1, 700, 5 }, 5, 100) == GvlBankSync.Adopt, "ledger wins once caught up");
+        Check(GvlBankSync.Decide(new long[] { 1, 100, 9 }, 5, 100) == GvlBankSync.None, "already equal");
+        Check(GvlBankSync.Decide(new long[] { 1, -5, 9 }, 0, 100) == GvlBankSync.None
+              && GvlBankSync.Decide(new long[] { 1, 3000000000L, 9 }, 0, 100) == GvlBankSync.None, "impossible balance ignored");
+    }
+
     static int Main(string[] args)
     {
         if (args.Length > 0 && args[0] == "control") Check(false, "control case");
         else { Paths(); PermanentErrorDoesNotBlock(); BoundedRetry(404, GvlSendRules.MaxNotFoundAttempts);
                BoundedRetry(500, GvlSendRules.MaxServerErrorAttempts); TransientErrorKeepsEverything();
                CoalescingAndPersistence(); Capacity(); Batches(); Fade();
-               Streaming(); Templates(); Portal(); Crowd(); Wallet(); SaveFiles(); }
+               Streaming(); Templates(); Portal(); Crowd(); Wallet(); SaveFiles(); Business(); Days(); Bank(); }
         Console.WriteLine("failures=" + failures);
         return failures == 0 ? 0 : 1;
     }
@@ -406,6 +445,9 @@ class CSharpLogicTests(unittest.TestCase):
                  "Uis.cs": testable_block("GtaVietLifeInteriors.cs", "uis"),
                  "Wallet.cs": testable_block("GtaVietLifePersonal.cs", "wallet"),
                  "SaveFile.cs": testable_block("GtaVietLifeSaveFile.cs", "savefile"),
+                 "Business.cs": testable_block("GtaVietLifeWorld.cs", "business"),
+                 "DayWatch.cs": testable_block("GtaVietLifeSaveFile.cs", "daywatch"),
+                 "BankSync.cs": testable_block("GtaVietLifeSaveFile.cs", "banksync"),
                  "Harness.cs": HARNESS}
         for name, text in files.items():
             (folder / name).write_text(text, encoding="utf-8-sig")
@@ -442,6 +484,13 @@ class SaveSafetyTests(unittest.TestCase):
             script = re.search(r'Include="\.\./(GtaVietLife\w*\.cs)"', text).group(1)
             if "GvlSaveFile" in (GAME / script).read_text(encoding="utf-8-sig"):
                 self.assertIn("../GtaVietLifeSaveFile.cs", text, project.name)
+
+    def test_every_bank_change_is_written_to_the_ledger(self):
+        source = (GAME / "GtaVietLifeEconomy.cs").read_text(encoding="utf-8-sig")
+        changes = [line for line in source.splitlines() if re.search(r"\bbank\s*(\+=|-=)", line)]
+        self.assertGreater(len(changes), 5)
+        self.assertEqual([line for line in changes
+                          if 'Post("bank"' not in line and "void Deposit(" not in line], [])
 
     def test_core_reads_the_wallet_on_the_script_thread(self):
         source = (GAME / "GtaVietLifeCore.cs").read_text(encoding="utf-8-sig")

@@ -147,6 +147,7 @@ public class GtaVietLifeWorld : Script
     readonly Random rnd = new Random();
     int lastMinuteOfDay = -1;
     int dayCounter;
+    readonly GvlDayWatch dayWatch = new GvlDayWatch();
     readonly List<int[]> dayHist = new List<int[]>();   // lich su: ngay, doanh thu, gia von, luong, thue, mat bang, loi nhuan
     int dRev, dCogs, dWages, dTax, dRentSum;
     int lastDayTick;
@@ -185,6 +186,7 @@ public class GtaVietLifeWorld : Script
         cupTable = ReadF("Business", "CupTableOffset", cupTable);
 
         Load();
+        ClearResFile();
         InitShops();
         MakeHomeBlips();
 
@@ -299,11 +301,13 @@ public class GtaVietLifeWorld : Script
         if (hasBiz && me.Position.DistanceTo(bizPos) < 60f)
             World.DrawMarker(MarkerType.VerticalCylinder, bizPos + new Vector3(0f, 0f, 0.1f), Vector3.Zero, Vector3.Zero, new Vector3(1.2f, 1.2f, 0.8f), Color.FromArgb(120, 60, 220, 90));
         DrawHud();
+        if (menuOpen && !OwnsMenu()) CloseMenu();
         if (menuOpen) DrawMenu();
     }
 
     void OnAborted(object sender, EventArgs e)
     {
+        ClearResFile();
         Save();
         foreach (Ped p in staffPeds) if (p != null && p.Exists()) p.Delete();
         foreach (Cust c in customers) { DeleteProp(c.Cup); if (c.P != null && c.P.Exists()) c.P.Delete(); }
@@ -323,17 +327,17 @@ public class GtaVietLifeWorld : Script
     {
         TimeSpan t = World.CurrentTimeOfDay;
         int m = t.Hours * 60 + t.Minutes;
+        if (dayWatch.NewDay(GvlDayWatch.CoreDay(), m)) dayCounter++;
+        if (dayCounter > lastDayTick) { lastDayTick = dayCounter; DailyTick(); }
         if (lastMinuteOfDay < 0) { lastMinuteOfDay = m; return; }
         int delta = (m - lastMinuteOfDay + 1440) % 1440;
         lastMinuteOfDay = m;
         if (delta == 0 || delta > 180) return; // đứng yên hoặc nhảy giờ (ngủ, console)
-        if (m < delta) dayCounter++; // vừa qua nửa đêm
         minuteAccum += delta;
         hunger = Clamp(hunger - 0.06f * delta * drainMul);   // drainMul: ky nang The luc tu file Ca nhan
         thirst = Clamp(thirst - 0.09f * delta * drainMul);
         energy = Clamp(energy - 0.05f * delta * drainMul);
         hygiene = Clamp(hygiene - 0.035f * delta);   // ~50%/ngay game
-        if (dayCounter > lastDayTick) { lastDayTick = dayCounter; DailyTick(); }
     }
 
     // ---- cau noi voi file Ca nhan (GtaVietLifePersonal.cs): cung AppDomain cua SHVDN nen dung AppDomain data
@@ -388,10 +392,9 @@ public class GtaVietLifeWorld : Script
     {
         TimeSpan t = World.CurrentTimeOfDay;
         int m = t.Hours * 60 + t.Minutes + minutes;
-        if (m >= 1440) { dayCounter++; m -= 1440; }
+        if (m >= 1440) m -= 1440;   // ngay moi duoc nhan o UpdateClock
         World.CurrentTimeOfDay = new TimeSpan(m / 60, m % 60, 0);
         lastMinuteOfDay = m;
-        if (dayCounter > lastDayTick) { lastDayTick = dayCounter; DailyTick(); }
     }
 
     void UpdateNeeds(Ped me, int now)
@@ -974,10 +977,19 @@ public class GtaVietLifeWorld : Script
             Item("Dong y ban", delegate
             {
                 int got = (int)(o.Value * SellRate);
-                EarnCash(got, "property", "ban bat dong san");
+                int assets = 0; foreach (Owned other in owned) if (other != o) assets += other.Value;
+                object mortgageValue = AppDomain.CurrentDomain.GetData("GVL.Mortgage");
+                int repay = GvlCollateral.RepayOnSale(mortgageValue is int ? (int)mortgageValue : 0, assets, got);
+                if (repay > 0)
+                {
+                    AddToBus("GVL.MortgageRepay", repay);
+                    Notify("~y~Ngan hang thu $" + repay + "~s~ tu tien ban de tra bot khoan vay the chap.");
+                    got -= repay;
+                }
+                if (got > 0) EarnCash(got, "property", "ban bat dong san");
                 if (o.Blip != null && o.Blip.Exists()) o.Blip.Delete();
                 owned.Remove(o);
-                Notify("~g~Da ban " + es.Name + "~s~ +$" + got + " (lai/lo so voi gia mua: $" + (got - o.Paid + o.TotalNet) + " tinh ca tien thue da thu).");
+                Notify("~g~Da ban " + es.Name + "~s~ +$" + got + " (lai/lo so voi gia mua: $" + (got + repay - o.Paid + o.TotalNet) + " tinh ca tien thue da thu).");
                 Save();
                 ShowEstates();
             });
@@ -1011,9 +1023,16 @@ public class GtaVietLifeWorld : Script
                 owned.RemoveAt(bi);
                 sold += (sold.Length > 0 ? ", " : "") + Estates[o.E].Name;
             }
+            if (need > 0) AddToBus("GVL.SeizeShortfall", need);   // ban het van thieu: tra lai cho ngan hang ghi no
             if (sold.Length > 0) { Notify("~r~Ngan hang phat mai tai san the chap:~s~ " + sold + "."); Log("phat mai: " + sold); Save(); }
         }
         catch (Exception ex) { Log("econ bus loi: " + ex.Message); }
+    }
+
+    static void AddToBus(string key, int amount)
+    {
+        object current = AppDomain.CurrentDomain.GetData(key);
+        AppDomain.CurrentDomain.SetData(key, amount + (current is int ? (int)current : 0));
     }
 
     // dich vu xe cua chinh Sep: lai xe toi tiem rua xe / sua xe cua minh thi duoc lam mien phi
@@ -1249,6 +1268,8 @@ public class GtaVietLifeWorld : Script
         }
         else if (i < activeShop) activeShop--;
         shops.RemoveAt(i);
+        int cancelled = GvlShopContracts.RemoveShop(contracts, i);
+        if (cancelled > 0) Notify("~y~Da huy " + cancelled + " hop dong B2B~s~ lay hang tu quan vua dong.");
     }
 
     // ke thua du lieu 1 quan cu (khoa hasBiz/biz trong file luu) sang danh sach, chon quan gan nguoi choi nhat lam quan dang chay
@@ -2890,6 +2911,7 @@ public class GtaVietLifeWorld : Script
     // ------------------------------------------------------------ di chuyen: taxi + tai xe rieng
     class Ride
     {
+        public int Fee;         // phi da thu, hoan lai neu xe khong toi duoc
         public int Kind;        // 0 taxi, 1 tai xe mang xe cua Sep toi, 2 tai xe cho Sep di bang xe cua Sep
         public int State;       // 0 cho nap model, 1 dang toi, 2 cho Sep len xe, 3 dang cho di, 4 da xong (cho Sep xuong)
         public Vehicle Veh; public Ped Driver;
@@ -2946,7 +2968,7 @@ public class GtaVietLifeWorld : Script
         int fee = DriverFee + (have ? 0 : RecoverFee);
         if (!Spend(fee)) return;
         ride = new Ride();
-        ride.Kind = giveRide ? 2 : 1; ride.State = 0; ride.T = Game.GameTime; ride.OwnVeh = true;
+        ride.Kind = giveRide ? 2 : 1; ride.State = 0; ride.T = Game.GameTime; ride.OwnVeh = true; ride.Fee = fee;
         ride.PedModel = new Model("s_m_y_valet_01");
         if (have) ride.Veh = ownVeh;
         else
@@ -3007,24 +3029,32 @@ public class GtaVietLifeWorld : Script
         Function.Call(Hash.TASK_VEHICLE_DRIVE_TO_COORD_LONGRANGE, ride.Driver, ride.Veh, d.X, d.Y, d.Z, speed, 786603, 12f);
     }
 
+    void RefundRide(Ride r)
+    {
+        if (r.Fee <= 0) return;
+        EarnCash(r.Fee, "transport", "hoan phi goi xe that bai");
+        Notify("Da hoan $" + r.Fee + " phi goi xe.");
+        r.Fee = 0;
+    }
+
     void UpdateRide(Ped me, int now)
     {
         if (ride == null) return;
         Ride r = ride;
         if (r.State == 0)
         {
-            if (now - r.T > 20000) { Notify("Khong goi duoc xe, thu lai sau."); if (r.OwnVeh) EarnCash(DriverFee, "transport", "hoan phi goi xe that bai"); ride = null; return; }
+            if (now - r.T > 20000) { Notify("Khong goi duoc xe, thu lai sau."); RefundRide(r); ride = null; return; }
             if (!Loaded(r.PedModel)) return;
             if (r.Veh == null)
             {
                 if (!Loaded(r.VehModel)) return;
                 r.Veh = World.CreateVehicle(r.VehModel, r.SpawnPos, r.SpawnHead);
-                if (r.Veh == null || !r.Veh.Exists()) { Notify("Khong tao duoc xe."); ride = null; return; }
+                if (r.Veh == null || !r.Veh.Exists()) { Notify("Khong tao duoc xe."); RefundRide(r); ride = null; return; }
                 r.Veh.IsPersistent = true;
                 if (r.OwnVeh) { ownVeh = r.Veh; }
             }
             r.Driver = World.CreatePed(r.PedModel, r.Veh.Position + new Vector3(0f, 0f, 2f), r.Veh.Heading);
-            if (r.Driver == null || !r.Driver.Exists()) { Notify("Khong tao duoc tai xe."); EndRide(false); return; }
+            if (r.Driver == null || !r.Driver.Exists()) { Notify("Khong tao duoc tai xe."); RefundRide(r); EndRide(false); return; }
             r.Driver.IsPersistent = true;
             Function.Call(Hash.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS, r.Driver, true);
             Function.Call(Hash.SET_PED_CAN_BE_DRAGGED_OUT, r.Driver, false);          // khong cho Sep keo tai xe ra
@@ -3036,13 +3066,14 @@ public class GtaVietLifeWorld : Script
             return;
         }
         if (r.Veh == null || !r.Veh.Exists() || !r.Veh.IsAlive || r.Driver == null || !r.Driver.Exists() || !r.Driver.IsAlive)
-        { Notify("Chuyen xe bi huy (xe hoac tai xe gap su co)."); EndRide(false); return; }
+        { Notify("Chuyen xe bi huy (xe hoac tai xe gap su co)."); if (r.State == 1) RefundRide(r); EndRide(false); return; }
         if (r.State == 1)
         {
             float d = r.Veh.Position.DistanceTo(me.Position);
             if ((now - r.T) % 8000 < 30) DriveTo(me.Position, 22f);   // cap nhat cho Sep dang dung
             if (d < 18f && r.Veh.Speed < 2f)
             {
+                r.Fee = 0;   // xe da toi noi: het quyen hoan phi
                 if (r.Kind == 1)
                 {
                     Notify("~g~Xe cua Sep da toi.~s~ Tai xe giao chia khoa roi di.");
@@ -3052,7 +3083,7 @@ public class GtaVietLifeWorld : Script
                 r.State = 2; r.T = now;
                 Notify((r.Kind == 0 ? "~y~Taxi~s~" : "~y~Tai xe~s~") + " da toi. Len xe (F, hoac menu Di chuyen > Len xe ngay) va dat diem den tren ban do.");
             }
-            else if (now - r.T > 240000) { Notify("Xe ket duong qua lau, da huy."); EndRide(false); }
+            else if (now - r.T > 240000) { Notify("Xe ket duong qua lau, da huy."); RefundRide(r); EndRide(false); }
             return;
         }
         if (r.State == 1 || r.State == 2)
@@ -3621,7 +3652,7 @@ public class GtaVietLifeWorld : Script
         if (resident == null) return false;
         bool knownActivity = activity == "sleep" || activity == "eat" || activity == "drink" || activity == "work" ||
             activity == "commute" || activity == "socialize" || activity == "leisure" ||
-            activity == "free_time" || activity == "idle";
+            activity == "free_time" || activity == "idle" || activity == "toilet" || activity == "shower";
         bool knownLocation = locationId == "res_" + resident.Id + ".home" ||
             locationId == "res_" + resident.Id + ".leisure" ||
             locationId == "res_" + resident.Id + ".work" ||
@@ -3694,6 +3725,12 @@ public class GtaVietLifeWorld : Script
         return true; // task was issued only after physical arrival was observed within the location radius
     }
 
+    static bool EngineOnline()
+    {
+        object value = AppDomain.CurrentDomain.GetData("GVL.Engine.Connected");
+        return value is bool && (bool)value;
+    }
+
     void UpdateResidents(int now)
     {
         if (now < nextResidentCheck || residents.Count == 0) return;
@@ -3704,6 +3741,11 @@ public class GtaVietLifeWorld : Script
         for (int i = residents.Count - 1; i >= 0; i--)
         {
             Resident r = residents[i];
+            if (r.EngineControlled && !EngineOnline())
+            {
+                r.EngineControlled = false; r.EngineScenarioPending = false; r.EngineActivity = ""; r.EngineLocation = "";
+                r.Phase = -1; r.LastCmd = 0;
+            }
             Vector3 spot = ResSpot(r, ph);
             float rad = ResRadius(ph);
             if (r.P != null && r.P.Exists())
@@ -3770,6 +3812,13 @@ public class GtaVietLifeWorld : Script
             }
         }
         if (changed || ph != lastResPh) { lastResPh = ph; WriteResFile(); }
+    }
+
+    // Handle ped chi co nghia trong phien hien tai.
+    void ClearResFile()
+    {
+        try { File.WriteAllText(ResFile, "", new UTF8Encoding(false)); lastResFile = ""; }
+        catch (Exception ex) { Log("xoa file cu dan loi: " + ex.Message); }
     }
 
     // handle|khoa|ten co dau|dang lam gi  (de phan noi chuyen gan dung tri nho cho cu dan)
@@ -4075,8 +4124,13 @@ public class GtaVietLifeWorld : Script
     }
 
     // ------------------------------------------------------------ menu
+    // Mot phim so chi duoc chay mot menu: menu mo sau cung giu quyen.
+    bool OwnsMenu() { return (AppDomain.CurrentDomain.GetData("GVL.MenuOwner") as string) == "world"; }
+    void TakeMenu() { AppDomain.CurrentDomain.SetData("GVL.MenuOwner", "world"); }
+
     void OpenMenu()
     {
+        TakeMenu();
         menuOpen = true;
         ShowMain();
     }
@@ -4386,6 +4440,7 @@ public class GtaVietLifeWorld : Script
             else CloseMenu();
             return;
         }
+        if (menuOpen && !OwnsMenu()) CloseMenu();
         if (!menuOpen) return;
         if (e.KeyCode == Keys.Back)
         {
@@ -4885,3 +4940,31 @@ public class GtaVietLifeWorld : Script
         return m.Length > 90 ? m.Substring(0, 90) : m;
     }
 }
+
+// <gvl-testable:business>
+public static class GvlShopContracts
+{
+    // Moi hop dong: { chi so khach, chi so quan lam kho }. Tra ve so hop dong bi huy.
+    public static int RemoveShop(List<int[]> contracts, int removed)
+    {
+        int cancelled = 0;
+        for (int i = contracts.Count - 1; i >= 0; i--)
+        {
+            if (contracts[i][1] == removed) { contracts.RemoveAt(i); cancelled++; }
+            else if (contracts[i][1] > removed) contracts[i][1]--;
+        }
+        return cancelled;
+    }
+}
+
+public static class GvlCollateral
+{
+    // Han muc vay the chap la 60% gia tri tai san; ban tai san thi phan vuot han muc duoc tru vao tien ban.
+    public static int RepayOnSale(int mortgage, int remainingAssets, int proceeds)
+    {
+        long excess = (long)mortgage - (long)remainingAssets * 6L / 10L;
+        if (excess <= 0 || proceeds <= 0) return 0;
+        return (int)Math.Min(excess, proceeds);
+    }
+}
+// </gvl-testable:business>

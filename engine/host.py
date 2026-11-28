@@ -58,14 +58,17 @@ class State:
         self.society = SocietySimulation(self.simulation.store.connection, self.simulation.store._lock,
             lambda: self.simulation.simulation_minute, self.simulation)
         self.society.process_pending_life_events()
-    def auth(self, token): return bool(token) and secrets.compare_digest(self.token, token)
+    def auth(self, token):
+        # compare_digest rejects non-ASCII str with TypeError; bytes compare any header value.
+        return bool(token) and secrets.compare_digest(self.token.encode("utf-8"), token.encode("utf-8"))
     def advance(self, minutes, request_id=None):
-        cached = self.simulation.store.get_request_result("advance:" + request_id) if request_id else None
-        result = self.simulation.advance(minutes, request_id)
-        self.society.process_pending_life_events()
-        if cached is None:
-            self.society.advance(minutes)
-        return result
+        with self.lock, self.simulation.transaction():
+            cached = self.simulation.store.get_request_result("advance:" + request_id) if request_id else None
+            result = self.simulation.advance(minutes, request_id)
+            self.society.process_pending_life_events()
+            if cached is None:
+                self.society.advance(minutes)
+            return result
     def handshake(self, p):
         rid=p.get("request_id")
         if not isinstance(rid,str) or not rid: raise ValueError("request_id_required")
@@ -197,11 +200,16 @@ def handler_for(state, log):
             if self.path=="/engine/v1/world/snapshot":
                 if not state.auth(self.headers.get("X-GVL-Token")): return self.sendj(401,{"error":"unauthorized"})
                 return self.sendj(200,state.society.snapshot())
+            if self.path=="/engine/v1/world/ledger/player":
+                if not state.auth(self.headers.get("X-GVL-Token")): return self.sendj(401,{"error":"unauthorized"})
+                try: return self.sendj(200,state.society.player_ledger(self.headers.get("X-GVL-Source","gta5.shvdn")))
+                except (ValueError,TypeError) as exc: return self.sendj(400,{"error":str(exc)})
             if self.path=="/engine/v1/world/commands":
                 if not state.auth(self.headers.get("X-GVL-Token")): return self.sendj(401,{"error":"unauthorized"})
                 try:
                     limit=int(self.headers.get("X-GVL-Limit","50"))
-                    return self.sendj(200,{"commands":state.society.pending_commands(limit)})
+                    return self.sendj(200,{"commands":state.society.pending_commands(
+                        limit,self.headers.get("X-GVL-Adapter"))})
                 except (ValueError,TypeError) as exc:
                     return self.sendj(400,{"error":str(exc)})
             return self.sendj(404,{"error":"not_found"})
@@ -211,6 +219,7 @@ def handler_for(state, log):
                 p=self.body()
                 rid=p.get("request_id")
                 if not isinstance(rid,str) or not rid: raise ValueError("request_id_required")
+                if p.get("protocol",PROTOCOL)!=PROTOCOL: raise ValueError("protocol_mismatch")
                 if self.path=="/engine/v1/handshake": return self.sendj(200,state.handshake(p))
                 if self.path=="/engine/v1/simulation/advance":
                     result=state.advance(p.get("minutes"), rid)

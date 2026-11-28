@@ -5,6 +5,7 @@ Chạy trên PC (kể cả khi GTA đang tắt): python bridge\\dashboard.py
 Game ghi GtaVietLifeDash.json mỗi 2 phút; khi game tắt, trang tự ước tính tiếp
 theo cùng công thức bù-khi-mở-lại (40% doanh số), còn số thật chốt khi mở game.
 """
+import hmac
 import json
 import os
 import socket
@@ -32,6 +33,10 @@ def game_dir():
 DASH = os.path.join(game_dir(), "GtaVietLifeDash.json")
 CMD = os.path.join(game_dir(), "GtaVietLifeCmd.txt")
 OPS = {"restock", "hire", "fire", "upgrade", "collect"}
+LOOPBACK = ("127.0.0.1", "::1")
+MAX_PIN_FAILURES, PIN_LOCK_SECONDS = 5, 60
+_failures = {}
+_failures_lock = threading.Lock()
 
 
 def pin():
@@ -43,6 +48,29 @@ def pin():
         except Exception:
             pass
     return p
+
+
+def bind_host():
+    """Without a PIN the dashboard stays on this computer; the phone needs dash_pin in config.json."""
+    return "0.0.0.0" if pin() else "127.0.0.1"
+
+
+def refusal(client, given):
+    """None when the request may read or order; otherwise the message to show."""
+    expected = pin()
+    if not expected:
+        return None if client in LOOPBACK else "Dat dash_pin trong bridge/config.json de dung tu may khac"
+    now = time.time()
+    with _failures_lock:
+        recent = [t for t in _failures.get(client, []) if now - t < PIN_LOCK_SECONDS]
+        _failures[client] = recent
+        if len(recent) >= MAX_PIN_FAILURES:
+            return "Sai ma PIN qua nhieu lan, thu lai sau 1 phut"
+        if hmac.compare_digest(str(given).encode("utf-8"), expected.encode("utf-8")):
+            return None
+        if given:
+            recent.append(now)
+    return "Sai ma PIN"
 
 
 def cfg(k):
@@ -111,25 +139,36 @@ class H(BaseHTTPRequestHandler):
             with open(os.path.join(HERE, "dashboard.html"), "rb") as f:
                 self._send(f.read(), "text/html; charset=utf-8")
         elif path == "/data":
-            try:
-                with open(DASH, "rb") as f:
-                    data = json.loads(f.read().decode("utf-8"))
-                data["pending"] = [l.split("|") for l in pending()]
-                data["needPin"] = bool(pin())
-                self._send(json.dumps(data), "application/json; charset=utf-8")
-            except Exception:
-                self._send('{"error":"chua co du lieu - vao game mot lan"}', "application/json; charset=utf-8", 200)
+            self._data("")
         else:
             self._send("not found", "text/plain", 404)
 
+    def _data(self, given):
+        problem = refusal(self.client_address[0], given)
+        if problem:
+            return self._send(json.dumps({"error": problem, "needPin": True}), "application/json; charset=utf-8")
+        try:
+            with open(DASH, "rb") as f:
+                data = json.loads(f.read().decode("utf-8"))
+            data["pending"] = [l.split("|") for l in pending()]
+            data["needPin"] = bool(pin())
+            self._send(json.dumps(data), "application/json; charset=utf-8")
+        except Exception:
+            self._send('{"error":"chua co du lieu - vao game mot lan"}', "application/json; charset=utf-8", 200)
+
     def do_POST(self):
-        if self.path != "/cmd":
+        if self.path not in ("/cmd", "/data"):
             return self._send("not found", "text/plain", 404)
         try:
             n = int(self.headers.get("Content-Length", 0) or 0)
+            if not 0 <= n <= 4096:
+                return self._send('{"ok":false,"msg":"Yeu cau qua lon"}', "application/json", 413)
             c = json.loads(self.rfile.read(n).decode("utf-8"))
-            if pin() and str(c.get("pin", "")) != pin():
-                return self._send('{"ok":false,"msg":"Sai ma PIN"}', "application/json", 200)
+            if self.path == "/data":
+                return self._data(c.get("pin", ""))
+            problem = refusal(self.client_address[0], c.get("pin", ""))
+            if problem:
+                return self._send(json.dumps({"ok": False, "msg": problem}), "application/json", 200)
             op, idx, arg = str(c.get("op")), int(c.get("idx")), int(c.get("arg", 0))
             if op not in OPS or idx < 0 or idx > 20:
                 return self._send('{"ok":false,"msg":"Lenh khong hop le"}', "application/json", 200)
@@ -161,15 +200,19 @@ def lan_ip():
 
 if __name__ == "__main__":
     print(f"Doc du lieu tu: {DASH}")
-    print(f"Mo tren dien thoai (cung Wi-Fi o nha): http://{lan_ip()}:{PORT}")
-    try:
-        ts = [a[4][0] for a in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET) if a[4][0].startswith("100.")]
-        for ip in ts:
-            print(f"Mo tu BAT KY DAU (qua Tailscale): http://{ip}:{PORT}")
-    except Exception:
-        pass
+    if pin():
+        print(f"Mo tren dien thoai (cung Wi-Fi o nha): http://{lan_ip()}:{PORT}")
+        try:
+            ts = [a[4][0] for a in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET) if a[4][0].startswith("100.")]
+            for ip in ts:
+                print(f"Mo tu BAT KY DAU (qua Tailscale): http://{ip}:{PORT}")
+        except Exception:
+            pass
+    else:
+        print(f"Chua dat dash_pin: chi mo duoc tren may nay (http://127.0.0.1:{PORT}).")
+        print('Muon xem tren dien thoai: them "dash_pin": "<ma>" vao bridge/config.json roi chay lai.')
     threading.Thread(target=cloud_sync, daemon=True).start()
     try:
-        ThreadingHTTPServer(("0.0.0.0", PORT), H).serve_forever()
+        ThreadingHTTPServer((bind_host(), PORT), H).serve_forever()
     except KeyboardInterrupt:
         sys.exit(0)

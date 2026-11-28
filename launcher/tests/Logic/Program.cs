@@ -44,6 +44,28 @@ try
     Check(LegacyEnvironment.FindProblem(exe, "1.0.3411.0") == null, "nightly accepted");
     Check(LegacyEnvironment.GameBuild("1, 0, 3411, 0") == 3411 && LegacyEnvironment.GameBuild("unknown") == 0, "build parsing");
 
+    // ---- game detection
+    Check(GameLocator.FirstGame(new[] { null, "", Path.Combine(root, "nowhere"), "\"" + Path.Combine(root, "game") + "\"" }) is { } hit && Path.GetFullPath(hit) == Path.GetFullPath(exe), "quoted folder found");
+    Check(GameLocator.FirstGame(new[] { Path.Combine(root, "e") }) == null, "enhanced-only folder ignored");
+    var steam = GameLocator.SteamGameFolders("\"0\" { \"path\"  \"D:\\\\Games\\\\Steam\" }").Single();
+    Check(steam == Path.Combine("D:\\Games\\Steam", "steamapps", "common", "Grand Theft Auto V"), "steam library parsed: " + steam);
+
+    // ---- diagnostics
+    Write("diag/launcher/launcher.log", "token=abc123 ok");
+    Write("diag/game/GtaVietLifeCore.deadletter.log", "{\"gemini_api_key\":\"SECRET\"} url?a=pull&key=K1");
+    Write("diag/game/scripts/GtaVietLifeCore.log", "scripts log");
+    Write("diag/game/GtaVietLifeWorld.sav", "player save");
+    var logs = DiagnosticsBundle.LogFiles(Path.Combine(root, "diag/launcher"), Path.Combine(root, "none"), Path.Combine(root, "none"), Path.Combine(root, "diag/game"));
+    Check(logs.Count == 3 && logs.All(f => f.EndsWith(".log")), "logs only, saves excluded");
+    var bundle = Path.Combine(root, "diag/out.zip");
+    Check(DiagnosticsBundle.Write(logs, bundle) == 3 && !File.Exists(bundle + ".tmp"), "bundle written");
+    using (var zip = System.IO.Compression.ZipFile.OpenRead(bundle))
+    {
+        var all = string.Join("\n", zip.Entries.Select(entry => { using var reader = new StreamReader(entry.Open()); return reader.ReadToEnd(); }));
+        Check(zip.Entries.Count == 3 && all.Contains("scripts log"), "all entries readable");
+        Check(!all.Contains("abc123") && !all.Contains("SECRET") && !all.Contains("K1"), "secrets removed");
+    }
+
     // ---- installer
     Write("src/GtaVietLifeCore.dll", "core-v2"); Write("src/GtaVietLifeWorld.dll", "world-v2");
     Write("src/GtaVietLifeCore.ini", "default"); Write("src/GtaVietLifeNew.ini", "new-default");

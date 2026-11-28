@@ -107,7 +107,7 @@ public class GtaVietLifePersonal : Script
     int inToday, outToday;
     readonly List<int[]> moneyHist = new List<int[]>();   // [ngay, thu, chi]
     int dayNo;
-    int lastHour = -1;
+    readonly GvlDayWatch dayWatch = new GvlDayWatch();
 
     // ------------------------------------------------------------ nội bộ
     readonly Queue<Action> pending = new Queue<Action>();
@@ -205,6 +205,7 @@ public class GtaVietLifePersonal : Script
         if (now > nextSave) { nextSave = now + 60000; Save(); }
         UpdateCalledCar(me);
 
+        if (menuOpen && !OwnsMenu()) CloseMenu();
         if (menuOpen) DrawMenu();
     }
 
@@ -341,8 +342,8 @@ public class GtaVietLifePersonal : Script
             Save(); // persist immediately when cash changes
         }
         if (d > 0) inToday += d; else if (d < 0) outToday -= d;
-        int hour = World.CurrentTimeOfDay.Hours;
-        if (lastHour >= 0 && hour < lastHour && lastHour - hour > 12)
+        TimeSpan clockNow = World.CurrentTimeOfDay;
+        if (dayWatch.NewDay(GvlDayWatch.CoreDay(), clockNow.Hours * 60 + clockNow.Minutes))
         {
             dayNo++;
             moneyHist.Add(new int[] { dayNo, inToday, outToday });
@@ -350,7 +351,6 @@ public class GtaVietLifePersonal : Script
             inToday = 0; outToday = 0;
             if (Bus("GVL.Clock") == null) OnNewDay();   // khong co Core: tu sang ngay
         }
-        lastHour = hour;
     }
 
     // ------------------------------------------------------------ túi đồ
@@ -546,6 +546,9 @@ public class GtaVietLifePersonal : Script
         if (me.IsInVehicle()) { Notify("Sep dang o tren xe roi."); return; }
         CarRec r = garage[idx];
         if (r.Impounded) { Notify("Xe dang bi giu o bai. Lay ra o menu Giay to (-$200)."); return; }
+        string[] towed = AppDomain.CurrentDomain.GetData("GVL.Impounded") as string[];
+        if (towed != null && Array.IndexOf(towed, r.Hash + "|" + r.Plate.Trim()) >= 0)
+        { Notify("Xe dang o bai giu xe Davis. Lay ra o do (menu Kinh te) truoc."); return; }
         if (jailUntil > 0) { Notify("Dang o tu."); return; }
         if (calledCar != null && calledCar.Exists() && calledIdx == idx && calledCar.IsAlive && calledCar.Position.DistanceTo(me.Position) < 150f)
         { Notify("Xe dang o gan day (cham xanh)."); return; }
@@ -1725,6 +1728,11 @@ public class GtaVietLifePersonal : Script
     }
 
     void CloseMenu() { menuOpen = false; BusSet("GVL.PersonalMenu", false); }
+    // Mot phim so chi duoc chay mot menu: menu mo sau cung giu quyen.
+    bool OwnsMenu() { return (AppDomain.CurrentDomain.GetData("GVL.MenuOwner") as string) == "personal"; }
+    void TakeMenu() { AppDomain.CurrentDomain.SetData("GVL.MenuOwner", "personal"); }
+
+
 
     void OnKeyDown(object sender, KeyEventArgs e)
     {
@@ -1745,11 +1753,12 @@ public class GtaVietLifePersonal : Script
         }
         if (e.KeyCode == menuKey)
         {
-            if (!menuOpen) { menuOpen = true; BusSet("GVL.PersonalMenu", true); ShowMain(); }
+            if (!menuOpen) { TakeMenu(); menuOpen = true; BusSet("GVL.PersonalMenu", true); ShowMain(); }
             else if (menuBack != null) menuBack();
             else CloseMenu();
             return;
         }
+        if (menuOpen && !OwnsMenu()) CloseMenu();
         if (!menuOpen) return;
         if (e.KeyCode == Keys.Back) { if (menuBack != null) menuBack(); else CloseMenu(); return; }
         if (menuSel < 0 || menuSel >= menuActions.Count || menuActions[menuSel] == null) menuSel = NextActionable(-1, 1);

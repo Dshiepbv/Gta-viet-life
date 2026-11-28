@@ -7,9 +7,11 @@ using GtaVietLife.Launcher.Services;
 namespace GtaVietLife.Launcher;
 public partial class MainWindow:Window {
  readonly LauncherSettings settings=LauncherSettings.Load();readonly RuntimeManager runtime=new();
- readonly DispatcherTimer timer=new(){Interval=TimeSpan.FromSeconds(3)};bool busy,ready,recovering;CancellationTokenSource? cts;
+ readonly DispatcherTimer timer=new(){Interval=TimeSpan.FromSeconds(3)};bool busy,ready,recovering,closing,stopped;CancellationTokenSource? cts;
  public MainWindow(){
-  InitializeComponent();GamePathBox.Text=settings.GameExecutable;timer.Tick+=Poll;
+  InitializeComponent();
+  if(!File.Exists(settings.GameExecutable)){var found=InstalledGame.Find();if(found!=null){settings.GameExecutable=found;settings.Save();}}
+  GamePathBox.Text=settings.GameExecutable;AutoLaunchBox.IsChecked=settings.AutoLaunchGame;timer.Tick+=Poll;
   Loaded+=async(_,_)=>{
    try{
     var manifest=PackageManifest.Load(AppContext.BaseDirectory);
@@ -23,16 +25,21 @@ public partial class MainWindow:Window {
    }
    try{if(await new UpdateService().CheckAndLaunchUpdaterAsync(CancellationToken.None)){Application.Current.Shutdown();return;}}
    catch(Exception ex){Log("Update check failed: "+ex.Message);}
-   if(File.Exists(settings.GameExecutable))await Prepare();else Set("CẦN CHỌN GTA V","Chọn GTA5.exe một lần để lưu đường dẫn.");};
+   if(File.Exists(settings.GameExecutable)){await Prepare();if(ready&&settings.AutoLaunchGame&&!RuntimeManager.GameRunning())Play_Click(this,new RoutedEventArgs());}else Set("CẦN CHỌN GTA V","Chọn GTA5.exe một lần để lưu đường dẫn.");};
   Closing+=async(_,e)=>{
-   bool gameRunning=System.Diagnostics.Process.GetProcessesByName("GTA5").Length>0 ||
-                    System.Diagnostics.Process.GetProcessesByName("GTA5_Enhanced").Length>0;
-   if(gameRunning){
+   if(stopped)return;
+   e.Cancel=true;   // đóng thật sau khi các dịch vụ đã dừng
+   if(closing)return;
+   if(RuntimeManager.GameRunning()){
     var choice=MessageBox.Show("GTA V đang chạy. Đóng Launcher sẽ dừng Engine Host và cầu nối AI. Chọn Yes để giữ Launcher mở và tiếp tục chơi.",
       "GTA Viet Life",MessageBoxButton.YesNo,MessageBoxImage.Warning);
-    if(choice==MessageBoxResult.Yes){e.Cancel=true;return;}
+    if(choice==MessageBoxResult.Yes)return;
    }
-   timer.Stop();cts?.Cancel();if(ready)await runtime.StopAsync();runtime.Dispose();
+   closing=true;timer.Stop();cts?.Cancel();
+   Set("ĐANG DỪNG DỊCH VỤ","Chờ Engine Host lưu dữ liệu và thoát.");
+   try{await runtime.StopAsync();}catch(Exception ex){Log("Stop failed: "+ex.Message);}
+   runtime.Dispose();stopped=true;
+   await Dispatcher.BeginInvoke(new Action(Close));
   };
  }
  void Browse_Click(object s,RoutedEventArgs e){var d=new OpenFileDialog{Title="Chọn GTA5.exe",Filter="GTA V|GTA5.exe;GTA5_Enhanced.exe|Executable|*.exe"};if(d.ShowDialog()==true){GamePathBox.Text=d.FileName;settings.GameExecutable=d.FileName;settings.Save();_=Prepare();}}
@@ -81,32 +88,14 @@ public partial class MainWindow:Window {
    }
   }
  }
+ void AutoLaunch_Click(object s,RoutedEventArgs e){settings.AutoLaunchGame=AutoLaunchBox.IsChecked==true;settings.Save();}
  void Export_Click(object s,RoutedEventArgs e){
-  var files=new List<string>{
-   Path.Combine(LauncherSettings.Dir,"launcher.log"),
-   Path.Combine(runtime.HostData,"engine-host.log"),
-   Path.Combine(runtime.BridgeData,"bridge.log")
-  };
-  var gameDir=Path.GetDirectoryName(settings.GameExecutable??"");
-  if(!string.IsNullOrWhiteSpace(gameDir)){
-   foreach(var name in new[]{"ScriptHookV.log","ScriptHookVDotNet.log"})files.Add(Path.Combine(gameDir,name));
-   files.AddRange(Directory.GetFiles(gameDir,"GtaVietLife*.log"));
-   var scripts=Path.Combine(gameDir,"scripts");
-   if(Directory.Exists(scripts))files.AddRange(Directory.GetFiles(scripts,"GtaVietLife*.log"));
-  }
-  var dest=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),"GtaVietLife-Diagnostics.txt");
-  using(var w=new StreamWriter(dest,false, new System.Text.UTF8Encoding(false))){
-   foreach(var p in files.Distinct(StringComparer.OrdinalIgnoreCase)){
-    if(!File.Exists(p))continue;
-    w.WriteLine("===== "+Path.GetFileName(p)+" =====");
-    w.WriteLine(Redact(File.ReadAllText(p)));
-   }
-  }
-  MessageBox.Show("Đã xuất nhật ký: "+dest+"\nGói chẩn đoán không chứa file save hoặc cấu hình. Nhật ký có thể có nội dung tương tác; hãy kiểm tra trước khi chia sẻ.","GTA Viet Life");
- }
- static string Redact(string value){
-  value=Regex.Replace(value,@"(?i)(""?(?:api[_-]?key|token|password|secret|authorization|x-gvl-token)""?\s*[:=]\s*)(""[^""]*""|'[^']*'|[^,\s;]+)","$1[REDACTED]");
-  return Regex.Replace(value,@"(?i)\bBearer\s+[A-Za-z0-9._~+/-]+=*","Bearer [REDACTED]");
+  try{
+   var files=DiagnosticsBundle.LogFiles(LauncherSettings.Dir,runtime.HostData,runtime.BridgeData,Path.GetDirectoryName(settings.GameExecutable??""));
+   var dest=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),"GtaVietLife-Diagnostics.zip");
+   var count=DiagnosticsBundle.Write(files,dest);
+   MessageBox.Show("Đã xuất "+count+" nhật ký: "+dest+"\nGói chẩn đoán không chứa file save hoặc cấu hình. Nhật ký có thể có nội dung tương tác; hãy kiểm tra trước khi chia sẻ.","GTA Viet Life");
+  }catch(Exception ex){Log("Export failed: "+ex);MessageBox.Show("Không xuất được nhật ký: "+ex.Message,"GTA Viet Life");}
  }
  void Exit_Click(object s,RoutedEventArgs e)=>Close();
  void Set(string title,string detail){StatusTitle.Text=title;StatusDetail.Text=detail;bool positive=title.StartsWith("SẴN SÀNG",StringComparison.Ordinal)||title.StartsWith("ĐANG TRONG GAME",StringComparison.Ordinal);StatusTitle.Foreground=positive?System.Windows.Media.Brushes.LightGreen:System.Windows.Media.Brushes.White;}

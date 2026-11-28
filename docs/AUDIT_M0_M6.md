@@ -155,3 +155,43 @@ Các mã khác vẫn mở, gồm G2 (Personal ghi đè ví GTA, trái hợp đ�
 Còn mở: E9, E11, E14, G4, G7, G8–G13. Sổ cái chưa là chủ ghi của ngân hàng và quán: script C# vẫn tự giữ số dư (đợt tiếp theo).
 Chưa làm: `epoch`, `expires_at_world_minute` trong phong bì event và lệnh; Core là nơi duy nhất đếm ngày.
 
+## 9. Đợt 0.3.1: lỗi còn mở và Launcher (2026-11-28, chưa chạy trong game)
+
+| Mã | Trạng thái | Test |
+|---|---|---|
+| E9 | Lưu lỗi thì bộ nhớ trở về trạng thái đã lưu; ack lệnh và hiệu ứng trong một giao dịch; quan hệ và trạng thái NPC ghi cùng nhau; `advance` trùng ID chỉ chạy một lần | `test_phase3_regressions.py` |
+| E11 | Biên nhận chống trùng tách theo endpoint, vẫn đọc biên nhận cũ | như trên |
+| E14 | Chưa đặt `dash_pin` thì dashboard chỉ nghe trên máy tính; có PIN thì đọc dữ liệu cũng cần PIN; khóa 1 phút sau 5 lần sai. APK cũ phải cài lại | `bridge/test_dashboard_access.py` |
+| G4 | Bán nhà đang thế chấp trừ phần vượt hạn mức 60% vào tiền bán; phát mãi thiếu thành nợ | `test_csharp_logic.py` (phép tính) |
+| G7 | Đóng quán hủy hợp đồng của quán đó và dời chỉ số quán phía sau | như trên |
+| G8 | Thả NPC trước khi giữ người mới và khi `/stop` lỗi | chưa có test chạy |
+| G9 | `Residents.txt` được xóa trắng lúc nạp và thoát | chưa có test chạy |
+| G10 | Xe đang ở bãi giữ không gọi được từ garage | chưa có test chạy |
+| G11 | Chỉ menu mở sau cùng nhận phím số (`GVL.MenuOwner`) | chưa có test chạy |
+| G12 | Engine mất kết nối thì cư dân về lịch gốc; thêm hoạt động toilet, shower | chưa có test chạy |
+| G13 | Chuyến xe không tới được thì hoàn toàn bộ phí | chưa có test chạy |
+| M6 | Tự dò thư mục game (Rockstar, Steam); tùy chọn tự mở GTA V; `config.json` thay `launcher.json`; gói log dạng zip che khóa; đóng Launcher chờ dịch vụ dừng; chỉ dừng tiến trình của bản cài này | `launcher/tests/Logic` (dò game, gói log) |
+
+Còn mở, cần chủ dự án quyết hoặc cần vào game:
+- Sổ cái làm chủ ghi ngân hàng và quán: script C# vẫn tự giữ số dư. Cần chốt cách chơi khi Engine tắt (khóa giao dịch hay xếp hàng chờ).
+- Ký checksum bản cập nhật: cần khóa ký và nơi cất khóa.
+- Đổi tên exe theo đặc tả (`GTA Viet Life Launcher.exe`, `Setup.exe`): ảnh hưởng đường cập nhật từ bản đã cài.
+- Danh bạ 500–1000 cửa: phải thu tọa độ trong game. Offset nội thất theo tòa nhà: nội thất gốc không dịch chuyển được.
+- Lệnh trên dashboard dùng chỉ số quán, đóng quán thì lệnh đang chờ có thể trỏ sang quán khác.
+
+## 10. Đợt 0.3.2: M1, M3, M5 (2026-11-28, chưa chạy trong game)
+
+| Module | Trạng thái | Test |
+|---|---|---|
+| M1 | World, Economy, Personal đếm ngày theo Core (`GvlDayWatch`); không có Core thì tự nhận biết qua nửa đêm. Ngủ hoặc tua giờ trong game nay cũng được Đời sống tính ngày | `test_csharp_logic.py` |
+| M3 | Đăng ký lại vật thể giữ nguyên state; lệnh quá 30 phút game thành `expired`; lọc lệnh theo adapter | `test_phase4_regressions.py` |
+| M5 | Token ngoài ASCII trả 401; POST mang protocol khác bị từ chối; tài liệu giao thức cập nhật | như trên |
+
+Chưa làm: M2 gom quan hệ và trí nhớ về engine; M4 sổ cái làm chủ ghi (chờ chốt cách chơi khi Engine tắt).
+
+## 11. Đợt 0.3.3: M4 ngân hàng (2026-11-28, chưa chạy trong game)
+
+- Chốt: Engine tắt vẫn chơi, event lưu bền và gửi bù. Lần đầu gửi `bank.takeover`; sau đó khi hàng gửi trống và sổ cái đã nhận đủ thì số dư ngân hàng theo sổ cái.
+- Bộ đếm game tạo lại, hoặc phải đọc `Core.sav.bak`, thì dùng nguồn event mới và đối soát lại theo game.
+- Test: `test_bank_ownership.py`, `test_csharp_logic.py`. Phần gọi HTTP và áp số dư trong game chưa có test chạy.
+- Chưa chuyển: tiền quán, tồn kho, lương; lịch trả góp vẫn ở script (sổ cái chỉ giữ tổng nợ). Event bị Engine từ chối (ghi ở deadletter) sẽ bị số dư sổ cái ghi đè.

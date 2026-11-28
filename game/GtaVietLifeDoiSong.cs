@@ -195,6 +195,7 @@ public class GtaVietLifeDoiSong : Script
         catch (Exception ex) { Log("tick loi: " + ex.Message); }
         if (now > nextSave) { nextSave = now + 30000; Save(); }
         DrawStatus();
+        if (menuOpen && !OwnsMenu()) CloseMenu();
         if (menuOpen) DrawMenu();
     }
 
@@ -1002,6 +1003,11 @@ public class GtaVietLifeDoiSong : Script
     void Item(string label, Action act) { menuLabels.Add(label); menuActions.Add(act); }
     void Info(string label) { menuLabels.Add(label); menuActions.Add(null); }
     void CloseMenu() { menuOpen = false; BusSet("GVL.LifeMenu", false); }
+    // Mot phim so chi duoc chay mot menu: menu mo sau cung giu quyen.
+    bool OwnsMenu() { return (AppDomain.CurrentDomain.GetData("GVL.MenuOwner") as string) == "life"; }
+    void TakeMenu() { AppDomain.CurrentDomain.SetData("GVL.MenuOwner", "life"); }
+
+
 
     int NextActionable(int from, int dir)
     {
@@ -1020,12 +1026,13 @@ public class GtaVietLifeDoiSong : Script
                 // dang dung canh nguoi bi nan: phim L la so cuu luon
                 if (evType == 2 && evA != null && evA.Exists() && Game.Player.Character.Position.DistanceTo(evA.Position) < 3f) { pendingActs.Enqueue(HelpInjured); return; }
                 if (OtherMenuOpen()) return;
-                menuOpen = true; BusSet("GVL.LifeMenu", true); ShowMain();
+                TakeMenu(); menuOpen = true; BusSet("GVL.LifeMenu", true); ShowMain();
             }
             else if (menuBack != null) menuBack();
             else CloseMenu();
             return;
         }
+        if (menuOpen && !OwnsMenu()) CloseMenu();
         if (!menuOpen) return;
         if (e.KeyCode == Keys.Back) { if (menuBack != null) menuBack(); else CloseMenu(); return; }
         if (menuSel < 0 || menuSel >= menuActions.Count || menuActions[menuSel] == null) menuSel = NextActionable(-1, 1);

@@ -15,6 +15,17 @@ Initial GTA implementation: a dedicated Engine Host HTTP service on `127.0.0.1:5
 
 All requests use JSON UTF-8, include `protocol: "gvl-engine/1"`, and carry a unique `request_id`. The server rejects unknown major protocol versions. Commands are idempotent by `command_id`.
 
+## Bank ledger
+
+`GET /engine/v1/world/ledger/player` with header `X-GVL-Source` returns `{"owned", "bank", "debt", "applied_sequence"}`. Event types `bank.takeover` (`balance=..;debt=..`) and `ledger.debt` (`amount=<signed>`) are accepted on `/engine/v1/world/events`.
+
+## Command delivery and protocol checks
+
+- `GET /engine/v1/world/commands` accepts the header `X-GVL-Adapter`; only that adapter's commands are returned. Without it, every pending command is returned.
+- A world command that is not acknowledged within 30 game minutes becomes `expired`; each command carries `expires_at_world_minute`. A late acknowledgement is answered with 409.
+- Registering an existing object again updates its anchors and keeps its state.
+- Any POST body carrying a `protocol` other than `gvl-engine/1` is refused with `protocol_mismatch`.
+
 ## 3. Required handshake
 
 `POST /engine/v1/handshake`

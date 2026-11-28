@@ -61,6 +61,17 @@ Dùng các bảng `world_accounts`, `world_transactions`, `world_ledger_entries`
 - Đối soát ví tạo bút toán `reconcile` có mã lý do và độ lệch; lệch quá ngưỡng thì ghi cảnh báo.
 - Kiểm tra lúc khởi động: số dư mỗi tài khoản bằng tổng bút toán.
 
+### Ngân hàng khi Engine tắt (đã chốt 2026-11-28)
+
+Game cho chơi tiếp, ghi mỗi thay đổi thành event lưu bền và gửi bù khi Engine bật lại.
+
+1. Lần đầu một bộ đếm game gặp Engine, game gửi `bank.takeover` (số dư và tổng nợ); sổ cái đối soát theo đó.
+2. Thay đổi ngân hàng đi qua `ledger.income`/`ledger.expense`, thay đổi nợ qua `ledger.debt`.
+3. `GET /engine/v1/world/ledger/player` (header `X-GVL-Source`) trả `owned`, `bank`, `debt`, `applied_sequence`.
+4. Chỉ khi hàng gửi trống và `applied_sequence` đã bao gồm thay đổi ngân hàng mới nhất, game mới lấy số dư của sổ cái.
+
+Chưa áp dụng cho tiền quán, tồn kho và lương: các số này vẫn đi bằng ảnh chụp `businesses/sync`. Tổng nợ được ghi vào sổ cái, lịch trả góp vẫn do script giữ.
+
 ## 6. Lưu và tải
 
 - Engine: WAL, `foreign_keys=ON`, `busy_timeout`, một `schema_version` cho toàn bộ bảng, migration trong một giao dịch, backup trước migration, khóa một tiến trình trên thư mục dữ liệu và cổng.
