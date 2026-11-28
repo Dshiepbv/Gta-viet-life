@@ -2631,6 +2631,8 @@ public class GtaVietLifeWorld : Script
 
     // ---- do vat trong nha: tim noi that co san (giuong, tu lanh, sofa, tv) gan Sep, bam E de dung
     static readonly Vector3 ResidentSocialSpot = new Vector3(-168.6f, -1030.1f, 29.3f); // Legion Square gathering point
+    static readonly string[] ToiletModels = { "prop_toilet_01", "prop_toilet_02", "prop_toilet_03", "prop_toilet_04", "prop_toilet_05", "prop_toilet_06" };
+    static readonly string[] ShowerModels = { "prop_shower_rack_01", "v_res_m_shower", "v_res_mbath", "apa_mp_h_bathtub_01", "apa_mp_h_bathtub_02" };
     static readonly string[] BedModels = { "v_res_mbbed", "v_res_mbbed_mess", "v_res_mdbed", "v_res_msonbed", "v_res_msonbed_s", "v_res_d_bed", "v_res_lestersbed", "v_res_tre_bed1", "v_res_tre_bed1_messy", "v_res_tre_bed2", "apa_mp_h_bed_double_08", "apa_mp_h_bed_double_09", "apa_mp_h_bed_wide_05", "apa_mp_h_bed_with_table_02" };
     static readonly string[] FridgeModels = { "v_res_fridgemoda", "v_res_fridgemodsml", "v_ilev_mm_fridge_l", "v_ilev_mm_fridge_r", "prop_fridge_01", "prop_fridge_03", "prop_trailr_fridge", "prop_cs_fridge" };
     static readonly string[] SofaModels = { "v_res_m_h_sofa", "v_res_m_h_sofa_sml", "v_res_mp_sofa", "v_res_d_sofa", "v_res_fh_sofa", "v_res_j_sofa", "v_res_r_sofa", "v_ilev_m_sofa", "prop_t_sofa", "prop_t_sofa_02", "apa_mp_h_stn_sofacorn_01", "apa_mp_h_stn_sofacorn_05", "apa_mp_h_stn_sofa2seat_02", "prop_couch_lg_02", "prop_couch_sm_02" };
@@ -2656,12 +2658,18 @@ public class GtaVietLifeWorld : Script
         if (now < nextFurnScan) return;
         nextFurnScan = now + 600;
         Vector3 p = me.Position;
-        nearFurn = NearModel(p, BedModels, 2.3f) ? "bed" : NearModel(p, FridgeModels, 2.0f) ? "fridge" : NearModel(p, SofaModels, 1.8f) ? "sofa" : "";
+        nearFurn = NearModel(p, ToiletModels, 1.8f) ? "toilet" :
+            NearModel(p, ShowerModels, 2.0f) ? "shower" :
+            NearModel(p, BedModels, 2.3f) ? "bed" :
+            NearModel(p, FridgeModels, 2.0f) ? "fridge" :
+            NearModel(p, SofaModels, 1.8f) ? "sofa" : "";
     }
 
     void UseFurniture()
     {
-        if (nearFurn == "bed") { CloseMenu(); Sleep(); }
+        if (nearFurn == "toilet") { CloseMenu(); UseToilet(); }
+        else if (nearFurn == "shower") { CloseMenu(); Shower(); }
+        else if (nearFurn == "bed") { CloseMenu(); Sleep(); }
         else if (nearFurn == "fridge" && LifeFridgeOn())
         {
             AppDomain.CurrentDomain.SetData("GVL.FridgeReq", true);   // file Doi song 2 lo: an mon trong tu lanh (co han dung)
@@ -2681,6 +2689,16 @@ public class GtaVietLifeWorld : Script
     }
 
     // ---- tim nha thue
+    void UseToilet()
+    {
+        Ped me = Game.Player.Character;
+        if (me == null || !me.Exists() || me.IsInVehicle()) { Notify("Xuong xe da."); return; }
+        if (!insideHome) { Notify("Can o trong nha de su dung nha ve sinh."); return; }
+        fadeAction = 8;
+        GTA.UI.Screen.FadeOut(600);
+        sleepAt = Game.GameTime + 900;
+    }
+
     void RentHome(int idx)
     {
         HomeInfo h = Homes[idx];
@@ -3330,7 +3348,7 @@ public class GtaVietLifeWorld : Script
                 WorldJsonEscape(Homes[i].Name) + "\",\"adapter_maps\":{\"gta5.shvdn\":{\"entrance\":\"" +
                 exterior + "\",\"interior\":\"" + interior + "\"}},\"interactions\":[\"enter\",\"exit\",\"inspect\"]}";
             post("/engine/v1/world/buildings", body);
-            foreach (string kind in new[] { "bed", "fridge", "sofa" })
+            foreach (string kind in new[] { "bed", "fridge", "sofa", "toilet", "shower" })
             {
                 string objectId = "object.home." + i + "." + kind;
                 string objectBody = "{\"request_id\":\"" + Guid.NewGuid().ToString("N") +
@@ -3981,6 +3999,13 @@ public class GtaVietLifeWorld : Script
             try { Function.Call((Hash)0x8FE22675A5A45817, me); Function.Call((Hash)0x9C720776DAA43E7E, me); } catch { }   // CLEAR_PED_BLOOD_DAMAGE, CLEAR_PED_WETNESS
             GTA.UI.Screen.FadeIn(600);
             Notify("Tam xong, thom tho sach se.");
+            return true;
+        }
+        if (fadeAction == 8)
+        {
+            AdvanceTime(5);
+            GTA.UI.Screen.FadeIn(600);
+            Notify("Da su dung nha ve sinh.");
             return true;
         }
         if (fadeAction == 6 || fadeAction == 7)
