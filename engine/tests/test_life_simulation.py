@@ -327,5 +327,21 @@ class LifeSimulationTests(unittest.TestCase):
             engine.observe_player_state("player.observed", {"hunger": 101})
 
 
+    def test_npcs_socialize_autonomously_when_they_share_a_public_leisure_place(self):
+        engine = LifeSimulationEngine()
+        first = engine.register_npc(NPCProfile(
+            npc_id="npc.park.1", display_name="Lan", home_location_id="home.1", occupation="worker",
+            schedule=(ScheduleBlock(0, 1440, "leisure", "residents.leisure"),),
+        ))
+        second = engine.register_npc(NPCProfile(
+            npc_id="npc.park.2", display_name="Minh", home_location_id="home.2", occupation="teacher",
+            schedule=(ScheduleBlock(0, 1440, "leisure", "residents.leisure"),),
+        ))
+        engine.advance(15)
+        self.assertGreater(first.affinity.get("npc.park.2", 0), 0)
+        self.assertGreater(second.affinity.get("npc.park.1", 0), 0)
+        self.assertTrue(any(m["kind"] == "npc_conversation" for m in first.memories))
+
+
 if __name__ == "__main__":
     unittest.main()
