@@ -98,3 +98,6 @@ Engine: 96 test pass; test mới `engine/tests/test_phase2_regressions.py` đã 
 - [x] Test 1.000 giao dịch · [ ] Đợt 2: quan hệ và ký ức một nguồn; test giết tiến trình khi đang lưu
 - [ ] Đợt 3: Procedural Catalog, MLO, Modular, NPC tới Activity Anchor
 - Đề xuất bài học chờ duyệt (lessons.md): "Không đưa nhân vật đi trước khi nơi đến đã nạp xong"; "Log phải có dòng chứng minh thành công thì mới chấm được".
+
+## Kế hoạch V4
+- docs/PLAN_V4.md. Bước tiếp: A (quan hệ/ký ức về Engine). Được push và gắn tag không cần hỏi.

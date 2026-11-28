@@ -6,3 +6,4 @@
 - [2026-11-28] Bản 0.3.0 (đã push, 7755684, CI #275 xanh): E4 E6 E7 E8 E10 E12 B1 G3 G5 G6; bộ cài build lại. Chi tiết `docs/AUDIT_M0_M6.md` mục 8. | Bước tiếp: test trong GTA V Legacy, gửi log; kiểm CI; sổ cái làm chủ ngân hàng/quán, G4 G7, M6.
 - [2026-11-28] Bản 0.3.1 trên máy, chưa commit: E9 E11 E14 G4 G7–G13, một phần M6. Chi tiết audit mục 9. | Bước tiếp: test trong GTA V Legacy; chốt sổ cái khi Engine tắt, khóa ký, tên exe; hỏi trước khi push (đổi `bridge/dashboard.html` sẽ phát hành APK công khai).
 - [2026-11-28] Bản 0.3.2 trên máy, chưa commit: thêm M1 (đếm ngày theo Core), M3 (hạn lệnh, giữ state vật thể), M5 (token, protocol). | Bước tiếp: chốt M4; làm M2; test trong game; hỏi trước khi push.
+- [2026-11-28] Bản 0.3.3 (đã push, 9be2a43, CI #276 xanh): sổ cái làm chủ số dư ngân hàng (chơi khi Engine tắt, gửi bù); nợ được ghi vào sổ cái. Quán, tồn kho, lương chưa chuyển. | Bước tiếp: chuyển quán và lương; M2; test trong game; hỏi trước khi push.

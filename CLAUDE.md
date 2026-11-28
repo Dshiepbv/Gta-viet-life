@@ -54,7 +54,7 @@ File này được Claude Code tự nạp mỗi phiên. Phần 0 riêng cho dự
 - Tương tác trong quán diễn ra trực tiếp (vào quán, gọi món, thấy người bán và người dọn), không dùng menu game. Thử nghiệm dùng nội thất có sẵn, về sau tự dựng mô hình. · 2026-11-28
 - Master Brief V4.0 (bản gốc duy nhất, thay V2; trích tại `docs/private/BRIEF_V4.txt`, không commit): 4 đợt, không nhảy đợt khi chưa nghiệm thu; cuối đợt báo cáo (a) % hoàn thành theo bằng chứng, (b) test mới và hồi quy, (c) file đã sửa và lệnh push. Nghiệm thu 85/100 có bằng chứng runtime rồi mới đóng một bản test cho người dùng. Không dùng menu chữ thay hành vi vật lý. · 2026-11-28
 - UIS (M3): bộ sinh danh mục tự động phủ toàn thành phố qua 4 lớp (Native IPL, Custom MLO, Template, Modular); NPC đi bộ qua cửa tới Activity Anchor. · 2026-11-28
-- Được push GitHub không cần hỏi (ngoại lệ cho mục 1). Tag phát hành Release vẫn chờ yêu cầu. · 2026-11-28
+- Được push GitHub không cần hỏi (ngoại lệ cho mục 1). Được gắn tag phát hành Release không cần hỏi. Chủ dự án muốn nhận bản hoàn chỉnh cả dự án, không test từng phần. · 2026-11-28
 
 ### Đã bác bỏ (lý do · từ khóa kích hoạt)
 - (phương án) · vì (lý do) · từ khóa: (...)
@@ -116,8 +116,8 @@ Khi tôi chỉ ra lỗi: đề xuất 1 dòng rút kinh nghiệm; tôi duyệt m
 Văn phong con người: không mở bài "Không phải X mà là Y", không câu dài 4 mệnh đề, không kết bằng châm ngôn, không rải emoji và in đậm. Không để lộ trao đổi nội bộ giữa tôi và AI. Commit message và changelog viết rõ việc đã làm.
 
 ## 9. Trạng thái (giữ 5 mục gần nhất, mới nhất ở dưới)
-- [2026-11-28] Bản 0.3.3 (đã push, 9be2a43, CI #276 xanh): sổ cái làm chủ số dư ngân hàng (chơi khi Engine tắt, gửi bù); nợ được ghi vào sổ cái. Quán, tồn kho, lương chưa chuyển. | Bước tiếp: chuyển quán và lương; M2; test trong game; hỏi trước khi push.
 - [2026-11-28] Test 0.3.3 trong game: World sập khi vẽ chữ, F7 rơi, đồ sinh thêm chồng nhau, STT chết vì thiếu cublas. Sửa trong 0.3.4 (trên máy, chưa commit). | Bước tiếp: test lại 0.3.4; tương tác nội thất cần thiết kế lại.
 - [2026-11-28] Bản 0.3.5 (trên máy, chưa commit): ShopFloor (gọi món tại quầy, người bán, người dọn), nút Cập nhật trong Launcher. | Bước tiếp: test trong game; phát hành v0.3.5 thì nút cập nhật mới có bản để tải (cần chủ dự án đồng ý); quản lý quán không menu.
 - [2026-11-28] 0.3.6 trên máy, chưa commit: nạp nội thất trước khi chuyển chỗ (hết màn đen, hết rơi), F7 chỉ đánh dấu bản đồ, cập nhật trong app Android, bộ chấm log. | Bước tiếp: test; thay menu quán bằng tương tác vật lý; khóa ký APK (chủ dự án tạo secret); điểm ma trận hiện 0/100.
 - [2026-11-28] Nhận Master Brief V4; quyền push không cần hỏi; thêm test 1.000 giao dịch. Điểm runtime 0/100. | Bước tiếp: hoàn tất đợt 2 (quan hệ và ký ức về M0, test giết tiến trình), rồi đợt 3 (catalog UIS, anchors); chờ log test 0.3.6.
+- [2026-11-28] Phát hành v0.3.6 (4ec36ff). Lập `docs/PLAN_V4.md`: làm trọn đợt 2→4, giao một bản tích hợp kèm bài tự kiểm trong game; ước tính ~45%, runtime 0/100. | Bước tiếp: bước A của plan (quan hệ và ký ức một nguồn).
