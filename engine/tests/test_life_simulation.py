@@ -343,5 +343,20 @@ class LifeSimulationTests(unittest.TestCase):
         self.assertTrue(any(m["kind"] == "npc_conversation" for m in first.memories))
 
 
+    def test_player_manual_work_activity_is_simulated_for_requested_duration(self):
+        engine = LifeSimulationEngine()
+        player = engine.register_npc(NPCProfile(
+            npc_id="player.worker", display_name="Player", home_location_id="home.player",
+            occupation="citizen", actor_kind="player",
+        ))
+        result = engine.set_player_activity("player.worker", "work", "work.gta.workspot", 60, "player-shift-1")
+        self.assertTrue(result["accepted"])
+        engine.advance(60)
+        self.assertEqual(player.work_minutes, 60)
+        self.assertEqual(player.current_activity, "work")
+        engine.advance(1)
+        self.assertEqual(player.current_activity, "free_time")
+
+
 if __name__ == "__main__":
     unittest.main()
