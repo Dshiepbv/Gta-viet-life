@@ -40,3 +40,6 @@ This is a separate base-game adapter, not a second simulation implementation. It
 ### NPC physical routine in the Godot reference world
 
 The sample resident's daily schedule now routes sleep into the home interior and bed anchor, meals to the cafe counter, work to the workplace counter, and leisure to the public park. The adapter acknowledges only after the resident's movement tween reaches the selected physical anchor. These mappings are local presentation; the shared Engine Host still owns the schedule, activity state, needs and relationship rules.
+
+
+The sample NPC keeps its original stable home identity `home.godot` for existing save compatibility. The adapter accepts both the original home semantic ID and the newer interior ID when routing personal-care actions to physical anchors.

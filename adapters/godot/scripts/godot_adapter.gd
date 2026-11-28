@@ -130,7 +130,7 @@ func _boot() -> void:
 		"npc": {
 			"npc_id": NPC_ID,
 			"display_name": resident.display_name,
-			"home_location_id": "home.interior.godot",
+			"home_location_id": "home.godot",
 			"occupation": "barista",
 			"traits": ["friendly", "disciplined"],
 			"life_goal": "career",
@@ -370,13 +370,13 @@ func _poll_commands() -> void:
 		var destination: Vector2 = locations[location_id]
 		if activity == "sleep" and location_id == "home.interior.godot":
 			destination = locations["bed.anchor.godot"]
-		elif activity in ["eat", "drink"] and location_id == "home.interior.godot":
+		elif activity in ["eat", "drink"] and location_id in ["home.godot", "home.interior.godot"]:
 			destination = locations["fridge.anchor.godot"]
 		elif activity in ["work", "eat"] and location_id == "work.interior.godot":
 			destination = locations["counter.anchor.godot"]
-		elif activity == "toilet" and location_id == "home.interior.godot":
+		elif activity == "toilet" and location_id in ["home.godot", "home.interior.godot"]:
 			destination = locations["toilet.anchor.godot"]
-		elif activity == "shower" and location_id == "home.interior.godot":
+		elif activity == "shower" and location_id in ["home.godot", "home.interior.godot"]:
 			destination = locations["shower.anchor.godot"]
 		await resident.move_to(destination, activity)
 		await _ack(command.get("command_id", ""), true, "completed", "destination_reached")
