@@ -2630,6 +2630,7 @@ public class GtaVietLifeWorld : Script
     }
 
     // ---- do vat trong nha: tim noi that co san (giuong, tu lanh, sofa, tv) gan Sep, bam E de dung
+    static readonly Vector3 ResidentSocialSpot = new Vector3(-168.6f, -1030.1f, 29.3f); // Legion Square gathering point
     static readonly string[] BedModels = { "v_res_mbbed", "v_res_mbbed_mess", "v_res_mdbed", "v_res_msonbed", "v_res_msonbed_s", "v_res_d_bed", "v_res_lestersbed", "v_res_tre_bed1", "v_res_tre_bed1_messy", "v_res_tre_bed2", "apa_mp_h_bed_double_08", "apa_mp_h_bed_double_09", "apa_mp_h_bed_wide_05", "apa_mp_h_bed_with_table_02" };
     static readonly string[] FridgeModels = { "v_res_fridgemoda", "v_res_fridgemodsml", "v_ilev_mm_fridge_l", "v_ilev_mm_fridge_r", "prop_fridge_01", "prop_fridge_03", "prop_trailr_fridge", "prop_cs_fridge" };
     static readonly string[] SofaModels = { "v_res_m_h_sofa", "v_res_m_h_sofa_sml", "v_res_mp_sofa", "v_res_d_sofa", "v_res_fh_sofa", "v_res_j_sofa", "v_res_r_sofa", "v_ilev_m_sofa", "prop_t_sofa", "prop_t_sofa_02", "apa_mp_h_stn_sofacorn_01", "apa_mp_h_stn_sofacorn_05", "apa_mp_h_stn_sofa2seat_02", "prop_couch_lg_02", "prop_couch_sm_02" };
@@ -3570,7 +3571,8 @@ public class GtaVietLifeWorld : Script
         bool knownLocation = locationId == "res_" + resident.Id + ".home" ||
             locationId == "res_" + resident.Id + ".leisure" ||
             locationId == "res_" + resident.Id + ".work" ||
-            locationId == "res_" + resident.Id + ".lunch";
+            locationId == "res_" + resident.Id + ".lunch" ||
+            (locationId == "residents.leisure" && (activity == "leisure" || activity == "socialize"));
         return knownActivity && knownLocation;
     }
 
@@ -3578,7 +3580,8 @@ public class GtaVietLifeWorld : Script
     {
         if (resident == null || resident.P == null || !resident.P.Exists()) return false;
         Vector3 target;
-        if (locationId == "res_" + resident.Id + ".home" || locationId == "res_" + resident.Id + ".leisure") target = resident.Home;
+        if (locationId == "residents.leisure") target = ResidentSocialSpot;
+        else if (locationId == "res_" + resident.Id + ".home" || locationId == "res_" + resident.Id + ".leisure") target = resident.Home;
         else if (locationId == "res_" + resident.Id + ".work") target = resident.Work;
         else if (locationId == "res_" + resident.Id + ".lunch") target = resident.Lunch;
         else return false; // semantic location must have an explicit GTA mapping
@@ -3612,7 +3615,7 @@ public class GtaVietLifeWorld : Script
             case "eat": scenario = "WORLD_HUMAN_EATING"; break;
             case "drink": scenario = "WORLD_HUMAN_DRINKING"; break;
             case "work": scenario = "WORLD_HUMAN_CLIPBOARD"; break;
-            case "socialize": scenario = "WORLD_HUMAN_STAND_MOBILE"; break;
+            case "socialize": scenario = "WORLD_HUMAN_HANG_OUT_STREET"; break;
             case "leisure": scenario = "WORLD_HUMAN_PICNIC"; break;
             case "free_time": scenario = "WORLD_HUMAN_STAND_IMPATIENT"; break;
         }
