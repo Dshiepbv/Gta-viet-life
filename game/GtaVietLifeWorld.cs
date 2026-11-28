@@ -3492,9 +3492,18 @@ public class GtaVietLifeWorld : Script
                 if (!int.TryParse(parts[2], out idx) || idx != homeIdx || parts[3] != nearFurn)
                 { lock (queue) queue.Enqueue(command); break; }
                 if (!insideHome) { ReportWorldCommand(commandId, "rejected", "object_requires_home_interior"); processed++; continue; }
-                RememberWorldCommand(commandId);
                 UseFurniture();
-                ReportWorldCommand(commandId, "completed", "native_object_interaction_started");
+                if (fadeAction > 0)
+                {
+                    pendingWorldCommandId = commandId;
+                    pendingWorldCommandAction = "object";
+                    pendingWorldCommandDeadline = now + 120000;
+                }
+                else
+                {
+                    RememberWorldCommand(commandId);
+                    ReportWorldCommand(commandId, "completed", "native_object_interaction_applied");
+                }
                 processed++;
                 continue;
             }
@@ -3507,7 +3516,8 @@ public class GtaVietLifeWorld : Script
     {
         if (string.IsNullOrEmpty(pendingWorldCommandId) || enterUntil > 0) return;
         bool completed = pendingWorldCommandAction == "enter" ? insideHome :
-            pendingWorldCommandAction == "exit" ? !insideHome : false;
+            pendingWorldCommandAction == "exit" ? !insideHome :
+            pendingWorldCommandAction == "object" ? fadeAction == 0 && sleepAt == 0 : false;
         string id = pendingWorldCommandId;
         if (completed) { RememberWorldCommand(id); ReportWorldCommand(id, "completed", "player_space_transition_observed"); }
         else if (now >= pendingWorldCommandDeadline) { RememberWorldCommand(id); ReportWorldCommand(id, "failed", "space_transition_not_observed"); }
