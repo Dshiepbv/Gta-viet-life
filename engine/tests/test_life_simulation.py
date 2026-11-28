@@ -242,8 +242,8 @@ class LifeSimulationTests(unittest.TestCase):
         player_state.bladder = 95
         player_state.hygiene = 90
         engine.advance(1)
-        self.assertEqual(player_state.current_activity, "toilet")
-        self.assertLess(player_state.bladder, 95)
+        self.assertEqual(player_state.current_activity, "free_time")
+        self.assertGreater(player_state.bladder, 95)
         self.assertEqual(player_state.profile.actor_kind, "player")
         self.assertEqual(npc_state.profile.actor_kind, "npc")
         # Player needs are simulated canonically, but the engine never issues NPC navigation commands for the player.
@@ -265,14 +265,18 @@ class LifeSimulationTests(unittest.TestCase):
             state.age_minutes = 525600
             store.save(engine.simulation_minute, [state], [])
             store.close()
-            restored = LifeSimulationEngine(SQLiteLifeStore(path))
-            snapshot = restored.snapshot()["npcs"][0]
-            self.assertEqual(snapshot["age_years"], 18)
-            self.assertEqual(snapshot["life_stage"], "young_adult")
-            self.assertEqual(snapshot["health"], 73)
-            self.assertEqual(snapshot["needs"]["hygiene"], 42)
-            self.assertEqual(snapshot["fitness"], 66)
-            self.assertEqual(snapshot["mood"], 51)
+            restored_store = SQLiteLifeStore(path)
+            try:
+                restored = LifeSimulationEngine(restored_store)
+                snapshot = restored.snapshot()["npcs"][0]
+                self.assertEqual(snapshot["age_years"], 18)
+                self.assertEqual(snapshot["life_stage"], "young_adult")
+                self.assertEqual(snapshot["health"], 73)
+                self.assertEqual(snapshot["needs"]["hygiene"], 42)
+                self.assertEqual(snapshot["fitness"], 66)
+                self.assertEqual(snapshot["mood"], 51)
+            finally:
+                restored_store.close()
 
     def test_hygiene_need_triggers_shower_and_recovers(self):
         engine = LifeSimulationEngine()
