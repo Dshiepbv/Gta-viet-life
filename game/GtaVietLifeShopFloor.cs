@@ -235,6 +235,7 @@ public class GtaVietLifeShopFloor : Script
         }
         if (!paid) { Notify("~r~Khong du tien~s~ (can $" + dish.Price + ")."); order.Cancel(); return; }
         order.Paid(Game.GameTime);
+        Log("goi mon " + dish.Name);
         if (sellerOwned && seller != null && seller.Exists())
             Function.Call(Hash.TASK_START_SCENARIO_IN_PLACE, seller, "PROP_HUMAN_BUM_BIN", 0, true);   // cui xuong lay mon
     }
@@ -262,6 +263,7 @@ public class GtaVietLifeShopFloor : Script
     void FinishDish(Ped me)
     {
         Dish dish = Dishes[order.Choice];
+        Log("hoan tat " + dish.Name);
         me.Task.ClearAll();
         RemoveServed();
         float[] pending = Bus("GVL.NeedsAdd") as float[];

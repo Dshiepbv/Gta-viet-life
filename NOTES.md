@@ -73,3 +73,28 @@ Engine: 96 test pass; test mới `engine/tests/test_phase2_regressions.py` đã 
 - [x] ShopFloor · [x] Nút cập nhật · [ ] Build 0.3.5 · chưa commit
 - Người dùng muốn: không menu game, tương tác trực tiếp trong quán; nhà/quán thử dùng mô hình có sẵn, sau tự dựng.
 - Nút cập nhật cần release tag v* (CI phát hành khi push tag): hỏi người dùng trước.
+
+## Phát hành v0.3.5
+- Commit 47671a7, tag v0.3.5, CI #277 và #278 xanh. Release: https://github.com/Dshiepbv/Gta-viet-life/releases/tag/v0.3.5
+- Workflow APK cũng chạy theo tag (bộ lọc paths không áp cho tag). Cần giới hạn nó vào nhánh main.
+- Dòng 'Build 0.3.5 / chưa commit' ở trên đã xong.
+
+- Người dùng gặp 'DeleteFile code 5' khi cài 0.3.5 đè bản đang chạy. Đã thêm bước đóng tiến trình vào packaging/GtaVietLife.iss (biên dịch được, chưa thử cài đè, chưa commit, đưa vào bản sau).
+
+## Chấm log đối chứng
+- [x] `tools/evaluate_logs.py` (21 tiêu chí), `tests/test_log_evaluation.py` (29 test contract/C#/log pass), `docs/TEST_REPORT.md` (30 yêu cầu).
+- Bản đối chứng: gói log 0.3.3 người dùng gửi (không commit vì có thông tin máy).
+- Thêm dòng log gọi món trong ShopFloor. Chưa commit: các file trên, ShopFloor.cs, GtaVietLife.iss. Bản phát hành đang là 0.3.5.
+
+## 0.3.6
+- [x] Nội thất nạp trước khi chuyển · [x] F7 đánh dấu bản đồ · [x] Cập nhật trong app Android (chưa biên dịch: máy không có Java; chỉ CI build được) · [ ] Build 0.3.6
+- Android cần secret ANDROID_KEYSTORE_BASE64 và ANDROID_KEYSTORE_PASSWORD do chủ dự án tạo.
+- Brief gốc: docs/private/BRIEF_V2.txt.
+
+- [x] Build 0.3.6: `artifacts\GtaVietLife-Setup-0.3.6.exe`. Chưa commit, chưa push; chờ chủ dự án cho push (sẽ phát hành APK).
+
+## Brief V4 (nhận 2026-11-28)
+- Trích tại `docs/private/BRIEF_V4.txt` (gitignore). Được push không cần hỏi; không gắn tag khi chưa được yêu cầu.
+- [x] Test 1.000 giao dịch · [ ] Đợt 2: quan hệ và ký ức một nguồn; test giết tiến trình khi đang lưu
+- [ ] Đợt 3: Procedural Catalog, MLO, Modular, NPC tới Activity Anchor
+- Đề xuất bài học chờ duyệt (lessons.md): "Không đưa nhân vật đi trước khi nơi đến đã nạp xong"; "Log phải có dòng chứng minh thành công thì mới chấm được".

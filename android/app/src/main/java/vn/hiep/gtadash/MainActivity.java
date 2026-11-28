@@ -49,6 +49,7 @@ public class MainActivity extends Activity {
 
     WebView web;
     SharedPreferences prefs;
+    Updater updater;
 
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
@@ -80,6 +81,13 @@ public class MainActivity extends Activity {
         setContentView(web);
         String addr = prefs.getString("addr", "");
         if (addr.isEmpty()) askAddr(); else open(addr);
+        updater = new Updater(this);
+        updater.check(false);
+    }
+
+    @Override protected void onDestroy() {
+        if (updater != null) updater.close();
+        super.onDestroy();
     }
 
     // dia chi Google Apps Script (https://script.google.com/...) -> che do dam may: trang nam trong APK; con lai -> tai thang tu PC
@@ -100,7 +108,9 @@ public class MainActivity extends Activity {
                 if (!a.startsWith("http")) a = "http://" + a;
                 prefs.edit().putString("addr", a).apply();
                 open(a);
-            }).show();
+            })
+            .setNeutralButton("Cap nhat app", (d, w) -> { if (updater != null) updater.check(true); })
+            .show();
     }
 
     @Override public boolean onCreateOptionsMenu(Menu m) { m.add("Doi dia chi PC"); return true; }

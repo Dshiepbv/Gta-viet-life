@@ -10,5 +10,19 @@ android {
         versionCode = runNo
         versionName = "1.${runNo}"
     }
+    // Android chi cai de khi APK moi ky cung khoa voi ban dang cai. Khoa nam trong GitHub Secrets,
+    // khong nam trong repo; khi khong co thi dung khoa debug tam cua may build.
+    def keyFile = System.getenv('ANDROID_KEYSTORE_FILE')
+    if (keyFile) {
+        signingConfigs {
+            stable {
+                storeFile file(keyFile)
+                storePassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('ANDROID_KEY_ALIAS') ?: 'gtadash'
+                keyPassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
+            }
+        }
+        buildTypes { debug { signingConfig signingConfigs.stable } }
+    }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
 }

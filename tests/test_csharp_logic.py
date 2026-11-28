@@ -275,17 +275,29 @@ static class Harness
     {
         GvlPortal p = new GvlPortal();
         p.BeginEnter(1000);
-        Check(p.Step(1100, true, true) == GvlPortal.Wait, "frozen at least 200 ms even if loaded");
-        Check(p.Step(1500, false, true) == GvlPortal.Wait, "waits for collision");
-        Check(p.Step(1600, true, false) == GvlPortal.Wait, "waits for interior");
-        Check(p.Step(1700, true, true) == GvlPortal.Done && p.Phase == GvlPortal.Inside, "released inside");
-        Check(p.Step(1800, true, true) == GvlPortal.Wait, "single release");
+        Check(p.Step(1100, true, true, true) == GvlPortal.Wait, "frozen at least 200 ms even if loaded");
+        Check(p.Step(1500, false, true, true) == GvlPortal.Wait, "waits for collision");
+        Check(p.Step(1600, true, false, true) == GvlPortal.Wait, "waits for interior");
+        Check(p.Step(1650, true, true, false) == GvlPortal.Wait, "never released without ground below");
+        Check(p.Step(1700, true, true, true) == GvlPortal.Done && p.Phase == GvlPortal.Inside, "released inside");
+        Check(p.Step(1800, true, true, true) == GvlPortal.Wait, "single release");
         p.BeginExit(2000);
-        Check(p.Step(2250, true, true) == GvlPortal.Done && p.Phase == GvlPortal.Outside, "exit");
+        Check(p.Step(2250, true, true, false) == GvlPortal.Wait, "exit also waits for ground");
+        Check(p.Step(2300, true, true, true) == GvlPortal.Done && p.Phase == GvlPortal.Outside, "exit");
         p.BeginEnter(3000);
-        Check(p.Step(3000 + GvlPortal.TimeoutMs, false, false) == GvlPortal.Abort && p.Phase == GvlPortal.Outside, "load timeout aborts");
+        Check(p.Step(3000 + GvlPortal.TimeoutMs, true, true, false) == GvlPortal.Abort && p.Phase == GvlPortal.Outside, "no ground aborts");
         p.BeginExit(20000);
-        Check(p.Step(20000 + GvlPortal.TimeoutMs, false, false) == GvlPortal.Done, "exit never traps the player");
+        Check(p.Step(20000 + GvlPortal.ExitTimeoutMs, false, false, false) == GvlPortal.Done, "exit never traps the player");
+        Check(GvlPortal.BlackScreenLimitMs > GvlPortal.ExitTimeoutMs, "safety net is the last resort");
+
+        GvlPrepare wait = new GvlPrepare();
+        Check(wait.Step(5, true) == GvlPortal.Wait && !wait.Active, "idle");
+        wait.Begin(100);
+        Check(wait.Step(200, false) == GvlPortal.Wait && wait.Active, "still loading, player not moved");
+        Check(wait.Step(300, true) == GvlPortal.Done && !wait.Active, "ready");
+        wait.Begin(1000);
+        Check(wait.Step(1000 + GvlPrepare.LimitMs, false) == GvlPortal.Abort && !wait.Active, "gives up without moving");
+        wait.Begin(1); wait.Cancel(); Check(wait.Step(99999, false) == GvlPortal.Wait, "cancelled");
     }
 
     static void Crowd()

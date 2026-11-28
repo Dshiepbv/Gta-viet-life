@@ -113,10 +113,10 @@ public class GtaVietLifeInteriors : Script
     readonly Dictionary<int, bool> doorModel = new Dictionary<int, bool>();
 
     bool enabled = true, autoDiscover = true, showMarkers = true, dirty, furnishPending, spawnFurniture;
-    Vector3 teleportOrigin;
+    readonly GvlPrepare prepare = new GvlPrepare();
+    int movedAt;                 // luc man hinh toi; 0 khi khong dang chuyen cho
     Keys useKey = Keys.H, teleportKey = Keys.F7;
-    int testIndex = -1, teleportUntil;
-    TestPoint teleporting;
+    int testIndex = -1;
     string building = "";
     readonly HashSet<int> tried = new HashSet<int>();
     int template = -1;
@@ -151,8 +151,10 @@ public class GtaVietLifeInteriors : Script
             int now = Game.GameTime;
             if (me.IsDead) { if (portal.Phase != GvlPortal.Outside || building.Length > 0) LeaveEverything(false); return; }
 
-            StepTeleport(me, now);
+            StepPrepare(me, now);
             StepPortal(me, now);
+            // Luoi an toan: man hinh toi qua lau thi dua nguoi choi ve cho cu, bat ke chuyen gi hong.
+            if (movedAt > 0 && now - movedAt > GvlPortal.BlackScreenLimitMs) Rescue(me);
             if (portal.Phase == GvlPortal.Inside)
             {
                 // Bi dich chuyen ra ngoai (nhiem vu, trainer, chet): don dep, khong keo nguoi choi ve.
@@ -236,8 +238,8 @@ public class GtaVietLifeInteriors : Script
         try
         {
             Ped me = Game.Player.Character;
-            if (me == null || !me.Exists() || me.IsDead || me.IsInVehicle() || OtherMenuOpen() || teleporting != null) return;
-            if (e.KeyCode == teleportKey) { BeginTeleport(me); return; }
+            if (me == null || !me.Exists() || me.IsDead || me.IsInVehicle() || OtherMenuOpen() || prepare.Active) return;
+            if (e.KeyCode == teleportKey) { MarkTestPoint(); return; }
             if (portal.Phase == GvlPortal.Outside)
             {
                 if (e.Shift) { MarkDoor(me); return; }
@@ -273,45 +275,13 @@ public class GtaVietLifeInteriors : Script
         else Notify("Cho nay da co cua.");
     }
 
-    void BeginTeleport(Ped me)
+    // Khong dich chuyen nguoi choi toi diem thu nua (de roi xuyen ban do): chi danh dau tren ban do.
+    void MarkTestPoint()
     {
-        if (portal.Phase != GvlPortal.Outside) { Notify("Ra khoi nha truoc khi dich chuyen."); return; }
         testIndex = (testIndex + 1) % TestPoints.Length;
-        teleporting = TestPoints[testIndex];
-        teleportUntil = Game.GameTime + 10000;
-        teleportOrigin = me.Position;
-        Vector3 p = teleporting.Pos;
-        float z = p.Z > 0f ? p.Z + 0.3f : 80f;
-        Travel(me, new Vector3(p.X, p.Y, z), "");
-    }
-
-    void StepTeleport(Ped me, int now)
-    {
-        if (teleporting == null) return;
-        Vector3 p = teleporting.Pos;
-        Function.Call(Hash.REQUEST_COLLISION_AT_COORD, travelTarget.X, travelTarget.Y, travelTarget.Z);
-        bool loaded = Function.Call<bool>(Hash.HAS_COLLISION_LOADED_AROUND_ENTITY, me);
-        float ground = p.Z;
-        if (ground <= 0f)
-        {
-            OutputArgument height = new OutputArgument();
-            if (Function.Call<bool>(Hash.GET_GROUND_Z_FOR_3D_COORD, p.X, p.Y, 80f, height, false)) ground = height.GetResult<float>();
-        }
-        if (now < teleportUntil && (!loaded || ground <= 0f)) return;
-        if (!loaded || ground <= 0f)
-        {
-            // Dia hinh chua nap: tha nhan vat o do se roi xuyen ban do. Tra ve cho cu.
-            Place(me, teleportOrigin);
-            Release(me);
-            Notify("~y~Diem " + (testIndex + 1) + " chua nap duoc,~s~ da quay ve. Bam lai " + teleportKey + " de thu diem tiep.");
-            Log("diem thu '" + teleporting.Name + "' khong nap duoc");
-            teleporting = null;
-            return;
-        }
-        Place(me, new Vector3(p.X, p.Y, ground + 0.3f));
-        Release(me);
-        Notify("~g~Diem " + (testIndex + 1) + "/" + TestPoints.Length + "~s~: " + teleporting.Name);
-        teleporting = null;
+        TestPoint point = TestPoints[testIndex];
+        Function.Call(Hash.SET_NEW_WAYPOINT, point.Pos.X, point.Pos.Y);
+        Notify("~g~Diem " + (testIndex + 1) + "/" + TestPoints.Length + "~s~: " + point.Name + ". Da danh dau tren ban do.");
     }
 
     void BeginEnter(Ped me, GvlEntrance door)
@@ -322,9 +292,67 @@ public class GtaVietLifeInteriors : Script
         building = door.Id; template = pick;
         tried.Clear();
         returnPos = me.Position; returnHeading = me.Heading;
-        Travel(me, Templates[pick].Spawn, Templates[pick].Ipl);
-        portal.BeginEnter(Game.GameTime);
-        Save();   // ghi diem quay ve truoc khi roi mat dat
+        StartPrepare(Game.GameTime);
+        Notify("Dang mo cua...");
+    }
+
+    // Nap noi that TRUOC khi dua nguoi choi toi: man hinh khong toi va khong roi neu noi that hong.
+    void StartPrepare(int now)
+    {
+        if (Templates[template].Ipl.Length > 0) Function.Call(Hash.REQUEST_IPL, Templates[template].Ipl);
+        prepare.Begin(now);
+    }
+
+    void StepPrepare(Ped me, int now)
+    {
+        if (!prepare.Active) return;
+        // Nguoi choi di xa cua hoac len xe thi thoi.
+        if (me.IsInVehicle() || me.Position.DistanceTo(returnPos) > 6f) { prepare.Cancel(); building = ""; template = -1; return; }
+        Vector3 spawn = Templates[template].Spawn;
+        int interior = Function.Call<int>(Hash.GET_INTERIOR_AT_COORDS, spawn.X, spawn.Y, spawn.Z);
+        bool ready = false;
+        if (interior != 0)
+        {
+            Function.Call(Hash.PIN_INTERIOR_IN_MEMORY, interior);
+            ready = Function.Call<bool>(Hash.IS_INTERIOR_READY, interior);
+        }
+        int outcome = prepare.Step(now, ready);
+        if (outcome == GvlPortal.Wait) return;
+        if (outcome == GvlPortal.Done)
+        {
+            returnPos = me.Position; returnHeading = me.Heading;
+            Travel(me, spawn);
+            portal.BeginEnter(now);
+            Save();   // ghi diem quay ve truoc khi roi mat dat
+            return;
+        }
+        health.Failed(template);
+        tried.Add(template);
+        dirty = true;
+        Log("mau '" + Templates[template].Name + "' chua san sang, bo qua cho " + building);
+        int next = NextTemplate();
+        if (next >= 0) { template = next; StartPrepare(now); return; }
+        Log("khong nap duoc noi that nao cho " + building);
+        Notify("~r~Cua nay chua vao duoc:~s~ khong noi that nao nap duoc.");
+        building = ""; template = -1;
+    }
+
+    bool GroundBelow(Ped me)
+    {
+        Vector3 p = me.Position;
+        return World.Raycast(p + new Vector3(0f, 0f, 0.5f), p - new Vector3(0f, 0f, 3f),
+            IntersectFlags.Map | IntersectFlags.Objects, me).DidHit;
+    }
+
+    void Rescue(Ped me)
+    {
+        Log("chuyen cho qua lau, dua nguoi choi ve cua");
+        Function.Call(Hash.SET_ENTITY_COORDS_NO_OFFSET, me, returnPos.X, returnPos.Y, returnPos.Z, false, false, false);
+        prepare.Cancel();
+        portal.Reset();
+        Release(me);
+        building = ""; template = -1; dirty = true; Save();
+        Notify("~y~Khong chuyen duoc cho,~s~ da dua ve cua.");
     }
 
     int NextTemplate()
@@ -339,14 +367,14 @@ public class GtaVietLifeInteriors : Script
     {
         MoveVisitorsOutside();
         ClearAnchors();
-        Travel(me, returnPos, "");
+        Travel(me, returnPos);
         portal.BeginExit(Game.GameTime);
     }
 
-    void Travel(Ped me, Vector3 target, string ipl)
+    void Travel(Ped me, Vector3 target)
     {
         travelTarget = target;
-        if (ipl.Length > 0) Function.Call(Hash.REQUEST_IPL, ipl);
+        movedAt = Game.GameTime;
         GTA.UI.Screen.FadeOut(150);
         Function.Call(Hash.FREEZE_ENTITY_POSITION, me, true);
         Function.Call(Hash.SET_ENTITY_COORDS_NO_OFFSET, me, target.X, target.Y, target.Z, false, false, false);
@@ -360,26 +388,15 @@ public class GtaVietLifeInteriors : Script
         bool entering = portal.Phase == GvlPortal.Entering;
         Function.Call(Hash.REQUEST_COLLISION_AT_COORD, travelTarget.X, travelTarget.Y, travelTarget.Z);
         bool loaded = Function.Call<bool>(Hash.HAS_COLLISION_LOADED_AROUND_ENTITY, me);
-        int outcome = portal.Step(now, loaded, entering ? InteriorOf(me) != 0 : true);
+        bool ground = loaded && GroundBelow(me);
+        int outcome = portal.Step(now, loaded, entering ? InteriorOf(me) != 0 : true, ground);
         if (outcome == GvlPortal.Wait) return;
         if (outcome == GvlPortal.Abort)
         {
+            // Noi that bao san sang ma van khong dung duoc: tra ve cua, lan sau doi mau khac.
             health.Failed(template);
-            tried.Add(template);
-            Log("mau '" + Templates[template].Name + "' khong nap duoc cho " + building);
-            int next = NextTemplate();
-            if (next >= 0)
-            {
-                template = next;
-                Travel(me, Templates[next].Spawn, Templates[next].Ipl);
-                portal.BeginEnter(now);
-                Save();
-                return;
-            }
-            Function.Call(Hash.SET_ENTITY_COORDS_NO_OFFSET, me, returnPos.X, returnPos.Y, returnPos.Z, false, false, false);
-            Release(me);
-            building = ""; template = -1; dirty = true; Save();
-            Notify("~r~Khong nap duoc noi that nao.~s~ Xem GtaVietLifeInteriors.log.");
+            Log("mau '" + Templates[template].Name + "' khong dung duoc cho " + building);
+            Rescue(me);
             return;
         }
         Release(me);
@@ -401,6 +418,7 @@ public class GtaVietLifeInteriors : Script
 
     void Release(Ped me)
     {
+        movedAt = 0;
         Function.Call(Hash.CLEAR_FOCUS);
         Function.Call(Hash.FREEZE_ENTITY_POSITION, me, false);
         GTA.UI.Screen.FadeIn(400);
@@ -412,7 +430,7 @@ public class GtaVietLifeInteriors : Script
         Ped me = Game.Player.Character;
         ReleaseAllVisitors();
         ClearAnchors();
-        teleporting = null;
+        prepare.Cancel();
         if (me != null && me.Exists())
         {
             if (returnPlayer && building.Length > 0)
@@ -780,6 +798,7 @@ public class GtaVietLifeInteriors : Script
         if (Templates[pick].Ipl.Length > 0) Function.Call(Hash.REQUEST_IPL, Templates[pick].Ipl);
         travelTarget = Templates[pick].Spawn;
         Function.Call(Hash.FREEZE_ENTITY_POSITION, me, true);
+        movedAt = Game.GameTime;
         portal.BeginEnter(Game.GameTime);
     }
 
@@ -1021,6 +1040,8 @@ public sealed class GvlPortal
     public const int Wait = 0, Done = 1, Abort = 2;
     public const int MinFreezeMs = 200;
     public const int TimeoutMs = 8000;
+    public const int ExitTimeoutMs = 20000;
+    public const int BlackScreenLimitMs = 25000;
     int since;
     public int Phase { get; private set; }
 
@@ -1028,20 +1049,39 @@ public sealed class GvlPortal
     public void BeginExit(int now) { Phase = Leaving; since = now; }
     public void Reset() { Phase = Outside; }
 
-    public int Step(int now, bool collisionLoaded, bool insideInterior)
+    public int Step(int now, bool collisionLoaded, bool insideInterior, bool groundBelow)
     {
         if (Phase != Entering && Phase != Leaving) return Wait;
         int elapsed = now - since;
         if (elapsed < MinFreezeMs) return Wait;
         if (Phase == Entering)
         {
-            if (collisionLoaded && insideInterior) { Phase = Inside; return Done; }
+            if (collisionLoaded && insideInterior && groundBelow) { Phase = Inside; return Done; }
             if (elapsed >= TimeoutMs) { Phase = Outside; return Abort; }
             return Wait;
         }
         // Diem quay ve la cho nguoi choi vua dung tren mat dat nen qua han van tha ra.
-        if (collisionLoaded || elapsed >= TimeoutMs) { Phase = Outside; return Done; }
+        if ((collisionLoaded && groundBelow) || elapsed >= ExitTimeoutMs) { Phase = Outside; return Done; }
         return Wait;
+    }
+}
+
+// Cho noi that nap xong truoc khi di chuyen nguoi choi.
+public sealed class GvlPrepare
+{
+    public const int LimitMs = 3000;
+    int since;
+    public bool Active { get; private set; }
+
+    public void Begin(int now) { Active = true; since = now; }
+    public void Cancel() { Active = false; }
+
+    public int Step(int now, bool ready)
+    {
+        if (!Active) return GvlPortal.Wait;
+        if (ready) { Active = false; return GvlPortal.Done; }
+        if (now - since >= LimitMs) { Active = false; return GvlPortal.Abort; }
+        return GvlPortal.Wait;
     }
 }
 

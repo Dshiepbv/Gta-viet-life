@@ -4,6 +4,10 @@ __pycache__/
 bridge/config.json
 bridge/memory.db
 
+# signing keys
+*.jks
+*.keystore
+
 # build output
 publish/
 artifacts/
@@ -12,3 +16,6 @@ game/compile/obj/
 launcher/**/bin/
 launcher/**/obj/
 *.spec
+
+# project documents kept on this machine only
+docs/private/
