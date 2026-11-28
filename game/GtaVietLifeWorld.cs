@@ -1751,7 +1751,7 @@ public class GtaVietLifeWorld : Script
         if (stand != null)
         {
             Function.Call(Hash.SET_ENTITY_COLLISION, stand, false, false);   // quay chi de trang tri, nhan vien khong bi day len mat quay
-            try { Vector3 smn, smx; stand.Model.GetDimensions(out smn, out smx); standHalf = Math.Max(smx.X - smn.X, smx.Y - smn.Y) * 0.5f; standTop = stand.Position.Z + smx.Z; Log("quay " + stName + " kich thuoc " + (smx.X - smn.X).ToString("0.0") + "x" + (smx.Y - smn.Y).ToString("0.0") + "x" + smx.Z.ToString("0.0")); }
+            try { Vector3 smn, smx; ModelBounds(stand.Model, out smn, out smx); standHalf = Math.Max(smx.X - smn.X, smx.Y - smn.Y) * 0.5f; standTop = stand.Position.Z + smx.Z; Log("quay " + stName + " kich thuoc " + (smx.X - smn.X).ToString("0.0") + "x" + (smx.Y - smn.Y).ToString("0.0") + "x" + smx.Z.ToString("0.0")); }
             catch { }
             if (bizLevel >= 3) AddProp("prop_coffee_mac_01", new Vector3(bizPos.X, bizPos.Y, standTop), bizHeading + stYaw, false);   // may pha cafe tren quay
         }
@@ -1776,7 +1776,7 @@ public class GtaVietLifeWorld : Script
             float top = GroundForBiz() + 0.74f;   // du phong neu khong do duoc
             if (tb != null)
             {
-                try { Vector3 dmn, dmx; tb.Model.GetDimensions(out dmn, out dmx); top = tb.Position.Z + dmx.Z; }
+                try { Vector3 dmn, dmx; ModelBounds(tb.Model, out dmn, out dmx); top = tb.Position.Z + dmx.Z; }
                 catch { }
             }
             tcTop.Add(top);
@@ -2546,6 +2546,14 @@ public class GtaVietLifeWorld : Script
     int[] doorHashes;
     int nextDoorUnlock; int nextDoorLog; int nextDoorDiag;
 
+    // goi native truc tiep: ten ham Model cua SHVDN khac nhau giua cac ban
+    static void ModelBounds(Model m, out Vector3 min, out Vector3 max)
+    {
+        OutputArgument a = new OutputArgument(), b = new OutputArgument();
+        Function.Call(Hash.GET_MODEL_DIMENSIONS, m.Hash, a, b);
+        min = a.GetResult<Vector3>(); max = b.GetResult<Vector3>();
+    }
+
     bool IsDoorModel(Prop pr)
     {
         int mh = pr.Model.Hash;
@@ -2555,7 +2563,7 @@ public class GtaVietLifeWorld : Script
         try
         {
             Vector3 mn, mx;
-            pr.Model.GetDimensions(out mn, out mx);
+            ModelBounds(pr.Model, out mn, out mx);
             float w = mx.X - mn.X, d = mx.Y - mn.Y, h = mx.Z - mn.Z;
             float thin = Math.Min(w, d), wide = Math.Max(w, d);
             r = thin < 0.25f && wide > 0.6f && wide < 1.7f && h > 1.8f && h < 3.0f;
@@ -3242,6 +3250,12 @@ public class GtaVietLifeWorld : Script
         Save();
     }
 
+    static bool HeldByInteriors(int handle)
+    {
+        int[] held = AppDomain.CurrentDomain.GetData("GVL.Interiors.Held") as int[];
+        return held != null && Array.IndexOf(held, handle) >= 0;
+    }
+
     void ProcessEngineCommands(int now)
     {
         Queue<Dictionary<string, object>> queue = AppDomain.CurrentDomain.GetData("GVL.Engine.Commands") as Queue<Dictionary<string, object>>;
@@ -3284,7 +3298,7 @@ public class GtaVietLifeWorld : Script
                 }
                 bool followingPlayer = false;
                 try { followingPlayer = Game.Player.Character.PedGroup.Contains(resident.P); } catch { }
-                if (resident.P.IsPositionFrozen || followingPlayer)
+                if (resident.P.IsPositionFrozen || followingPlayer || HeldByInteriors(resident.P.Handle))
                 {
                     lock (queue) queue.Enqueue(command);
                     continue; // khong cat ngang hoi thoai/di theo nguoi choi
@@ -3704,6 +3718,7 @@ public class GtaVietLifeWorld : Script
                 bool inGroup = false;
                 try { inGroup = me.PedGroup.Contains(p); } catch { }
                 if (inGroup) continue;   // dang di theo Sep
+                if (HeldByInteriors(p.Handle)) continue;   // module noi that dang dua vao nha
                 if (r.EngineControlled)
                 {
                     if (r.EngineScenarioPending) ApplyEngineResidentActivity(r, r.EngineActivity, r.EngineLocation, now);

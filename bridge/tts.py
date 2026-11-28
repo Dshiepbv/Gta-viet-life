@@ -44,7 +44,11 @@ def _shift(val: str, d: int, unit: str) -> str:
 
 class Voice:
     def __init__(self, cfg: dict):
-        pygame.mixer.init()
+        try:
+            pygame.mixer.init()
+        except pygame.error as e:
+            # Không có thiết bị âm thanh: cầu nối vẫn chạy, chỉ im lặng cho tới khi mở được loa.
+            print(f"[tts] chưa mở được thiết bị âm thanh: {e}")
         self.volume = float(cfg.get("tts_volume", 1.0))
         self.dir = tempfile.mkdtemp(prefix="gtavl_")
         self.n = 0
@@ -191,6 +195,8 @@ class Voice:
                 if not results[i]:
                     continue
                 try:
+                    if not pygame.mixer.get_init():
+                        pygame.mixer.init()
                     snd = pygame.mixer.Sound(results[i])
                     snd.set_volume(self.volume)
                     ch = snd.play()

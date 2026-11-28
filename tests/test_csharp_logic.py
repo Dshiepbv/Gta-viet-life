@@ -28,7 +28,8 @@ def testable_block(script, name):
     match = re.search(r"// <gvl-testable:%s>(.*?)// </gvl-testable:%s>" % (name, name), source, re.S)
     if not match:
         raise AssertionError("%s has no testable block '%s'" % (script, name))
-    return "using System;\nusing System.Collections.Generic;\nusing System.Text;\n" + match.group(1)
+    return ("using System;\nusing System.Collections.Generic;\nusing System.Globalization;\n"
+            "using System.Text;\n" + match.group(1))
 
 
 HARNESS = r'''
@@ -208,12 +209,123 @@ static class Harness
         Check(fade.TryFinish(int.MaxValue, out minutes, out action) && minutes == 60, "abort flushes the pending effect");
     }
 
+    // Bubble: on at 120 m, off only beyond 150 m, thousands of doors.
+    static void Streaming()
+    {
+        GvlRegistry reg = new GvlRegistry();
+        Check(reg.Add(0f, 0f, 30f, "seed"), "add");
+        Check(!reg.Add(1.5f, 1f, 30.5f, "scan") && reg.Count == 1, "same door merged");
+        Check(reg.Add(-400f, -900f, 30f, "scan"), "negative coordinates");
+        Check(reg.Add(0f, 0f, 60f, "scan"), "door on another floor is separate");
+        Check(reg.Nearest(0.5f, 0.5f, 30.2f, 1.8f).Z == 30f, "nearest respects height");
+        Check(reg.Nearest(5f, 5f, 30f, 1.8f) == null, "out of reach");
+        GvlBubble bubble = new GvlBubble();
+        string id = GvlRegistry.MakeId(0f, 0f, 30f);
+        bubble.Update(reg, 121f, 0f, 30f); Check(!bubble.Active.Contains(id), "not loaded at 121");
+        bubble.Update(reg, 119f, 0f, 30f); Check(bubble.Active.Contains(id), "loaded at 119");
+        bubble.Update(reg, 149f, 0f, 30f); Check(bubble.Active.Contains(id), "kept at 149");
+        bubble.Update(reg, 151f, 0f, 30f); Check(!bubble.Active.Contains(id), "unloaded beyond 150");
+
+        GvlRegistry big = new GvlRegistry();
+        for (int i = 0; i < 100; i++) for (int j = 0; j < 60; j++) big.Add(i * 9f - 400f, j * 9f - 300f, 20f, "scan");
+        Check(big.Count == GvlRegistry.Capacity, "capacity bound");
+        int expected = 0;
+        foreach (string line in big.Serialize())
+        {
+            string[] f = line.Split('|');
+            float x = float.Parse(f[0], System.Globalization.CultureInfo.InvariantCulture);
+            float y = float.Parse(f[1], System.Globalization.CultureInfo.InvariantCulture);
+            if (GvlRegistry.Distance(0f, 0f, x, y) <= 120f) expected++;
+        }
+        Check(expected > 100 && big.Within(0f, 0f, 20f, 120f).Count == expected, "grid query equals brute force");
+        GvlRegistry copy = new GvlRegistry();
+        foreach (string line in reg.Serialize()) copy.Load(line);
+        Check(copy.Count == reg.Count && copy.Find(id) != null, "round trip keeps ids");
+        Check(!copy.Load("garbage") && !copy.Load("1|2|x|scan") && !copy.Load(null), "bad lines ignored");
+        Check(GvlRegistry.LooksLikeDoor(1.1f, 0.12f, 2.4f), "door size");
+        Check(!GvlRegistry.LooksLikeDoor(4f, 0.1f, 2.4f) && !GvlRegistry.LooksLikeDoor(1.1f, 1.1f, 2.4f), "gate and box rejected");
+    }
+
+    static void Templates()
+    {
+        GvlTemplateHealth health = new GvlTemplateHealth();
+        int first = GvlTemplates.Assign("12_34_5", 23, health);
+        Check(first >= 0 && first < 23 && GvlTemplates.Assign("12_34_5", 23, health) == first, "stable assignment");
+        health.Failed(first); Check(GvlTemplates.Assign("12_34_5", 23, health) == first, "one failure retried");
+        health.Failed(first); Check(GvlTemplates.Assign("12_34_5", 23, health) == (first + 1) % 23, "broken template skipped");
+        GvlTemplateHealth restored = new GvlTemplateHealth();
+        foreach (string line in health.Serialize()) restored.Load(line);
+        Check(!restored.Usable(first), "failures persisted");
+        for (int i = 0; i < 23; i++) { health.Failed(i); health.Failed(i); }
+        Check(GvlTemplates.Assign("12_34_5", 23, health) == -1, "nothing usable");
+        HashSet<int> skip = new HashSet<int>(); skip.Add(first);
+        Check(GvlTemplates.Assign("12_34_5", 23, new GvlTemplateHealth(), skip) == (first + 1) % 23, "just-failed template skipped");
+        HashSet<int> used = new HashSet<int>();
+        for (int i = 0; i < 1000; i++) used.Add(GvlTemplates.Assign(i + "_" + (i * 7) + "_30", 23, new GvlTemplateHealth()));
+        Check(used.Count == 23, "all templates used across many buildings");
+        float ax, ay, bx, by;
+        GvlTemplates.Offset("a", "bed", 0, out ax, out ay); GvlTemplates.Offset("a", "bed", 0, out bx, out by);
+        Check(ax == bx && ay == by, "seeded offset is deterministic");
+        GvlTemplates.Offset("b", "bed", 0, out bx, out by); Check(ax != bx || ay != by, "differs per building");
+        double r = Math.Sqrt(ax * ax + ay * ay); Check(r >= 1.79 && r <= 5.81, "offset keeps clear of the door");
+    }
+
+    static void Portal()
+    {
+        GvlPortal p = new GvlPortal();
+        p.BeginEnter(1000);
+        Check(p.Step(1100, true, true) == GvlPortal.Wait, "frozen at least 200 ms even if loaded");
+        Check(p.Step(1500, false, true) == GvlPortal.Wait, "waits for collision");
+        Check(p.Step(1600, true, false) == GvlPortal.Wait, "waits for interior");
+        Check(p.Step(1700, true, true) == GvlPortal.Done && p.Phase == GvlPortal.Inside, "released inside");
+        Check(p.Step(1800, true, true) == GvlPortal.Wait, "single release");
+        p.BeginExit(2000);
+        Check(p.Step(2250, true, true) == GvlPortal.Done && p.Phase == GvlPortal.Outside, "exit");
+        p.BeginEnter(3000);
+        Check(p.Step(3000 + GvlPortal.TimeoutMs, false, false) == GvlPortal.Abort && p.Phase == GvlPortal.Outside, "load timeout aborts");
+        p.BeginExit(20000);
+        Check(p.Step(20000 + GvlPortal.TimeoutMs, false, false) == GvlPortal.Done, "exit never traps the player");
+    }
+
+    static void Crowd()
+    {
+        GvlOccupancy o = new GvlOccupancy(3);
+        Check(o.TryEnter("a", 1) && o.TryEnter("a", 2) && o.TryEnter("a", 3), "three fit");
+        Check(!o.TryEnter("a", 4) && !o.TryEnter("b", 1), "capacity and single location");
+        Check(o.TryReserve("a", "bed", 1) && !o.TryReserve("a", "bed", 2), "one per anchor");
+        Check(!o.TryReserve("b", "bed", 2), "cannot reserve elsewhere");
+        Check(o.TryReserve("a", "desk", 1) && o.TryReserve("a", "bed", 2), "moving frees the old anchor");
+        o.Leave(2); Check(o.TryEnter("a", 4) && o.TryReserve("a", "bed", 4), "leaving frees place and anchor");
+
+        GvlStuck s = new GvlStuck();
+        Check(!s.Update(7, 0, 10f), "first sample");
+        Check(!s.Update(7, 7999, 9.8f), "not yet");
+        Check(s.Update(7, 8000, 9.8f), "stuck after eight seconds without progress");
+        s.Clear(7);
+        bool any = false;
+        for (int t = 0; t <= 60000; t += 1000) any = s.Update(8, t, 100f - t / 1000f) || any;
+        Check(!any, "steady progress is not stuck");
+    }
+
+    static void Wallet()
+    {
+        GvlWalletReporter w = new GvlWalletReporter();
+        Check(w.ShouldReport(0, 100), "first");
+        Check(!w.ShouldReport(1000, 200), "rate limited");
+        Check(w.ShouldReport(5000, 200), "change reported");
+        Check(!w.ShouldReport(30000, 200), "unchanged is quiet");
+        Check(w.ShouldReport(65000, 200), "periodic repeat");
+        w.Invalidate(); Check(w.ShouldReport(65001, 200), "character switch reports at once");
+        Check(w.ShouldReport(10, 200), "timer reset after a reload");
+    }
+
     static int Main(string[] args)
     {
         if (args.Length > 0 && args[0] == "control") Check(false, "control case");
         else { Paths(); PermanentErrorDoesNotBlock(); BoundedRetry(404, GvlSendRules.MaxNotFoundAttempts);
                BoundedRetry(500, GvlSendRules.MaxServerErrorAttempts); TransientErrorKeepsEverything();
-               CoalescingAndPersistence(); Capacity(); Batches(); Fade(); }
+               CoalescingAndPersistence(); Capacity(); Batches(); Fade();
+               Streaming(); Templates(); Portal(); Crowd(); Wallet(); }
         Console.WriteLine("failures=" + failures);
         return failures == 0 ? 0 : 1;
     }
@@ -234,6 +346,8 @@ class CSharpLogicTests(unittest.TestCase):
         folder = Path(cls.folder.name)
         files = {"Outbox.cs": testable_block("GtaVietLifeCore.cs", "outbox"),
                  "Fade.cs": testable_block("GtaVietLifeDoiSong.cs", "fade"),
+                 "Uis.cs": testable_block("GtaVietLifeInteriors.cs", "uis"),
+                 "Wallet.cs": testable_block("GtaVietLifePersonal.cs", "wallet"),
                  "Harness.cs": HARNESS}
         for name, text in files.items():
             (folder / name).write_text(text, encoding="utf-8-sig")
@@ -256,6 +370,16 @@ class CSharpLogicTests(unittest.TestCase):
 
 
 class ScriptQueueSafetyTests(unittest.TestCase):
+    def test_no_script_overwrites_the_wallet_from_a_saved_value(self):
+        source = (GAME / "GtaVietLifePersonal.cs").read_text(encoding="utf-8-sig")
+        self.assertEqual(re.findall(r"Game\.Player\.Money = saved\w*", source), [])
+
+    def test_scripts_use_no_api_missing_from_the_legacy_runtime(self):
+        for path in GAME.glob("*.cs"):
+            source = path.read_text(encoding="utf-8-sig")
+            for banned in (".Task.Combat(", ".Model.GetDimensions(", "Notification.PostTicker("):
+                self.assertNotIn(banned, source, path.name)
+
     def test_no_method_requeues_itself_into_a_queue_drained_until_empty(self):
         offenders = []
         for path in sorted(GAME.glob("*.cs")):

@@ -16,6 +16,8 @@ from typing import Any, Callable, Dict, Optional
 
 MAX_ID = 128
 MAX_TEXT = 500
+SYNC_RETENTION_SECONDS = 3600
+PRUNE_EVERY_SYNCS = 200
 
 
 def _valid_id(value: Any, label: str) -> str:
@@ -33,7 +35,9 @@ class SocietySimulation:
         self.lock = lock
         self.minute_provider = minute_provider or (lambda: 0)
         self.life_engine = life_engine
+        self._syncs_since_prune = 0
         self._migrate()
+        self.prune_sync_history()
 
     def _migrate(self):
         with self.lock, self.db:
@@ -108,6 +112,11 @@ class SocietySimulation:
                 CREATE TABLE IF NOT EXISTS world_processed_life_events(
                     event_id TEXT PRIMARY KEY, processed_minute INTEGER NOT NULL);
             """)
+            for table, column, kind in (("world_request_dedup", "kind", "TEXT NOT NULL DEFAULT ''"),
+                                        ("world_request_dedup", "created_at", "INTEGER NOT NULL DEFAULT 0"),
+                                        ("world_event_journal", "recorded_at", "INTEGER NOT NULL DEFAULT 0")):
+                if column not in {row["name"] for row in self.db.execute("PRAGMA table_info(%s)" % table)}:
+                    self.db.execute("ALTER TABLE %s ADD COLUMN %s %s" % (table, column, kind))
             business_columns = {row["name"] for row in self.db.execute("PRAGMA table_info(world_businesses)")}
             if "native_cash_balance" not in business_columns:
                 self.db.execute("ALTER TABLE world_businesses ADD COLUMN native_cash_balance INTEGER NOT NULL DEFAULT 0")
@@ -524,16 +533,20 @@ class SocietySimulation:
                       "cash_delta": delta, "inventory": normalized, "is_open": is_open,
                       "payroll_settled": payroll_settled}
             self.db.execute(
-                "INSERT INTO world_request_dedup(request_id,response_json) VALUES(?,?)",
-                (request_id, json.dumps(result, ensure_ascii=False)),
+                "INSERT INTO world_request_dedup(request_id,response_json,kind,created_at) VALUES(?,?,'sync',?)",
+                (request_id, json.dumps(result, ensure_ascii=False), int(time.time())),
             )
             self.db.execute(
                 """INSERT INTO world_event_journal
-                (event_id,event_type,target_id,payload_json,sim_minute) VALUES(?,?,?,?,?)""",
+                (event_id,event_type,target_id,payload_json,sim_minute,recorded_at) VALUES(?,?,?,?,?,?)""",
                 (uuid.uuid4().hex, "business.state_synchronized", business_id,
-                 json.dumps(result, ensure_ascii=False), int(self.minute_provider())),
+                 json.dumps(result, ensure_ascii=False), int(self.minute_provider()), int(time.time())),
             )
-            return result
+        self._syncs_since_prune += 1
+        if self._syncs_since_prune >= PRUNE_EVERY_SYNCS:
+            self._syncs_since_prune = 0
+            self.prune_sync_history()
+        return result
 
     def sell_product(self, transaction_id: str, business_id: str, buyer_account_id: str,
                      item_id: str, quantity: int, unit_price: int) -> dict:
@@ -659,6 +672,8 @@ class SocietySimulation:
              int(event.get("sim_minute", self.minute_provider()))))
         if cur.rowcount == 0:
             return False
+        if event_type == "wallet.observed":
+            self._reconcile_wallet_locked(source_id, seq, raw)
         if event_type in ("ledger.income", "ledger.expense"):
             fields = {}
             for item in raw.split(";"):
@@ -678,6 +693,32 @@ class SocietySimulation:
                         {"account_id": account_id, "amount": sign},
                         {"account_id": "system:legacy_counterparty", "amount": -sign}])
         return True
+
+    def _reconcile_wallet_locked(self, source_id: str, seq: int, raw: str) -> None:
+        """The in-game wallet owns cash: bring the ledger to the observed balance with a reasoned entry."""
+        fields = dict(item.split("=", 1) for item in raw.split(";") if "=" in item)
+        balance = int(fields.get("balance", ""))
+        if not 0 <= balance <= 2_147_483_647:
+            raise ValueError("invalid_wallet_balance")
+        self.db.execute("INSERT OR IGNORE INTO world_accounts(account_id,owner_id,balance,allow_negative,currency) VALUES('system:wallet_reconcile','system',0,1,'USD')")
+        current = self.db.execute(
+            "SELECT balance FROM world_accounts WHERE account_id='legacy:player_cash'").fetchone()["balance"]
+        difference = balance - int(current)
+        if difference:
+            self._post_transaction_locked("reconcile:" + source_id + ":" + str(seq), "reconcile",
+                "wallet observed " + fields.get("char", "?")[:16], [
+                    {"account_id": "legacy:player_cash", "amount": difference},
+                    {"account_id": "system:wallet_reconcile", "amount": -difference}])
+
+    def prune_sync_history(self, now: Optional[float] = None) -> int:
+        """Drop replay receipts and telemetry of periodic business snapshots older than the retention window."""
+        cutoff = int((time.time() if now is None else now) - SYNC_RETENTION_SECONDS)
+        with self.lock, self.db:
+            removed = self.db.execute(
+                "DELETE FROM world_request_dedup WHERE kind='sync' AND created_at<?", (cutoff,)).rowcount
+            self.db.execute("""DELETE FROM world_event_journal
+                WHERE event_type='business.state_synchronized' AND recorded_at<?""", (cutoff,))
+        return removed
 
     def set_social_relationship(self, actor_id: str, target_id: str,
                                 relation_type: str, strength: float = 0.0,

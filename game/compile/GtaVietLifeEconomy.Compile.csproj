@@ -4,7 +4,7 @@
     <LangVersion>latest</LangVersion>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <Nullable>disable</Nullable>
-    <AssemblyName>GtaVietLifeEconomy.CompileCheck</AssemblyName>
+    <AssemblyName>GtaVietLifeEconomy</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../GtaVietLifeEconomy.cs" />

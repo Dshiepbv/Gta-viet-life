@@ -11,6 +11,16 @@ public partial class MainWindow:Window {
  public MainWindow(){
   InitializeComponent();GamePathBox.Text=settings.GameExecutable;timer.Tick+=Poll;
   Loaded+=async(_,_)=>{
+   try{
+    var manifest=PackageManifest.Load(AppContext.BaseDirectory);
+    var damaged=manifest?.Verify(AppContext.BaseDirectory)??new List<string>{"thiếu manifest.json"};
+    if(damaged.Count>0){Log("Kiểm tra bộ cài: "+string.Join("; ",damaged.Take(10)));Set("BỘ CÀI BỊ HỎNG","Hãy chạy lại file cài đặt. "+damaged[0]);StartButton.IsEnabled=false;return;}
+    Log("Bộ cài "+manifest!.Version+" đầy đủ, checksum khớp.");
+    if(UpdateHealth.Pending){await runtime.StartEngineAsync(CancellationToken.None);UpdateHealth.Confirm();Log("Bản cập nhật khởi động tốt.");}
+   }catch(Exception ex){
+    Log("Startup self-check failed: "+ex);
+    if(UpdateHealth.Pending){Application.Current.Shutdown(1);return;}
+   }
    try{if(await new UpdateService().CheckAndLaunchUpdaterAsync(CancellationToken.None)){Application.Current.Shutdown();return;}}
    catch(Exception ex){Log("Update check failed: "+ex.Message);}
    if(File.Exists(settings.GameExecutable))await Prepare();else Set("CẦN CHỌN GTA V","Chọn GTA5.exe một lần để lưu đường dẫn.");};
@@ -34,8 +44,8 @@ public partial class MainWindow:Window {
    settings.GameExecutable=exe;settings.Save();Set("ĐANG KIỂM TRA","Kiểm tra mod runtime và tự cài module vào thư mục scripts.");
    var result=runtime.InstallAdapter(exe);RuntimeInfo.Text=result.Item2;Log(result.Item2);if(!result.Item1)throw new InvalidOperationException(result.Item2);
    Set("ĐANG KHỞI ĐỘNG","Khởi động Engine Host và cầu nối AI cục bộ.");
-   await runtime.StartAsync(CancellationToken.None);ready=true;HostState.Text="Hoạt động";BridgeState.Text="Hoạt động";AdapterState.Text="Đã cài · chờ game";
-   Set("SẴN SÀNG KHỞI CHẠY","Các dịch vụ đã hoạt động và Adapter đã được cài. Sếp có thể mở GTA V.");PlayButton.IsEnabled=true;
+   await runtime.StartAsync(CancellationToken.None);ready=true;HostState.Text="Hoạt động";BridgeState.Text=runtime.BridgeProblem==null?"Hoạt động":"Không chạy";AdapterState.Text="Đã cài · chờ game";
+   Set("SẴN SÀNG KHỞI CHẠY",runtime.BridgeProblem==null?"Các dịch vụ đã hoạt động và module đã được cài. Bạn có thể mở GTA V.":"Engine và module đã sẵn sàng. Cầu nối AI (hội thoại) chưa chạy: "+runtime.BridgeProblem);PlayButton.IsEnabled=true;
    cts=new();timer.Start();
   }catch(Exception ex){Log("ERROR "+ex);Set("CHƯA SẴN SÀNG",ex.Message);HostState.Text="Lỗi";BridgeState.Text="Lỗi";AdapterState.Text="Chưa xác nhận";}
   finally{busy=false;StartButton.IsEnabled=true;Progress.IsIndeterminate=false;}
@@ -47,7 +57,7 @@ public partial class MainWindow:Window {
    bool bridgeHealthy=await runtime.BridgeHealthyAsync();
    BridgeState.Text=bridgeHealthy?"Hoạt động":"Mất kết nối";
    AdapterState.Text=connected?"Đã bắt tay":"Chưa vào game / chưa kết nối";
-   if(!bridgeHealthy&&ready&&!recovering){
+   if(!bridgeHealthy&&ready&&!recovering&&runtime.BridgeProblem==null){
     recovering=true;Set("ĐANG KHÔI PHỤC CẦU NỐI AI","Cầu nối AI bị gián đoạn; Launcher đang khởi động lại thành phần này.");
     try{await runtime.RestartBridgeAsync(CancellationToken.None);BridgeState.Text="Hoạt động";Set("SẴN SÀNG KHỞI CHẠY","Cầu nối AI đã được khôi phục.");}
     catch(Exception recovery){Log("Bridge recovery failed: "+recovery);Set("CHẾ ĐỘ HẠN CHẾ",recovery.Message);}
@@ -79,7 +89,8 @@ public partial class MainWindow:Window {
   };
   var gameDir=Path.GetDirectoryName(settings.GameExecutable??"");
   if(!string.IsNullOrWhiteSpace(gameDir)){
-   foreach(var name in new[]{"GtaVietLifeCore.log","ScriptHookV.log","ScriptHookVDotNet.log"})files.Add(Path.Combine(gameDir,name));
+   foreach(var name in new[]{"ScriptHookV.log","ScriptHookVDotNet.log"})files.Add(Path.Combine(gameDir,name));
+   files.AddRange(Directory.GetFiles(gameDir,"GtaVietLife*.log"));
    var scripts=Path.Combine(gameDir,"scripts");
    if(Directory.Exists(scripts))files.AddRange(Directory.GetFiles(scripts,"GtaVietLife*.log"));
   }

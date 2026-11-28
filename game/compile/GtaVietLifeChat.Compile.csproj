@@ -4,7 +4,7 @@
     <LangVersion>latest</LangVersion>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <Nullable>disable</Nullable>
-    <AssemblyName>GtaVietLifeChat.CompileCheck</AssemblyName>
+    <AssemblyName>GtaVietLife</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../GtaVietLife.cs" />

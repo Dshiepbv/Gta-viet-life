@@ -325,7 +325,7 @@ public class GtaVietLife : Script
                 speakingPed = null;
                 Function.Call(Hash.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS, p, false);
                 if (followers.Remove(p.Handle)) p.LeaveGroup();
-                p.Task.Combat(me);
+                p.Task.FightAgainst(me);
                 break;
             default:
                 if (!followers.Contains(p.Handle)) ReleaseLater(p, ms + 7000);

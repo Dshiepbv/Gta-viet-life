@@ -4,7 +4,7 @@
     <LangVersion>latest</LangVersion>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <Nullable>disable</Nullable>
-    <AssemblyName>GtaVietLifeDoiSong.CompileCheck</AssemblyName>
+    <AssemblyName>GtaVietLifeDoiSong</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../GtaVietLifeDoiSong.cs" />

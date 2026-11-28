@@ -3,3 +3,12 @@ __pycache__/
 .venv/
 bridge/config.json
 bridge/memory.db
+
+# build output
+publish/
+artifacts/
+game/compile/bin/
+game/compile/obj/
+launcher/**/bin/
+launcher/**/obj/
+*.spec

@@ -1,7 +1,7 @@
 # GTA Viet Life — Universal Interior System (UIS)
 
 **Status:** Architecture proposal  
-**Target:** GTA V Enhanced single-player, SHVDN-based runtime  
+**Target:** GTA V Legacy single-player, SHVDN v3 (changed 2026-11-28; the sections below were written for Enhanced). Implemented subset: see `AUDIT_M0_M6.md` section 7. Interior coordinates and IPL names come from bob74_ipl (MIT License, (c) 2024 Bob74).  
 **Branch:** codex/gta-viet-life-architecture-hardening
 
 ## 1. Product requirement

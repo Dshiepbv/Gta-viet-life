@@ -100,6 +100,7 @@ public class GtaVietLifePersonal : Script
     readonly Dictionary<string, int> savedWallets = new Dictionary<string, int>();
     string activeWalletKey = "";
     bool walletReady;
+    readonly GvlWalletReporter walletReporter = new GvlWalletReporter();
     int lastMoney = int.MinValue;
     int lastModel;
     int inToday, outToday;
@@ -171,7 +172,8 @@ public class GtaVietLifePersonal : Script
         Ped me = Game.Player.Character;
         if (me == null || !me.Exists()) return;
         int now = Game.GameTime;
-        RestoreWallet(me);
+        ObserveWallet(me);
+        ReportWallet(me, Game.GameTime);
 
         while (pending.Count > 0)
         {
@@ -299,29 +301,30 @@ public class GtaVietLifePersonal : Script
     float Discount { get { return 0.15f * skill[SkTalk] / 100f; } }
 
     // ------------------------------------------------------------ sổ thu chi (theo doi tien cua nhan vat dang choi)
-    // Per-character wallet snapshots close the gap before GTA's next native save.
-    void RestoreWallet(Ped me)
+    // Vi GTA la chu tien mat: mod chi doc, khong bao gio ghi de. So da luu chi dung de bao do lech cho so cai.
+    void ObserveWallet(Ped me)
     {
         string key = CharPrefix(me);
         if (string.IsNullOrEmpty(key) || activeWalletKey == key) return;
         activeWalletKey = key;
-        int saved;
-        if (savedWallets.TryGetValue(key, out saved))
-        {
-            if (Game.Player.Money != saved) Game.Player.Money = saved;
-            lastMoney = saved;
-            lastModel = me.Model.Hash;
-            Log("wallet restore " + key + "=$" + saved);
-        }
-        else
-        {
-            savedWallets[key] = Game.Player.Money;
-            lastMoney = Game.Player.Money;
-            lastModel = me.Model.Hash;
-            Save();
-            Log("wallet baseline " + key + "=$" + Game.Player.Money);
-        }
+        int money = Game.Player.Money;
+        savedWallets[key] = money;
+        lastMoney = money;
+        lastModel = me.Model.Hash;
         walletReady = true;
+        walletReporter.Invalidate();
+        Save();
+        Log("vi " + key + "=$" + money);
+    }
+
+    // Bao so du thuc te de so cai SQLite doi soat (ke ca tien do game goc cong tru, hoac sau khi tai save cu).
+    void ReportWallet(Ped me, int now)
+    {
+        string key = CharPrefix(me);
+        if (!walletReady || string.IsNullOrEmpty(key) || key != activeWalletKey) return;
+        int money = Game.Player.Money;
+        if (walletReporter.ShouldReport(now, money))
+            Emit("wallet.observed", "balance=" + money + ";char=" + key);
     }
 
     void TrackMoney(Ped me, int now)
@@ -1939,3 +1942,26 @@ public class GtaVietLifePersonal : Script
         return m.Length > 90 ? m.Substring(0, 90) : m;
     }
 }
+
+// <gvl-testable:wallet>
+// Bao so du khi doi, toi da mot lan moi khoang cach; lap lai dinh ky de bat save cu duoc tai.
+public sealed class GvlWalletReporter
+{
+    public const int MinGapMs = 5000;
+    public const int RepeatMs = 60000;
+    bool sent;
+    int lastBalance;
+    int lastAt;
+
+    public void Invalidate() { sent = false; }
+
+    public bool ShouldReport(int now, int balance)
+    {
+        int gap = now - lastAt;
+        if (sent && gap >= 0 && gap < MinGapMs) return false;
+        if (sent && balance == lastBalance && gap >= 0 && gap < RepeatMs) return false;
+        sent = true; lastBalance = balance; lastAt = now;
+        return true;
+    }
+}
+// </gvl-testable:wallet>

@@ -1,6 +1,9 @@
 #define MyAppName "GTA Viet Life"
+#ifndef PublishDir
+  #define PublishDir "..\publish"
+#endif
 #ifndef MyAppVersion
-  #define MyAppVersion "0.1.0"
+  #define MyAppVersion "0.2.0"
 #endif
 [Setup]
 AppId={{7D4A6E21-93C1-4D8E-A8F7-6F3A1C5D90B2}
@@ -14,10 +17,14 @@ Compression=lzma2
 SolidCompression=yes
 PrivilegesRequired=lowest
 ArchitecturesInstallIn64BitMode=x64
+[InstallDelete]
+; module cu (.cs) trong thu muc cai dat khong con duoc phat hanh
+Type: filesandordirs; Name: "{app}\game"
 [Files]
-Source: "..\publish\launcher\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
-Source: "..\publish\runtime\*"; DestDir: "{app}\runtime"; Flags: recursesubdirs ignoreversion
-Source: "..\publish\game\*"; DestDir: "{app}\game"; Flags: recursesubdirs ignoreversion
+Source: "{#PublishDir}\launcher\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
+Source: "{#PublishDir}\runtime\*"; DestDir: "{app}\runtime"; Flags: recursesubdirs ignoreversion
+Source: "{#PublishDir}\game\*"; DestDir: "{app}\game"; Flags: recursesubdirs ignoreversion
+Source: "{#PublishDir}\manifest.json"; DestDir: "{app}"; Flags: ignoreversion
 [Icons]
 Name: "{group}\GTA Viet Life"; Filename: "{app}\GtaVietLife.Launcher.exe"
 Name: "{autodesktop}\GTA Viet Life"; Filename: "{app}\GtaVietLife.Launcher.exe"; Tasks: desktopicon

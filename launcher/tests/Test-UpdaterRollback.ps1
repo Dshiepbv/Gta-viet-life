@@ -20,6 +20,7 @@ try {
   & $updater $goodShape $target "2147483647"
   if($LASTEXITCODE -eq 0){throw "Updater unexpectedly launched the intentionally invalid test executable."}
   if(!(Test-Path (Join-Path $target "old.marker"))){throw "Failed update did not restore the last known-good installation."}
+  if(Test-Path (Join-Path $env:LOCALAPPDATA "GtaVietLife\update-pending")){throw "Failed update left the pending marker behind."}
   Write-Host "Updater rollback tests passed."
 }
 finally {

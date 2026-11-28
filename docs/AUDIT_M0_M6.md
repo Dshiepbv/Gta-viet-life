@@ -122,3 +122,18 @@ Nghiệm thu M6: máy sạch cài bằng Setup, một thao tác là vào game; n
 Tác dụng phụ cần xử lý ở đợt 2: chỉ số cơ thể người chơi nay tới engine định kỳ nên `request_dedup` tăng liên tục (chưa đo).
 
 Các mã khác vẫn mở, gồm G2 (Personal ghi đè ví GTA, trái hợp đồng đã chốt) và E4, E6 (đợt 3).
+
+## 7. Đợt GTA V Legacy và M3 (2026-11-28, chưa chạy trong game)
+
+| Hạng mục | Trạng thái |
+|---|---|
+| G2 | Đã sửa: Personal không ghi ví; gửi `wallet.observed`, sổ cái đối soát bằng bút toán `reconcile` |
+| `request_dedup` | Xóa biên nhận quan sát và đồng bộ quán cũ hơn 1 giờ; biên nhận ca làm được giữ |
+| Mới phát hiện: script `.cs` không nạp được | SHVDN không tham chiếu `System.Web.Extensions`; chuyển sang phát hành DLL |
+| Mới phát hiện: API Legacy khác | `Task.Combat`, `Model.GetDimensions` không có ở 3.6.0; đã thay |
+| Mới phát hiện: Engine đóng gói không khởi động | Thiếu module khi đóng gói; đã sửa, pipeline chạy thử exe |
+| Mới phát hiện: bridge sập khi không có loa | Đã sửa |
+| M3 UIS | `GtaVietLifeInteriors.cs`: vùng 120/150 m, danh bạ cửa (4 cửa gốc + dò cửa + Shift+H, tối đa 5000), 26 mẫu nội thất, đóng băng tối thiểu 200 ms, hết hạn 8 giây, sức chứa 3, gỡ kẹt 8 giây |
+| M3 còn thiếu | Không có bộ 500–1000 tọa độ cửa; nội thất gốc không dịch chuyển được nên nhiều nhà dùng chung mẫu (mỗi lúc một nhà), `building_id` chỉ đổi vị trí đồ sinh thêm; cư dân chỉ vào nhà khi ở trong 30 m quanh cửa đã ghi |
+| M6 | Có `manifest.json`, tự kiểm lúc mở, Updater quay lui khi bản mới không xác nhận. Còn thiếu: đổi tên exe theo yêu cầu, `config.json` của Launcher, ký checksum, tự chạy game |
+

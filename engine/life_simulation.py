@@ -16,6 +16,10 @@ from typing import Dict, List, Optional, Sequence
 
 
 MAX_ADVANCE_MINUTES = 7 * 24 * 60
+# Body observations arrive every two seconds; their replay receipts only matter briefly.
+VOLATILE_REQUEST_PREFIXES = ("player_observation:",)
+VOLATILE_RETENTION_SECONDS = 3600
+PRUNE_EVERY_VOLATILE_SAVES = 200
 NEED_KEYS = ("hunger", "thirst", "energy", "social", "stress", "hygiene", "bladder")
 MINUTES_PER_LIFE_YEAR = 365 * 24 * 60
 
@@ -137,7 +141,20 @@ class SQLiteLifeStore:
         self._lock = threading.RLock()
         self.connection = sqlite3.connect(str(path), check_same_thread=False)
         self.connection.row_factory = sqlite3.Row
+        self._volatile_saves = 0
         self._migrate()
+        self.prune_volatile_requests()
+
+    def prune_volatile_requests(self) -> int:
+        """Delete expired receipts of high-frequency idempotent requests; durable receipts are kept."""
+        removed = 0
+        with self._lock, self.connection:
+            for prefix in VOLATILE_REQUEST_PREFIXES:
+                removed += self.connection.execute(
+                    """DELETE FROM request_dedup WHERE request_id>=? AND request_id<?
+                    AND created_at < datetime('now', ?)""",
+                    (prefix, prefix + "\uffff", "-%d seconds" % VOLATILE_RETENTION_SECONDS)).rowcount
+        return removed
 
     def _migrate(self) -> None:
         with self._lock, self.connection:
@@ -271,6 +288,10 @@ class SQLiteLifeStore:
                     "INSERT OR IGNORE INTO request_dedup(request_id,response_json) VALUES(?,?)",
                     (request_id, json.dumps(response, ensure_ascii=False)),
                 )
+        if request_result is not None and request_result[0].startswith(VOLATILE_REQUEST_PREFIXES):
+            self._volatile_saves += 1
+            if self._volatile_saves % PRUNE_EVERY_VOLATILE_SAVES == 0:
+                self.prune_volatile_requests()
 
     def pending_commands(self, limit: int = 50) -> List[dict]:
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 200:
