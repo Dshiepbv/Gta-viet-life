@@ -55,7 +55,7 @@ class LifeSimulationTests(unittest.TestCase):
         engine = LifeSimulationEngine()
         engine.register_npc(profile())
         result = engine.interact("npc.minh-an", "player.main", "talk")
-        self.assertEqual(result["affinity"], 2.0)
+        self.assertEqual(result["affinity"], 3.0)
         self.assertTrue(result["memory_recorded"])
         self.assertEqual(engine.snapshot()["npcs"][0]["memory_count"], 1)
 
@@ -92,7 +92,7 @@ class LifeSimulationTests(unittest.TestCase):
                 self.assertEqual(after["simulation_minute"], before["simulation_minute"])
                 self.assertEqual(after["npcs"][0]["activity"], before["npcs"][0]["activity"])
                 self.assertEqual(after["npcs"][0]["memory_count"], 1)
-                self.assertEqual(after["npcs"][0]["relationships"], {"player.main": 2.0})
+                self.assertEqual(after["npcs"][0]["relationships"], {"player.main": 3.0})
                 self.assertGreater(after["npcs"][0]["goal_progress"], 0)
             finally:
                 second.store.close()
@@ -404,6 +404,23 @@ class LifeSimulationTests(unittest.TestCase):
         engine.advance(1)
         self.assertGreater(extrovert.social, introvert.social)
         self.assertGreater(anxious.stress, calm.stress)
+
+
+    def test_shared_friendly_traits_improve_autonomous_relationship_gain(self):
+        engine = LifeSimulationEngine()
+        left = engine.register_npc(NPCProfile(
+            npc_id="npc.friendly.left", display_name="Lan", home_location_id="home.left",
+            occupation="worker", traits=("friendly",),
+            schedule=(ScheduleBlock(0, 1440, "leisure", "park.friendly"),),
+        ))
+        right = engine.register_npc(NPCProfile(
+            npc_id="npc.friendly.right", display_name="Minh", home_location_id="home.right",
+            occupation="teacher", traits=("friendly",),
+            schedule=(ScheduleBlock(0, 1440, "leisure", "park.friendly"),),
+        ))
+        engine.advance(15)
+        self.assertEqual(left.affinity["npc.friendly.right"], 1.25)
+        self.assertEqual(right.affinity["npc.friendly.left"], 1.25)
 
 
 

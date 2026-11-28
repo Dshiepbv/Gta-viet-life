@@ -249,3 +249,8 @@ The GTA V residential catalog now registers bed, fridge, sofa, toilet and shower
 ### Godot second-adapter player actor
 
 The Godot reference adapter now registers `player.godot` through the same actor API, reports its native player-body meters, and exposes bed, fridge, counter, toilet and shower object interactions. The Godot adapter owns only the local meter presentation and movement; object-use consequences and the persistent player/NPC relationship graph are applied by the shared Engine Host. This extends the M5 proof beyond NPC portability to the player-character life model.
+
+
+### Trait-driven behavior
+
+NPC trait tags are now behavior inputs, not dialogue decoration. Extroversion and introversion alter social recovery, anxiety and calm alter work stress, curiosity and discipline alter study progress, ambition and discipline alter career progress, and shared traits influence autonomous relationship formation. Direct player interactions also account for friendly/kind/introverted traits while preserving bounded relationship scores.

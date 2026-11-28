@@ -159,7 +159,7 @@ class HostTests(unittest.TestCase):
   snapshot=self.req("/engine/v1/simulation/snapshot")[1]
   self.assertEqual(snapshot["npc_count"],1)
   self.assertEqual(snapshot["npcs"][0]["memory_count"],1)
-  self.assertEqual(snapshot["npcs"][0]["relationships"],{"player.godot":2.0})
+  self.assertEqual(snapshot["npcs"][0]["relationships"],{"player.godot":3.0})
  def test_world_clock_advance_decays_traffic_once_even_on_request_replay(self):
   self.state.society.register_traffic_segment("road.clock","arterial",1.0)
   self.state.society.record_traffic_incident("incident.clock","road.clock",2,"collision","")
