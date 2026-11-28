@@ -305,4 +305,19 @@ class HostTests(unittest.TestCase):
       "SELECT COUNT(*) AS n FROM world_processed_life_events").fetchone()["n"]
   self.assertEqual(pending_after,pending_before)
 
+ def test_gta_player_physiology_observation_endpoint(self):
+  actor={"npc_id":"player.main","display_name":"Player","home_location_id":"player.home",
+         "occupation":"citizen","actor_kind":"player"}
+  self.req("/engine/v1/simulation/actors",{"request_id":"player-observe-register","npc":actor})
+  code,result=self.req("/engine/v1/simulation/actors/observe",{"request_id":"player-observe-1",
+       "actor_id":"player.main","observed":{"hunger":14,"thirst":9,"energy":80,"hygiene":62,"health":95}})
+  self.assertEqual(code,200); self.assertTrue(result["updated"])
+  snapshot=self.req("/engine/v1/simulation/snapshot")[1]
+  player=next(x for x in snapshot["npcs"] if x["npc_id"]=="player.main")
+  self.assertEqual(player["needs"]["hunger"],14.0)
+  self.assertEqual(player["needs"]["thirst"],9.0)
+  self.assertEqual(player["needs"]["energy"],80.0)
+  self.assertEqual(player["needs"]["hygiene"],62.0)
+  self.assertEqual(player["health"],95.0)
+
 if __name__=="__main__":unittest.main()
