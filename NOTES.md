@@ -107,3 +107,7 @@ Engine: 96 test pass; test mới `engine/tests/test_phase2_regressions.py` đã 
 
 - 2026-11-28: chủ dự án để APK tính sau, giữ khóa ký tạm; khóa PKCS12 đã tạo vẫn ở %LOCALAPPDATA%\GtaVietLife\signing. Workflow hiện không phát hành APK khi thiếu secret.
 - MLO: dùng gói cộng đồng + khung tương tác tự nhận đồ vật (PLAN_V4 mục 5).
+
+## 0.4.0 / 0.4.1
+- 0.4.0 phát hành (93d38a8). 0.4.1: Data Pack vi-VN. Lệnh test: python -m pytest engine/tests tests (cần pytest).
+- Chưa làm: bài tự kiểm tự động trong game; giá VND chưa dùng trong script C#; đổi tên exe.

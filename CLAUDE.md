@@ -3,7 +3,7 @@
 File này được Claude Code tự nạp mỗi phiên. Phần 0 riêng cho dự án; phần 1–8 là luật làm việc chung; phần 9 là trạng thái.
 
 ## 0. Dự án: GTA VietLife (mod GTA V, thư mục `E:\AI\Projects\Gta-vietlife`)
-- Tình trạng (2026-11-28): đích là GTA V Legacy; đã có bộ cài 0.4.0, đã chạy 0.3.3 trong GTA V Legacy 1.0.3889.0 + SHVDN nightly 3.7.0.206. Tiến độ phiên gần nhất: `NOTES.md`. Kiểm toán: `docs/AUDIT_M0_M6.md`. Hợp đồng dữ liệu: `docs/SHARED_STATE_CONTRACT.md`.
+- Tình trạng (2026-11-28): đích là GTA V Legacy; đã có bộ cài 0.4.1, đã chạy 0.3.3 trong GTA V Legacy 1.0.3889.0 + SHVDN nightly 3.7.0.206. Tiến độ phiên gần nhất: `NOTES.md`. Kiểm toán: `docs/AUDIT_M0_M6.md`. Hợp đồng dữ liệu: `docs/SHARED_STATE_CONTRACT.md`.
 - Mục tiêu mod (1 câu): Life Simulator, người chơi và mọi NPC có vòng đời, sinh hoạt, kinh tế, quan hệ, tương tác vật lý, ký ức và lưu bền.
 - Loại mod và nền tảng: 8 script C# SHVDN v3 (`game/`, phát hành dạng DLL biên dịch sẵn), engine Python + SQLite (`engine/`), bridge hội thoại (`bridge/`), Launcher/Updater .NET (`launcher/`), adapter Godot tham chiếu, app Android dashboard.
 - Phiên bản game và thư viện: GTA V Legacy; biên dịch theo SHVDN API 3.6.0 (ghim SHA-256), khi chơi dùng SHVDN nightly cho build từ 1.0.3258; .NET 8 (launcher), net48 (script), Python 3.11. Build game đích: chưa ghi nhận.
@@ -56,6 +56,7 @@ File này được Claude Code tự nạp mỗi phiên. Phần 0 riêng cho dự
 - UIS (M3): bộ sinh danh mục tự động phủ toàn thành phố qua 4 lớp (Native IPL, Custom MLO, Template, Modular); NPC đi bộ qua cửa tới Activity Anchor. · 2026-11-28
 - Được push GitHub không cần hỏi (ngoại lệ cho mục 1). Được gắn tag phát hành Release không cần hỏi. Chủ dự án muốn nhận bản hoàn chỉnh cả dự án, không test từng phần. · 2026-11-28
 - MLO bắt buộc, dùng cách miễn phí: khung tương tác kiểu Big Ambitions + Modular từ đồ vật gốc + đường ống MLO qua CodeWalker + nhận diện gói cộng đồng do người dùng tự tải; không đóng gói tài nguyên của người khác (`docs/PLAN_V4.md` mục 5). · 2026-11-28
+- Data Pack `data/packs/vi-VN` (v1.0.0, VND) là dữ liệu tham chiếu chỉ đọc, kiểm schema `data/packs/schema`; danh tính NPC sinh một lần vào `npc_identities`, cập nhật pack không đổi người đã có; ứng viên MLO giữ cờ `candidate_*`, chỉ cài khi `verified` và game qua kiểm tra tương thích. · 2026-11-28
 
 ### Đã bác bỏ (lý do · từ khóa kích hoạt)
 - (phương án) · vì (lý do) · từ khóa: (...)
@@ -117,8 +118,8 @@ Khi tôi chỉ ra lỗi: đề xuất 1 dòng rút kinh nghiệm; tôi duyệt m
 Văn phong con người: không mở bài "Không phải X mà là Y", không câu dài 4 mệnh đề, không kết bằng châm ngôn, không rải emoji và in đậm. Không để lộ trao đổi nội bộ giữa tôi và AI. Commit message và changelog viết rõ việc đã làm.
 
 ## 9. Trạng thái (giữ 5 mục gần nhất, mới nhất ở dưới)
-- [2026-11-28] Bản 0.3.5 (trên máy, chưa commit): ShopFloor (gọi món tại quầy, người bán, người dọn), nút Cập nhật trong Launcher. | Bước tiếp: test trong game; phát hành v0.3.5 thì nút cập nhật mới có bản để tải (cần chủ dự án đồng ý); quản lý quán không menu.
 - [2026-11-28] 0.3.6 trên máy, chưa commit: nạp nội thất trước khi chuyển chỗ (hết màn đen, hết rơi), F7 chỉ đánh dấu bản đồ, cập nhật trong app Android, bộ chấm log. | Bước tiếp: test; thay menu quán bằng tương tác vật lý; khóa ký APK (chủ dự án tạo secret); điểm ma trận hiện 0/100.
 - [2026-11-28] Nhận Master Brief V4; quyền push không cần hỏi; thêm test 1.000 giao dịch. Điểm runtime 0/100. | Bước tiếp: hoàn tất đợt 2 (quan hệ và ký ức về M0, test giết tiến trình), rồi đợt 3 (catalog UIS, anchors); chờ log test 0.3.6.
 - [2026-11-28] Phát hành v0.3.6 (4ec36ff). Lập `docs/PLAN_V4.md`: làm trọn đợt 2→4, giao một bản tích hợp kèm bài tự kiểm trong game; ước tính ~45%, runtime 0/100. | Bước tiếp: bước A của plan (quan hệ và ký ức một nguồn).
 - [2026-11-28] 0.4.0: UIS đo mặt bằng và khóa 4 Tier, Modular ghép đồ trong vỏ kho cho quán, 13 loại đồ tương tác, hộ gia đình NPC, khách NPC trong quán, mua/bán đồ bày; quan hệ do Engine giữ; test giết tiến trình; Launcher 7 trạng thái và cài gói MLO theo manifest. Chưa chạy trong game. | Bước tiếp: chạy bài tự kiểm trong game; bài tự kiểm tự động (chưa viết).
+- [2026-11-28] 0.4.1: nạp Data Pack Việt Nam (tên, nghề, thực đơn, giá hàng, mẫu thoại, ứng viên MLO) vào M0/M2/M4/M6; 158 test pytest đạt. Chưa chạy trong game; script C# chưa dùng giá VND (game vẫn tính USD). | Bước tiếp: test trong game.

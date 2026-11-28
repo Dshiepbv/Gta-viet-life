@@ -62,6 +62,12 @@ def engine_context_prompt(raw: str) -> str:
         for memory in memories[-6:]:
             if isinstance(memory, dict) and isinstance(memory.get("summary"), str):
                 lines.append(f"  + {memory['summary'][:300]}")
+    examples = data.get("dialogue_examples", [])
+    if isinstance(examples, list) and examples:
+        lines.append("- Mẫu câu đáp hợp ngữ cảnh (tham khảo giọng điệu, không chép nguyên):")
+        for example in examples[:2]:
+            if isinstance(example, dict) and isinstance(example.get("response"), str):
+                lines.append(f"  + {example['response'][:200]}")
     boundary = data.get("knowledge_boundary")
     tail = "\nGIỚI HẠN TRI THỨC: " + boundary[:700] if isinstance(boundary, str) else ""
     # The knowledge boundary is a safety rule: trim facts and memories to keep room for it.

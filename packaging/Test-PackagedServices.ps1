@@ -39,6 +39,9 @@ try {
     if (!(Post "/engine/v1/simulation/npcs" $npc).registered) { throw "resident not registered in round $round" }
     $events = '{"request_id":"e' + $round + '","source_id":"gta5.shvdn","events":[{"sequence":' + $round + ',"event_type":"wallet.observed","data":"balance=' + (700 + $round) + ';char=SP0"}]}'
     if ((Post "/engine/v1/world/events" $events).accepted -ne 1) { throw "wallet event rejected in round $round" }
+    # The Vietnam Data Pack must be bundled inside the engine executable.
+    $quote = Post "/engine/v1/world/prices/quote" ('{"request_id":"q' + $round + '","item_id":"food_001","zone":"STRAW"}')
+    if ($quote.currency -ne "VND" -or $quote.price -lt 35000) { throw "data pack missing from the packaged engine" }
     Post "/engine/v1/shutdown" '{"request_id":"stop"}' | Out-Null
     if (!$engine.WaitForExit(20000)) { throw "Engine Host did not stop" }
     Write-Host "engine round ${round}: ok"

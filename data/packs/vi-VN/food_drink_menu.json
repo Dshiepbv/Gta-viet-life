@@ -1,0 +1,212 @@
+[
+ {
+  "id": "food_001",
+  "name": "Phở bò",
+  "category": "food",
+  "price_min": 35000,
+  "price_max": 65000
+ },
+ {
+  "id": "food_002",
+  "name": "Phở gà",
+  "category": "food",
+  "price_min": 30000,
+  "price_max": 55000
+ },
+ {
+  "id": "food_003",
+  "name": "Bún bò Huế",
+  "category": "food",
+  "price_min": 35000,
+  "price_max": 60000
+ },
+ {
+  "id": "food_004",
+  "name": "Hủ tiếu",
+  "category": "food",
+  "price_min": 30000,
+  "price_max": 55000
+ },
+ {
+  "id": "food_005",
+  "name": "Bánh mì thịt",
+  "category": "food",
+  "price_min": 15000,
+  "price_max": 35000
+ },
+ {
+  "id": "food_006",
+  "name": "Cơm tấm sườn",
+  "category": "food",
+  "price_min": 30000,
+  "price_max": 55000
+ },
+ {
+  "id": "food_007",
+  "name": "Cơm gà",
+  "category": "food",
+  "price_min": 30000,
+  "price_max": 55000
+ },
+ {
+  "id": "food_008",
+  "name": "Bún thịt nướng",
+  "category": "food",
+  "price_min": 30000,
+  "price_max": 50000
+ },
+ {
+  "id": "food_009",
+  "name": "Bánh cuốn",
+  "category": "food",
+  "price_min": 25000,
+  "price_max": 45000
+ },
+ {
+  "id": "food_010",
+  "name": "Bánh xèo",
+  "category": "food",
+  "price_min": 30000,
+  "price_max": 60000
+ },
+ {
+  "id": "food_011",
+  "name": "Gỏi cuốn",
+  "category": "food",
+  "price_min": 6000,
+  "price_max": 12000
+ },
+ {
+  "id": "food_012",
+  "name": "Bánh tráng trộn",
+  "category": "snack",
+  "price_min": 15000,
+  "price_max": 30000
+ },
+ {
+  "id": "food_013",
+  "name": "Xôi mặn",
+  "category": "food",
+  "price_min": 15000,
+  "price_max": 30000
+ },
+ {
+  "id": "food_014",
+  "name": "Cháo lòng",
+  "category": "food",
+  "price_min": 25000,
+  "price_max": 45000
+ },
+ {
+  "id": "food_015",
+  "name": "Bún riêu",
+  "category": "food",
+  "price_min": 30000,
+  "price_max": 50000
+ },
+ {
+  "id": "food_016",
+  "name": "Cà phê đen đá",
+  "category": "drink",
+  "price_min": 12000,
+  "price_max": 30000
+ },
+ {
+  "id": "food_017",
+  "name": "Cà phê sữa đá",
+  "category": "drink",
+  "price_min": 15000,
+  "price_max": 35000
+ },
+ {
+  "id": "food_018",
+  "name": "Bạc xỉu",
+  "category": "drink",
+  "price_min": 18000,
+  "price_max": 35000
+ },
+ {
+  "id": "food_019",
+  "name": "Trà đá",
+  "category": "drink",
+  "price_min": 2000,
+  "price_max": 7000
+ },
+ {
+  "id": "food_020",
+  "name": "Trà tắc",
+  "category": "drink",
+  "price_min": 10000,
+  "price_max": 25000
+ },
+ {
+  "id": "food_021",
+  "name": "Nước mía",
+  "category": "drink",
+  "price_min": 10000,
+  "price_max": 20000
+ },
+ {
+  "id": "food_022",
+  "name": "Nước cam",
+  "category": "drink",
+  "price_min": 18000,
+  "price_max": 35000
+ },
+ {
+  "id": "food_023",
+  "name": "Sinh tố bơ",
+  "category": "drink",
+  "price_min": 25000,
+  "price_max": 45000
+ },
+ {
+  "id": "food_024",
+  "name": "Sữa đậu nành",
+  "category": "drink",
+  "price_min": 8000,
+  "price_max": 18000
+ },
+ {
+  "id": "food_025",
+  "name": "Trà sữa",
+  "category": "drink",
+  "price_min": 25000,
+  "price_max": 55000
+ },
+ {
+  "id": "food_026",
+  "name": "Nước suối",
+  "category": "drink",
+  "price_min": 8000,
+  "price_max": 15000
+ },
+ {
+  "id": "food_027",
+  "name": "Bánh bao",
+  "category": "snack",
+  "price_min": 10000,
+  "price_max": 25000
+ },
+ {
+  "id": "food_028",
+  "name": "Chè đậu xanh",
+  "category": "dessert",
+  "price_min": 12000,
+  "price_max": 25000
+ },
+ {
+  "id": "food_029",
+  "name": "Chè thái",
+  "category": "dessert",
+  "price_min": 20000,
+  "price_max": 40000
+ },
+ {
+  "id": "food_030",
+  "name": "Sữa chua",
+  "category": "dessert",
+  "price_min": 10000,
+  "price_max": 25000
+ }
+]

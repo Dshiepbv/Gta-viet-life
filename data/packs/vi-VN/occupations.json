@@ -1,0 +1,212 @@
+[
+ {
+  "id": "job_001",
+  "name": "Nhân viên văn phòng",
+  "sector": "office",
+  "monthly_income_min": 8000000,
+  "monthly_income_max": 16000000
+ },
+ {
+  "id": "job_002",
+  "name": "Kế toán",
+  "sector": "office",
+  "monthly_income_min": 9000000,
+  "monthly_income_max": 18000000
+ },
+ {
+  "id": "job_003",
+  "name": "Nhân viên bán hàng",
+  "sector": "retail",
+  "monthly_income_min": 6500000,
+  "monthly_income_max": 12000000
+ },
+ {
+  "id": "job_004",
+  "name": "Thu ngân",
+  "sector": "retail",
+  "monthly_income_min": 6500000,
+  "monthly_income_max": 10000000
+ },
+ {
+  "id": "job_005",
+  "name": "Quản lý cửa hàng",
+  "sector": "retail",
+  "monthly_income_min": 12000000,
+  "monthly_income_max": 22000000
+ },
+ {
+  "id": "job_006",
+  "name": "Chủ quán ăn",
+  "sector": "business",
+  "monthly_income_min": 10000000,
+  "monthly_income_max": 35000000
+ },
+ {
+  "id": "job_007",
+  "name": "Đầu bếp",
+  "sector": "food",
+  "monthly_income_min": 9000000,
+  "monthly_income_max": 18000000
+ },
+ {
+  "id": "job_008",
+  "name": "Phụ bếp",
+  "sector": "food",
+  "monthly_income_min": 6000000,
+  "monthly_income_max": 10000000
+ },
+ {
+  "id": "job_009",
+  "name": "Nhân viên phục vụ",
+  "sector": "food",
+  "monthly_income_min": 5500000,
+  "monthly_income_max": 9000000
+ },
+ {
+  "id": "job_010",
+  "name": "Pha chế",
+  "sector": "food",
+  "monthly_income_min": 6500000,
+  "monthly_income_max": 11000000
+ },
+ {
+  "id": "job_011",
+  "name": "Tài xế công nghệ",
+  "sector": "transport",
+  "monthly_income_min": 8000000,
+  "monthly_income_max": 18000000
+ },
+ {
+  "id": "job_012",
+  "name": "Tài xế taxi",
+  "sector": "transport",
+  "monthly_income_min": 9000000,
+  "monthly_income_max": 17000000
+ },
+ {
+  "id": "job_013",
+  "name": "Shipper",
+  "sector": "transport",
+  "monthly_income_min": 7000000,
+  "monthly_income_max": 15000000
+ },
+ {
+  "id": "job_014",
+  "name": "Thợ sửa xe máy",
+  "sector": "mechanic",
+  "monthly_income_min": 8000000,
+  "monthly_income_max": 16000000
+ },
+ {
+  "id": "job_015",
+  "name": "Thợ sửa ô tô",
+  "sector": "mechanic",
+  "monthly_income_min": 10000000,
+  "monthly_income_max": 22000000
+ },
+ {
+  "id": "job_016",
+  "name": "Công nhân nhà máy",
+  "sector": "industrial",
+  "monthly_income_min": 7000000,
+  "monthly_income_max": 13000000
+ },
+ {
+  "id": "job_017",
+  "name": "Kỹ thuật viên",
+  "sector": "technical",
+  "monthly_income_min": 9000000,
+  "monthly_income_max": 18000000
+ },
+ {
+  "id": "job_018",
+  "name": "Kỹ sư",
+  "sector": "technical",
+  "monthly_income_min": 13000000,
+  "monthly_income_max": 30000000
+ },
+ {
+  "id": "job_019",
+  "name": "Giáo viên",
+  "sector": "education",
+  "monthly_income_min": 8000000,
+  "monthly_income_max": 16000000
+ },
+ {
+  "id": "job_020",
+  "name": "Giảng viên",
+  "sector": "education",
+  "monthly_income_min": 12000000,
+  "monthly_income_max": 25000000
+ },
+ {
+  "id": "job_021",
+  "name": "Bác sĩ",
+  "sector": "healthcare",
+  "monthly_income_min": 15000000,
+  "monthly_income_max": 40000000
+ },
+ {
+  "id": "job_022",
+  "name": "Điều dưỡng",
+  "sector": "healthcare",
+  "monthly_income_min": 8000000,
+  "monthly_income_max": 15000000
+ },
+ {
+  "id": "job_023",
+  "name": "Dược sĩ",
+  "sector": "healthcare",
+  "monthly_income_min": 9000000,
+  "monthly_income_max": 18000000
+ },
+ {
+  "id": "job_024",
+  "name": "Bảo vệ",
+  "sector": "security",
+  "monthly_income_min": 6000000,
+  "monthly_income_max": 10000000
+ },
+ {
+  "id": "job_025",
+  "name": "Nhân viên vệ sinh",
+  "sector": "service",
+  "monthly_income_min": 5500000,
+  "monthly_income_max": 9000000
+ },
+ {
+  "id": "job_026",
+  "name": "Thợ xây",
+  "sector": "construction",
+  "monthly_income_min": 9000000,
+  "monthly_income_max": 18000000
+ },
+ {
+  "id": "job_027",
+  "name": "Thợ điện nước",
+  "sector": "construction",
+  "monthly_income_min": 9000000,
+  "monthly_income_max": 20000000
+ },
+ {
+  "id": "job_028",
+  "name": "Nhân viên giao hàng",
+  "sector": "logistics",
+  "monthly_income_min": 7000000,
+  "monthly_income_max": 14000000
+ },
+ {
+  "id": "job_029",
+  "name": "Chủ tiệm tạp hóa",
+  "sector": "business",
+  "monthly_income_min": 8000000,
+  "monthly_income_max": 25000000
+ },
+ {
+  "id": "job_030",
+  "name": "Thất nghiệp / tìm việc",
+  "sector": "unemployed",
+  "monthly_income_min": 0,
+  "monthly_income_max": 0
+ }
+]

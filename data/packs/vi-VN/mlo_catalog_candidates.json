@@ -1,0 +1,115 @@
+[
+ {
+  "id": "mlo_001",
+  "name": "Davis Motel and Shop 24/7",
+  "url": "https://www.gta5-mods.com/maps/mlo-davis-motel-and-shop-24-7-fivem",
+  "author": "Freedmanhd",
+  "category": [
+   "motel",
+   "convenience_store"
+  ],
+  "edition": "Single Player / FiveM",
+  "status": "candidate_not_runtime_tested"
+ },
+ {
+  "id": "mlo_002",
+  "name": "Pink Cage & Sandy Motor Motels",
+  "url": "https://www.gta5-mods.com/maps/mlo-pink-cage-sandy-motels-sp-fivem",
+  "author": "MrBrown1999",
+  "category": [
+   "motel"
+  ],
+  "edition": "Single Player / FiveM",
+  "status": "candidate_not_runtime_tested"
+ },
+ {
+  "id": "mlo_003",
+  "name": "Bayview Lodge Motel & Store Interiors",
+  "url": "https://www.gta5-mods.com/maps/mlo-bayview-lodge-motel-store",
+  "author": "Bamboozled",
+  "category": [
+   "motel",
+   "store"
+  ],
+  "edition": "Single Player / FiveM",
+  "status": "candidate_not_runtime_tested"
+ },
+ {
+  "id": "mlo_004",
+  "name": "Restaurant MLO",
+  "url": "https://www.gta5-mods.com/maps/restaurant-mlo-add-on-fivem",
+  "author": "PablitoMamutoPaputo",
+  "category": [
+   "restaurant"
+  ],
+  "edition": "Single Player / FiveM",
+  "status": "candidate_not_runtime_tested"
+ },
+ {
+  "id": "mlo_005",
+  "name": "Taco Restaurant",
+  "url": "https://www.gta5-mods.com/maps/taco-restaurant-mlo-add-on-fivem-pablitomamutopaputo",
+  "author": "PablitoMamutoPaputo",
+  "category": [
+   "restaurant"
+  ],
+  "edition": "Check archive for SP package",
+  "status": "candidate_requires_archive_check"
+ },
+ {
+  "id": "mlo_006",
+  "name": "Mechanical Garage",
+  "url": "https://www.gta5-mods.com/maps/mechanical-garage",
+  "author": "Patoche",
+  "category": [
+   "mechanic",
+   "garage"
+  ],
+  "edition": "Single Player mapping",
+  "status": "candidate_not_runtime_tested"
+ },
+ {
+  "id": "mlo_007",
+  "name": "Digital Den Store Interior",
+  "url": "https://www.gta5-mods.com/maps/digitalden-store-mlo",
+  "author": "G0d3sm1wa7o",
+  "category": [
+   "electronics_store"
+  ],
+  "edition": "Single Player",
+  "status": "candidate_conflict_risk"
+ },
+ {
+  "id": "mlo_008",
+  "name": "Vinewood Plaza 24/7",
+  "url": "https://www.gta5-mods.com/maps/mlo-vinewood-plaza-24-7-add-on-sp-fivem",
+  "author": "frdfare",
+  "category": [
+   "convenience_store"
+  ],
+  "edition": "Legacy / Enhanced variants",
+  "status": "candidate_requires_edition_check"
+ },
+ {
+  "id": "mlo_009",
+  "name": "Lago Zancudo Westhighway 24/7 Shop",
+  "url": "https://www.gta5-mods.com/maps/lago-zancudo-westhighway-24-7-shop-mlo",
+  "author": "David Simon",
+  "category": [
+   "convenience_store"
+  ],
+  "edition": "Single Player",
+  "status": "candidate_not_runtime_tested"
+ },
+ {
+  "id": "mlo_010",
+  "name": "Coffee Cute V2 Map",
+  "url": "https://www.gta5-mods.com/users/Moreo%20Design/files",
+  "author": "Moreo Design",
+  "category": [
+   "coffee_shop"
+  ],
+  "edition": "Add-On SP / FiveM listing",
+  "status": "candidate_requires_exact_download_page"
+ }
+]

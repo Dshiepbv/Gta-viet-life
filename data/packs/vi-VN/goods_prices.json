@@ -1,0 +1,177 @@
+[
+ {
+  "id": "goods_001",
+  "name": "Gạo",
+  "unit": "kg",
+  "price_min": 15000,
+  "price_max": 30000
+ },
+ {
+  "id": "goods_002",
+  "name": "Trứng gà",
+  "unit": "quả",
+  "price_min": 2500,
+  "price_max": 4500
+ },
+ {
+  "id": "goods_003",
+  "name": "Thịt heo",
+  "unit": "kg",
+  "price_min": 90000,
+  "price_max": 160000
+ },
+ {
+  "id": "goods_004",
+  "name": "Thịt gà",
+  "unit": "kg",
+  "price_min": 60000,
+  "price_max": 110000
+ },
+ {
+  "id": "goods_005",
+  "name": "Rau xanh",
+  "unit": "kg",
+  "price_min": 15000,
+  "price_max": 40000
+ },
+ {
+  "id": "goods_006",
+  "name": "Nước suối",
+  "unit": "chai",
+  "price_min": 5000,
+  "price_max": 12000
+ },
+ {
+  "id": "goods_007",
+  "name": "Sữa hộp",
+  "unit": "hộp",
+  "price_min": 7000,
+  "price_max": 12000
+ },
+ {
+  "id": "goods_008",
+  "name": "Mì ăn liền",
+  "unit": "gói",
+  "price_min": 4000,
+  "price_max": 8000
+ },
+ {
+  "id": "goods_009",
+  "name": "Bánh mì",
+  "unit": "ổ",
+  "price_min": 3000,
+  "price_max": 8000
+ },
+ {
+  "id": "goods_010",
+  "name": "Cà phê gói",
+  "unit": "gói",
+  "price_min": 2000,
+  "price_max": 6000
+ },
+ {
+  "id": "goods_011",
+  "name": "Xăng",
+  "unit": "lít",
+  "price_min": 20000,
+  "price_max": 30000
+ },
+ {
+  "id": "goods_012",
+  "name": "Nhớt xe máy",
+  "unit": "chai",
+  "price_min": 90000,
+  "price_max": 180000
+ },
+ {
+  "id": "goods_013",
+  "name": "Vé xe buýt",
+  "unit": "lượt",
+  "price_min": 5000,
+  "price_max": 15000
+ },
+ {
+  "id": "goods_014",
+  "name": "Áo thun",
+  "unit": "cái",
+  "price_min": 80000,
+  "price_max": 300000
+ },
+ {
+  "id": "goods_015",
+  "name": "Quần dài",
+  "unit": "cái",
+  "price_min": 150000,
+  "price_max": 500000
+ },
+ {
+  "id": "goods_016",
+  "name": "Dầu gội",
+  "unit": "chai",
+  "price_min": 40000,
+  "price_max": 150000
+ },
+ {
+  "id": "goods_017",
+  "name": "Kem đánh răng",
+  "unit": "tuýp",
+  "price_min": 20000,
+  "price_max": 60000
+ },
+ {
+  "id": "goods_018",
+  "name": "Xà phòng",
+  "unit": "bánh",
+  "price_min": 10000,
+  "price_max": 30000
+ },
+ {
+  "id": "goods_019",
+  "name": "Điện sinh hoạt",
+  "unit": "kWh",
+  "price_min": 1800,
+  "price_max": 3500
+ },
+ {
+  "id": "goods_020",
+  "name": "Nước sinh hoạt",
+  "unit": "m3",
+  "price_min": 6000,
+  "price_max": 20000
+ },
+ {
+  "id": "goods_021",
+  "name": "Thuê phòng trọ",
+  "unit": "tháng",
+  "price_min": 1500000,
+  "price_max": 5000000
+ },
+ {
+  "id": "goods_022",
+  "name": "Cước điện thoại",
+  "unit": "tháng",
+  "price_min": 50000,
+  "price_max": 300000
+ },
+ {
+  "id": "goods_023",
+  "name": "Sửa xe cơ bản",
+  "unit": "lần",
+  "price_min": 30000,
+  "price_max": 250000
+ },
+ {
+  "id": "goods_024",
+  "name": "Giặt quần áo",
+  "unit": "kg",
+  "price_min": 15000,
+  "price_max": 30000
+ },
+ {
+  "id": "goods_025",
+  "name": "Cơm bình dân",
+  "unit": "suất",
+  "price_min": 25000,
+  "price_max": 45000
+ }
+]

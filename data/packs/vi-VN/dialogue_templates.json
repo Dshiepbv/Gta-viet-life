@@ -1,0 +1,242 @@
+[
+ {
+  "id": "dlg_001",
+  "intent": "greeting",
+  "utterance": "Chào buổi sáng nhé!",
+  "response": "Ừ, chào buổi sáng. Hôm nay đi làm sớm vậy?"
+ },
+ {
+  "id": "dlg_002",
+  "intent": "greeting",
+  "utterance": "Dạo này khỏe không?",
+  "response": "Cũng bình thường, công việc hơi bận một chút."
+ },
+ {
+  "id": "dlg_003",
+  "intent": "farewell",
+  "utterance": "Thôi, tôi đi trước nhé.",
+  "response": "Ừ, đi đường cẩn thận nha."
+ },
+ {
+  "id": "dlg_004",
+  "intent": "small_talk",
+  "utterance": "Hôm nay nóng quá.",
+  "response": "Ừ, trời này mà chạy xe ngoài đường thì mệt thật."
+ },
+ {
+  "id": "dlg_005",
+  "intent": "small_talk",
+  "utterance": "Dạo này công việc thế nào?",
+  "response": "Cũng ổn, chỉ hơi nhiều việc thôi."
+ },
+ {
+  "id": "dlg_006",
+  "intent": "shopping",
+  "utterance": "Cho tôi hỏi món này bao nhiêu tiền?",
+  "response": "Món đó giá ba mươi nghìn nhé."
+ },
+ {
+  "id": "dlg_007",
+  "intent": "shopping",
+  "utterance": "Có loại rẻ hơn không?",
+  "response": "Có, bên này có loại bình dân hơn."
+ },
+ {
+  "id": "dlg_008",
+  "intent": "shopping",
+  "utterance": "Tôi lấy một cái này.",
+  "response": "Vâng, để tôi tính tiền cho anh/chị."
+ },
+ {
+  "id": "dlg_009",
+  "intent": "food_order",
+  "utterance": "Cho tôi một tô phở bò.",
+  "response": "Anh dùng tái hay chín ạ?"
+ },
+ {
+  "id": "dlg_010",
+  "intent": "food_order",
+  "utterance": "Cho thêm một ly trà đá.",
+  "response": "Dạ, có ngay ạ."
+ },
+ {
+  "id": "dlg_011",
+  "intent": "food_order",
+  "utterance": "Tính tiền giúp tôi.",
+  "response": "Dạ, tổng cộng hết năm mươi nghìn ạ."
+ },
+ {
+  "id": "dlg_012",
+  "intent": "workplace",
+  "utterance": "Báo cáo hôm nay xong chưa?",
+  "response": "Tôi đang hoàn thiện, khoảng một tiếng nữa sẽ gửi."
+ },
+ {
+  "id": "dlg_013",
+  "intent": "workplace",
+  "utterance": "Sếp đang cần gặp anh.",
+  "response": "Được rồi, tôi qua ngay."
+ },
+ {
+  "id": "dlg_014",
+  "intent": "workplace",
+  "utterance": "Hôm nay tăng ca không?",
+  "response": "Chắc phải ở lại thêm một chút."
+ },
+ {
+  "id": "dlg_015",
+  "intent": "neighbor",
+  "utterance": "Nhà anh mới chuyển đến à?",
+  "response": "Ừ, gia đình tôi mới dọn qua tuần trước."
+ },
+ {
+  "id": "dlg_016",
+  "intent": "neighbor",
+  "utterance": "Tối qua hơi ồn nhé.",
+  "response": "Xin lỗi, hôm qua nhà tôi có chút việc."
+ },
+ {
+  "id": "dlg_017",
+  "intent": "family",
+  "utterance": "Tối nay ăn cơm ở nhà nhé.",
+  "response": "Ừ, tôi sẽ cố gắng về sớm."
+ },
+ {
+  "id": "dlg_018",
+  "intent": "family",
+  "utterance": "Nhớ mua ít rau khi về nhé.",
+  "response": "Được rồi, tôi sẽ ghé chợ."
+ },
+ {
+  "id": "dlg_019",
+  "intent": "transport",
+  "utterance": "Đường này đi ra trung tâm được không?",
+  "response": "Được, anh đi thẳng rồi rẽ phải ở ngã tư."
+ },
+ {
+  "id": "dlg_020",
+  "intent": "transport",
+  "utterance": "Chỗ này có dễ bắt xe không?",
+  "response": "Có, giờ này thường khá nhiều xe."
+ },
+ {
+  "id": "dlg_021",
+  "intent": "repair",
+  "utterance": "Xe tôi có tiếng kêu ở bánh trước.",
+  "response": "Để tôi kiểm tra phanh và bạc đạn trước nhé."
+ },
+ {
+  "id": "dlg_022",
+  "intent": "repair",
+  "utterance": "Bao lâu thì sửa xong?",
+  "response": "Nếu chỉ lỗi nhỏ thì khoảng ba mươi phút."
+ },
+ {
+  "id": "dlg_023",
+  "intent": "emotional",
+  "utterance": "Hôm nay tôi thấy mệt quá.",
+  "response": "Có chuyện gì không? Muốn ngồi nghỉ một chút không?"
+ },
+ {
+  "id": "dlg_024",
+  "intent": "emotional",
+  "utterance": "Tôi đang hơi buồn.",
+  "response": "Ừ, nếu muốn nói thì tôi sẵn sàng nghe."
+ },
+ {
+  "id": "dlg_025",
+  "intent": "conflict",
+  "utterance": "Sao anh lại làm như vậy?",
+  "response": "Tôi xin lỗi, có lẽ chúng ta đang hiểu nhầm nhau."
+ },
+ {
+  "id": "dlg_026",
+  "intent": "conflict",
+  "utterance": "Tôi không đồng ý với cách này.",
+  "response": "Vậy mình cùng trao đổi để tìm phương án khác."
+ },
+ {
+  "id": "dlg_027",
+  "intent": "request",
+  "utterance": "Anh giúp tôi một việc được không?",
+  "response": "Được, việc gì vậy?"
+ },
+ {
+  "id": "dlg_028",
+  "intent": "request",
+  "utterance": "Cho tôi mượn điện thoại một chút.",
+  "response": "Được, anh dùng đi."
+ },
+ {
+  "id": "dlg_029",
+  "intent": "weather",
+  "utterance": "Có vẻ sắp mưa rồi.",
+  "response": "Ừ, nhớ mang áo mưa theo nhé."
+ },
+ {
+  "id": "dlg_030",
+  "intent": "weather",
+  "utterance": "Trời hôm nay đẹp nhỉ.",
+  "response": "Ừ, rất thích hợp để đi dạo."
+ },
+ {
+  "id": "dlg_031",
+  "intent": "money",
+  "utterance": "Tháng này lương được bao nhiêu?",
+  "response": "Cũng như tháng trước, chưa có thay đổi."
+ },
+ {
+  "id": "dlg_032",
+  "intent": "money",
+  "utterance": "Cho tôi thanh toán bằng chuyển khoản.",
+  "response": "Được nhé, đây là mã QR."
+ },
+ {
+  "id": "dlg_033",
+  "intent": "relationship",
+  "utterance": "Cuối tuần này đi đâu không?",
+  "response": "Nếu rảnh thì mình đi uống cà phê nhé."
+ },
+ {
+  "id": "dlg_034",
+  "intent": "relationship",
+  "utterance": "Lâu rồi không gặp.",
+  "response": "Ừ, dạo này ai cũng bận cả."
+ },
+ {
+  "id": "dlg_035",
+  "intent": "greeting",
+  "utterance": "Ủa, anh cũng ở khu này à?",
+  "response": "Ừ, tôi ở gần đây thôi."
+ },
+ {
+  "id": "dlg_036",
+  "intent": "small_talk",
+  "utterance": "Kẹt xe quá trời.",
+  "response": "Giờ cao điểm lúc nào cũng vậy."
+ },
+ {
+  "id": "dlg_037",
+  "intent": "shopping",
+  "utterance": "Có giao hàng tận nhà không?",
+  "response": "Có, anh cho tôi xin địa chỉ nhé."
+ },
+ {
+  "id": "dlg_038",
+  "intent": "workplace",
+  "utterance": "Mai anh có đi làm không?",
+  "response": "Có, lịch của tôi vẫn bình thường."
+ },
+ {
+  "id": "dlg_039",
+  "intent": "family",
+  "utterance": "Hôm nay con đi học thế nào?",
+  "response": "Dạ, hôm nay con học cũng vui ạ."
+ },
+ {
+  "id": "dlg_040",
+  "intent": "farewell",
+  "utterance": "Hẹn gặp lại nhé.",
+  "response": "Ừ, hẹn gặp lại."
+ }
+]

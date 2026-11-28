@@ -6,9 +6,11 @@ from pathlib import Path
 try:
     from .life_simulation import LifeSimulationEngine, NPCProfile, ScheduleBlock, SQLiteLifeStore
     from .society import SocietySimulation
+    from .datapack import IdentityStore, load_default
 except ImportError:  # PyInstaller entry-point execution
     from life_simulation import LifeSimulationEngine, NPCProfile, ScheduleBlock, SQLiteLifeStore
     from society import SocietySimulation
+    from datapack import IdentityStore, load_default
 
 PROTOCOL="gvl-engine/1"; BUILD="0.1.0"; MAX_BODY=65536
 # One heartbeat simulates at most this much; the rest of a large clock jump follows on later beats.
@@ -58,6 +60,9 @@ class State:
         self.society = SocietySimulation(self.simulation.store.connection, self.simulation.store._lock,
             lambda: self.simulation.simulation_minute, self.simulation)
         self.society.process_pending_life_events()
+        self.pack = load_default()
+        self.simulation.data_pack = self.pack
+        self.identities = IdentityStore(self.simulation.store.connection, self.simulation.store._lock, self.pack)
     def auth(self, token):
         # compare_digest rejects non-ASCII str with TypeError; bytes compare any header value.
         return bool(token) and secrets.compare_digest(self.token.encode("utf-8"), token.encode("utf-8"))
@@ -236,6 +241,11 @@ def handler_for(state, log):
                     if not isinstance(schedule,list) or any(not isinstance(item,dict) for item in schedule):
                         raise ValueError("schedule_array_required")
                     blocks=[ScheduleBlock(**item) for item in schedule]
+                    if raw.get("npc_id") and (not raw.get("display_name") or not raw.get("occupation")):
+                        # M0: an NPC without a name gets a fixed identity from the Data Pack, stored once.
+                        found=state.identities.identity(raw["npc_id"])
+                        raw=dict(raw,display_name=raw.get("display_name") or found["display_name"],
+                                 occupation=raw.get("occupation") or found["occupation"])
                     profile=NPCProfile(
                         npc_id=raw.get("npc_id",""), display_name=raw.get("display_name",""),
                         home_location_id=raw.get("home_location_id",""), occupation=raw.get("occupation",""),
@@ -274,6 +284,22 @@ def handler_for(state, log):
                     result=state.simulation.dialogue_context(
                         p.get("npc_id",""),p.get("player_id",""),p.get("topic",""))
                     return self.sendj(200,result)
+                if self.path=="/engine/v1/world/identities":
+                    return self.sendj(200,state.identities.identity(p.get("persistent_id","")))
+                if self.path=="/engine/v1/world/prices/quote":
+                    if state.pack is None: raise ValueError("data_pack_unavailable")
+                    day=p.get("day",0)
+                    if isinstance(day,bool) or not isinstance(day,int) or day<0: raise ValueError("invalid_day")
+                    return self.sendj(200,{"item_id":p.get("item_id",""),"currency":state.pack.currency,
+                        "price":state.pack.price(p.get("item_id",""),str(p.get("zone","")),day)})
+                if self.path=="/engine/v1/simulation/dialogue/template":
+                    if state.pack is None: raise ValueError("data_pack_unavailable")
+                    npc=state.simulation.npcs.get(p.get("npc_id",""))
+                    if npc is None: raise KeyError("npc_not_found")
+                    intent=p.get("intent") or state.pack.detect_intent(str(p.get("text",""))[:500])
+                    lines=state.pack.dialogue_for(intent,npc.affinity.get(p.get("player_id","player.main"),0.0),
+                        npc.stress,str(p.get("place",""))[:32],npc.profile.npc_id+"/"+str(state.simulation.simulation_minute))
+                    return self.sendj(200,{"intent":intent,"templates":lines})
                 if self.path=="/engine/v1/world/events":
                     return self.sendj(200,state.society.ingest_legacy_events(
                         p.get("source_id",""),p.get("events",[])))

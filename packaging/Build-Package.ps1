@@ -1,7 +1,7 @@
 # Dung toan bo bo cai: kiem thu, bien dich module game, Launcher, Updater, Engine Host, Bridge,
 # manifest.json, goi zip cap nhat va file cai dat duy nhat. Dung chung cho may local va CI.
 param(
-  [string]$Version = "0.4.0",
+  [string]$Version = "0.4.1",
   [string]$Dotnet = "dotnet",
   [string]$Python = "python",
   [Parameter(Mandatory = $true)][string]$InnoCompiler,
@@ -63,7 +63,7 @@ Copy-Item (Join-Path $publish "updater\GtaVietLife.Updater.exe") (Join-Path $pub
 
 $pyiWork = Join-Path $WorkDir "pyinstaller"
 Invoke-Step "Engine Host executable" {
-  & $Python -m PyInstaller --noconfirm --clean --onefile --name GtaVietLifeEngine --workpath $pyiWork --specpath $pyiWork --distpath (Join-Path $publish "runtime\engine") --paths (Join-Path $root "engine") --hidden-import life_simulation --hidden-import society (Join-Path $root "engine\host.py")
+  & $Python -m PyInstaller --noconfirm --clean --onefile --name GtaVietLifeEngine --workpath $pyiWork --specpath $pyiWork --distpath (Join-Path $publish "runtime\engine") --paths (Join-Path $root "engine") --hidden-import life_simulation --hidden-import society --hidden-import datapack --add-data "$(Join-Path $root 'data\packs');data\packs" (Join-Path $root "engine\host.py")
 }
 Invoke-Step "Voice bridge executable" {
   $hidden = foreach ($m in "llm", "memory", "stt", "tts", "overlay", "engine_context", "life", "social") { "--hidden-import"; $m }
@@ -87,8 +87,9 @@ Get-ChildItem $layout -Recurse -File | Sort-Object FullName | ForEach-Object {
   $files[$relative] = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
 }
 $mloPacks = @(Get-Content (Join-Path $PSScriptRoot "mlo-packs.json") -Raw | ConvertFrom-Json)
-$manifest = [ordered]@{ version = $Version; target = "gta5-legacy"; files = $files; mlo_packs = $mloPacks }
-$json = $manifest | ConvertTo-Json -Depth 4
+$mloCatalog = @(Get-Content (Join-Path $root "data\packs\vi-VN\mlo_catalog_candidates.json") -Raw -Encoding UTF8 | ConvertFrom-Json)
+$manifest = [ordered]@{ version = $Version; target = "gta5-legacy"; files = $files; mlo_packs = $mloPacks; mlo_catalog = $mloCatalog }
+$json = $manifest | ConvertTo-Json -Depth 6
 [IO.File]::WriteAllText((Join-Path $layout "manifest.json"), $json, (New-Object Text.UTF8Encoding($false)))
 Copy-Item (Join-Path $layout "manifest.json") (Join-Path $publish "manifest.json")
 

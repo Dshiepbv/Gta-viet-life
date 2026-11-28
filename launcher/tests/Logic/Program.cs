@@ -114,6 +114,12 @@ try
     File.WriteAllText(Path.Combine(root, "mlo/user.json"), "[{\"name\":\"B\",\"url\":\"https://b\",\"sha256\":\"" + zipHash + "\",\"dlcName\":\"a\"}]");
     var loaded = MloPacks.Load(manifestPath, Path.Combine(root, "mlo/user.json"));
     Check(loaded.Count == 1 && loaded[0].Name == "B", "user list overrides the manifest for the same pack");
+    File.WriteAllText(manifestPath, "{\"mlo_catalog\":[{\"id\":\"mlo_001\",\"name\":\"Motel\",\"url\":\"https://x\",\"status\":\"candidate_not_runtime_tested\"}," +
+        "{\"id\":\"mlo_002\",\"name\":\"Ok\",\"url\":\"https://y/p.zip\",\"status\":\"verified\",\"sha256\":\"" + zipHash + "\",\"dlcName\":\"ok_pack\"}]}");
+    var catalog = MloPacks.Catalog(manifestPath);
+    Check(catalog.Count == 2 && catalog[0].Status == "candidate_not_runtime_tested", "candidate status kept as published");
+    Check(MloPacks.Activate(catalog[0], true) == null, "candidates are never installed");
+    Check(MloPacks.Activate(catalog[1], false) == null && MloPacks.Activate(catalog[1], true)?.DlcName == "ok_pack", "verified pack needs a compatible game");
 
     // ---- installer
     Write("src/GtaVietLifeCore.dll", "core-v2"); Write("src/GtaVietLifeWorld.dll", "world-v2");

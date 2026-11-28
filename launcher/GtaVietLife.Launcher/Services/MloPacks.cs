@@ -15,6 +15,19 @@ public sealed class MloPack {
 
 public sealed record MloResult(string Name,bool Installed,string Message);
 
+/// <summary>A community pack listed for reference; its candidate_* status is kept as published.</summary>
+public sealed class MloCandidate {
+ public string Id {get;set;}="";
+ public string Name {get;set;}="";
+ public string Url {get;set;}="";
+ public string Author {get;set;}="";
+ public List<string> Category {get;set;}=new();
+ public string Edition {get;set;}="";
+ public string Status {get;set;}="";
+ public string Sha256 {get;set;}="";
+ public string DlcName {get;set;}="";
+}
+
 public static class MloPacks {
  static readonly JsonSerializerOptions Options=new(){PropertyNameCaseInsensitive=true};
 
@@ -28,6 +41,20 @@ public static class MloPacks {
   }
   if(File.Exists(userPath))packs.AddRange(JsonSerializer.Deserialize<List<MloPack>>(File.ReadAllText(userPath),Options)??new());
   return packs.GroupBy(p=>p.DlcName,StringComparer.OrdinalIgnoreCase).Select(g=>g.Last()).ToList();
+ }
+
+ public static List<MloCandidate> Catalog(string manifestPath){
+  if(!File.Exists(manifestPath))return new();
+  using var document=JsonDocument.Parse(File.ReadAllText(manifestPath));
+  return document.RootElement.TryGetProperty("mlo_catalog",out var list)&&list.ValueKind==JsonValueKind.Array
+   ?list.Deserialize<List<MloCandidate>>(Options)??new():new();
+ }
+
+ /// <summary>Only a verified entry with a hash, on a game that passed the compatibility check, becomes installable.</summary>
+ public static MloPack? Activate(MloCandidate candidate,bool compatible){
+  if(!compatible||candidate.Status!="verified")return null;
+  var pack=new MloPack{Name=candidate.Name,Url=candidate.Url,Sha256=candidate.Sha256,DlcName=candidate.DlcName};
+  return Problem(pack)==null?pack:null;
  }
 
  public static string? Problem(MloPack pack){

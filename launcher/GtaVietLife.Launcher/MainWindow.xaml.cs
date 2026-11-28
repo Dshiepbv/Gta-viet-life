@@ -94,7 +94,13 @@ public partial class MainWindow:Window {
   }
  }
  async Task InstallMloPacks(string gameDir){
-  var packs=MloPacks.Load(Path.Combine(AppContext.BaseDirectory,"manifest.json"),Path.Combine(LauncherSettings.Dir,"mlo-packs.json"));
+  var manifest=Path.Combine(AppContext.BaseDirectory,"manifest.json");
+  var packs=MloPacks.Load(manifest,Path.Combine(LauncherSettings.Dir,"mlo-packs.json"));
+  var catalog=MloPacks.Catalog(manifest);
+  foreach(var candidate in catalog){
+   var active=MloPacks.Activate(candidate,true);   // chi goi toi day khi kiem tra tuong thich da qua
+   if(active!=null)packs.Add(active);else Log("MLO "+candidate.Name+": "+candidate.Status+" (chỉ tham khảo, chưa kích hoạt)");
+  }
   if(packs.Count==0)return;
   Set("ĐANG TẢI GÓI NỘI THẤT",packs.Count+" gói MLO khai báo trong manifest.json / mlo-packs.json.");
   using var http=new System.Net.Http.HttpClient{Timeout=TimeSpan.FromMinutes(20)};http.DefaultRequestHeaders.UserAgent.ParseAdd("GTA-Viet-Life-Launcher/0.3");

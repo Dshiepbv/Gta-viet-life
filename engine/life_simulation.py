@@ -419,6 +419,7 @@ class LifeSimulationEngine:
         self.npcs: Dict[str, NPCState] = {}
         self.events: List[dict] = []
         self.commands: List[dict] = []
+        self.data_pack = None   # set by the host when a valid Data Pack is installed
         self.reload()
 
     def reload(self) -> None:
@@ -769,6 +770,9 @@ class LifeSimulationEngine:
                 "known_facts": list(profile.knowledge),
                 "recent_memories": [dict(m) for m in state.memories[-10:]],
                 "topic": topic,
+                "dialogue_examples": self.data_pack.dialogue_for(
+                    self.data_pack.detect_intent(topic), state.affinity.get(player_id, 0.0), state.stress,
+                    "", profile.npc_id) if self.data_pack is not None and topic else [],
                 "knowledge_boundary": "Only known_facts and recent_memories are established knowledge. Do not claim unlisted events, unseen locations or private facts. Any proposed world action must be validated by the Engine.",
             }
 

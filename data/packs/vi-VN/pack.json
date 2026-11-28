@@ -1,0 +1,34 @@
+{
+ "id": "gvl.vi-VN",
+ "name": "GTA Viet Life - Vietnam Data Pack",
+ "version": "1.0.0",
+ "schema_version": 1,
+ "locale": "vi-VN",
+ "currency": "VND",
+ "files": {
+  "npc_names.json": {
+   "sha256": "67c0886b77387dd0d362f33ebb985116e4cd2dabe14c530c286ebf61d7f39a8b",
+   "count": 40
+  },
+  "occupations.json": {
+   "sha256": "cc503bbfe09126868d3986ffbb42ca00e71e9cc29fa059a732a27b293289780a",
+   "count": 30
+  },
+  "food_drink_menu.json": {
+   "sha256": "cdce19644900e2e2bfd50da0fb2a4587f8243cbfadf312a6aff5601898699691",
+   "count": 30
+  },
+  "goods_prices.json": {
+   "sha256": "701c9369a486488963f66b581c60b0e434528f42e3be45ced5353b0171858504",
+   "count": 25
+  },
+  "dialogue_templates.json": {
+   "sha256": "246b130a1a72f61b52425c10c4a24a82ab11122d4bc49a670f5fced0beea4cb3",
+   "count": 40
+  },
+  "mlo_catalog_candidates.json": {
+   "sha256": "2335fcadb9acab5bc34a3c6a5954a6afe00b70c61f4c9658e26c8a5614f346f4",
+   "count": 10
+  }
+ }
+}
