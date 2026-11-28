@@ -79,3 +79,11 @@ Mục tiêu: mọi đồ vật trong nhà và quán đều dùng được (ngồ
 | MLO cộng đồng | Người dùng tự tải gói miễn phí từ trang tác giả; Launcher nhận ra gói đã cài và gắn Activity Anchor theo danh mục đi kèm | Người dùng tải; tôi viết danh mục | Phần lớn gói miễn phí không cho đăng lại, nên không đóng gói kèm |
 
 Thứ tự: khung tương tác → Modular → đường ống MLO thật và gói mẫu → danh mục cho gói cộng đồng. Theo brief, việc này thuộc đợt 3 (M3), làm sau bước A.
+### Cập nhật 2026-11-28: đã có MLO cộng đồng miễn phí
+
+Trên gta5-mods.com có nhiều MLO chơi đơn miễn phí (quán ăn, cà phê, 24/7, bar, motel, căn hộ). Vì vậy đổi thứ tự:
+1. **Dùng MLO cộng đồng** cho không gian: đi bộ thẳng qua cửa thật, không dịch chuyển. Người dùng tự tải theo điều khoản từng gói, mod không đóng gói lại.
+2. **Khung tương tác (lớp 1)** tự nhận đồ vật theo mẫu mô hình trong bất kỳ nội thất nào (gốc hay MLO), nên không cần danh mục riêng cho từng gói.
+3. Lớp 2 (Modular) và lớp 3 (đường ống MLO tự dựng) hoãn, chỉ làm khi gói cộng đồng không đủ.
+
+Cài gói MLO cần thêm dòng vào `dlclist.xml` (trong `mods/update/update.rpf`). Hiện có công cụ cộng đồng làm việc này: Simple Mods Loader, DLCForge. Để Launcher tự làm mà người dùng không mở OpenIV: chưa thử, cần kiểm.

@@ -104,3 +104,6 @@ Engine: 96 test pass; test mới `engine/tests/test_phase2_regressions.py` đã 
 
 - Khóa ký APK: %LOCALAPPDATA%\GtaVietLife\signing (ngoài repo). Workflow chỉ phát hành APK khi có secret. Chờ chủ dự án thêm 2 secret.
 - Chủ dự án chốt: bằng chứng runtime do script tự ghi log (bài tự kiểm).
+
+- 2026-11-28: chủ dự án để APK tính sau, giữ khóa ký tạm; khóa PKCS12 đã tạo vẫn ở %LOCALAPPDATA%\GtaVietLife\signing. Workflow hiện không phát hành APK khi thiếu secret.
+- MLO: dùng gói cộng đồng + khung tương tác tự nhận đồ vật (PLAN_V4 mục 5).
