@@ -566,7 +566,7 @@ class LifeSimulationEngine:
         """Pair co-located NPCs on a social activity; deterministic and bounded per 15-minute pulse."""
         groups: Dict[str, List[NPCState]] = {}
         for state in self.npcs.values():
-            if state.current_activity == "socialize" and state.location_id:
+            if state.current_activity in ("socialize", "leisure") and state.location_id:
                 groups.setdefault(state.location_id, []).append(state)
         for location_id in sorted(groups):
             participants = sorted(groups[location_id], key=lambda item: item.profile.npc_id)
