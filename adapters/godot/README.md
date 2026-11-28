@@ -35,3 +35,8 @@ This is a separate base-game adapter, not a second simulation implementation. It
 - [ ] In-world talk increments affinity and stores memory in the shared SQLite store.
 - [ ] Restarting Host and Godot client preserves NPC identity, relationship and memory.
 - [ ] Engine domain tests pass unchanged with either adapter connected.
+
+
+### NPC physical routine in the Godot reference world
+
+The sample resident's daily schedule now routes sleep into the home interior and bed anchor, meals to the cafe counter, work to the workplace counter, and leisure to the public park. The adapter acknowledges only after the resident's movement tween reaches the selected physical anchor. These mappings are local presentation; the shared Engine Host still owns the schedule, activity state, needs and relationship rules.

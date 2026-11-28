@@ -135,11 +135,13 @@ func _boot() -> void:
 			"traits": ["friendly", "disciplined"],
 			"life_goal": "career",
 			"schedule": [
-				{"start_minute": 0, "end_minute": 360, "activity": "sleep", "location_id": "home.godot"},
+				{"start_minute": 0, "end_minute": 360, "activity": "sleep", "location_id": "home.interior.godot"},
 				{"start_minute": 360, "end_minute": 480, "activity": "commute", "location_id": "park.godot"},
-				{"start_minute": 480, "end_minute": 1020, "activity": "work", "location_id": "work.godot"},
+				{"start_minute": 480, "end_minute": 660, "activity": "work", "location_id": "work.interior.godot"},
+				{"start_minute": 660, "end_minute": 720, "activity": "eat", "location_id": "work.interior.godot"},
+				{"start_minute": 720, "end_minute": 1020, "activity": "work", "location_id": "work.interior.godot"},
 				{"start_minute": 1020, "end_minute": 1320, "activity": "leisure", "location_id": "park.godot"},
-				{"start_minute": 1320, "end_minute": 1440, "activity": "sleep", "location_id": "home.godot"}
+				{"start_minute": 1320, "end_minute": 1440, "activity": "sleep", "location_id": "home.interior.godot"}
 			]
 		}
 	})
@@ -364,8 +366,20 @@ func _poll_commands() -> void:
 			await _ack(command.get("command_id", ""), false, "unsupported", "location_not_mapped")
 			continue
 		busy = true
-		await resident.move_to(locations[location_id], str(payload.get("activity", "idle")))
-		await _ack(command.get("command_id", ""), true, "completed", "destination_reached")
+		var activity: String = str(payload.get("activity", "idle"))
+		var destination: Vector2 = locations[location_id]
+		if activity == "sleep" and location_id == "home.interior.godot":
+			destination = locations["bed.anchor.godot"]
+		elif activity in ["eat", "drink"] and location_id == "home.interior.godot":
+			destination = locations["fridge.anchor.godot"]
+		elif activity in ["work", "eat"] and location_id == "work.interior.godot":
+			destination = locations["counter.anchor.godot"]
+		elif activity == "toilet" and location_id == "home.interior.godot":
+			destination = locations["toilet.anchor.godot"]
+		elif activity == "shower" and location_id == "home.interior.godot":
+			destination = locations["shower.anchor.godot"]
+		await resident.move_to(destination, activity)
+		await _ack(command.get("command_id", ""), true, "completed", "physical_activity_anchor_reached")
 		busy = false
 
 func _ack(command_id: String, success: bool, result_status: String, reason: String) -> void:
