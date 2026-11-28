@@ -173,6 +173,10 @@ def handler_for(state, log):
                         actor_kind=raw.get("actor_kind","npc"))
                     state.simulation.register_npc(profile)
                     return self.sendj(201,{"registered":True,"npc_id":profile.npc_id})
+                if self.path=="/engine/v1/simulation/actors/observe":
+                    observed=p.get("observed",{})
+                    result=state.simulation.observe_player_state(p.get("actor_id",""),observed,rid)
+                    return self.sendj(200,result)
                 if self.path=="/engine/v1/simulation/interact":
                     result=state.simulation.interact(
                         p.get("npc_id",""),p.get("player_id",""),p.get("interaction","talk"),rid,p.get("message",""))
