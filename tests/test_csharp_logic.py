@@ -250,6 +250,11 @@ static class Harness
         Check(!copy.Load("garbage") && !copy.Load("1|2|x|scan") && !copy.Load(null), "bad lines ignored");
         Check(GvlRegistry.LooksLikeDoor(1.1f, 0.12f, 2.4f), "door size");
         Check(!GvlRegistry.LooksLikeDoor(4f, 0.1f, 2.4f) && !GvlRegistry.LooksLikeDoor(1.1f, 1.1f, 2.4f), "gate and box rejected");
+        Check(GvlFacade.Accept(0.05f, 4f, 0, true, true), "street wall of a roofed building becomes an entrance");
+        Check(!GvlFacade.Accept(0.9f, 4f, 0, true, true), "ground or roof is not a wall");
+        Check(!GvlFacade.Accept(0f, 4f, 1, true, true), "one entrance per stretch of facade");
+        Check(!GvlFacade.Accept(0f, 4f, 0, false, true) && !GvlFacade.Accept(0f, 4f, 0, true, false), "needs a roof behind and a road in front");
+        Check(!GvlFacade.Accept(0f, 0.5f, 0, true, true) && !GvlFacade.Accept(0f, 20f, 0, true, true), "distance limits");
     }
 
     static void Templates()
@@ -432,6 +437,52 @@ static class Harness
               && GvlBankSync.Decide(new long[] { 1, 3000000000L, 9 }, 0, 100) == GvlBankSync.None, "impossible balance ignored");
     }
 
+    static void AutoSaves()
+    {
+        GvlAutoSave a = new GvlAutoSave();
+        Check(!a.Due(1000, 500, true), "the loaded wallet is already saved");
+        Check(!a.Due(200000, 500, true), "nothing changed, no save");
+        Check(!a.Due(200100, 900, true), "money just moved: wait until it settles");
+        Check(!a.Due(200100 + GvlAutoSave.QuietMs, 900, false), "never while unsafe");
+        Check(a.Due(200100 + GvlAutoSave.QuietMs, 900, true), "saves once settled and safe");
+        a.Saved(206200, 900);
+        Check(!a.Due(206300, 1500, true) && !a.Due(206300 + GvlAutoSave.QuietMs, 1500, true), "not again too soon");
+        Check(a.Due(206200 + GvlAutoSave.MinGapMs, 1500, true), "again after the gap");
+        a.Failed(400000);
+        Check(!a.Due(400100, 1500, true) && a.Due(400000 + GvlAutoSave.MinGapMs, 1500, true), "a refused save is retried later");
+        a.Saved(500000, 1500); a.DayPassed();
+        Check(a.Due(500000 + GvlAutoSave.MinGapMs, 1500, true), "a new day is saved even without money moving");
+        a.Saved(600000, 1500);
+        Check(!a.Due(100, 1500, true) && !a.Due(100 + GvlAutoSave.MinGapMs, 1500, true), "game clock restart does not trigger a save");
+    }
+
+    static void CashGuards()
+    {
+        GvlCashGuard g = new GvlCashGuard();
+        g.Record(300);
+        Check(g.Restore(1000, 7) == 0 && g.Pending == 0, "no GTA save seen yet: nothing to compare with");
+        Check(g.GameSaved(10, 1000, 7) && !g.GameSaved(10, 1000, 7), "one save counted once");
+        g.Record(800); g.Record(-150);
+        GvlCashGuard back = new GvlCashGuard();
+        Check(back.Load(g.Serialize()) && back.Pending == 650, "pending money survives the mod save");
+        Check(back.Restore(1000, 7) == 650 && back.Pending == 0, "quit before GTA saved: business money comes back");
+        Check(back.Restore(1000, 7) == 0, "returned only once per load");
+        GvlCashGuard other = new GvlCashGuard(); other.Load(g.Serialize());
+        Check(other.Restore(4321, 7) == 0, "a different GTA save is respected");
+        GvlCashGuard swap = new GvlCashGuard(); swap.Load(g.Serialize());
+        Check(swap.Restore(1000, 8) == 0, "another character is not credited");
+        GvlCashGuard cost = new GvlCashGuard(); cost.GameSaved(1, 100, 7); cost.Record(-500);
+        Check(cost.Restore(100, 7) == -100, "unsaved costs never take more than the wallet");
+        GvlCashGuard saved = new GvlCashGuard(); saved.Record(999); saved.GameSaved(2, 5000, 7);
+        Check(saved.Restore(5000, 7) == 0, "money already in the GTA save is not paid twice");
+        Check(!new GvlCashGuard().Load("x,1") && !new GvlCashGuard().Load(null), "bad line ignored");
+
+        Check(GvlOffline.Wages(true, 0, 3, 400) == 0, "offline: an empty shop is closed, no wages");
+        Check(GvlOffline.Wages(true, 5, 3, 400) == 1200 && GvlOffline.Wages(false, 0, 3, 400) == 1200, "open shop pays its staff");
+        Check(GvlOffline.Wages(true, 5, 0, 400) == 0, "no staff");
+        Check(!GvlOffline.MayEvict(true) && GvlOffline.MayEvict(false), "no eviction while the player is away");
+    }
+
     static void Orders()
     {
         GvlOrder o = new GvlOrder();
@@ -529,7 +580,7 @@ static class Harness
         else { Paths(); PermanentErrorDoesNotBlock(); BoundedRetry(404, GvlSendRules.MaxNotFoundAttempts);
                BoundedRetry(500, GvlSendRules.MaxServerErrorAttempts); TransientErrorKeepsEverything();
                CoalescingAndPersistence(); Capacity(); Batches(); Fade();
-               Streaming(); Templates(); Portal(); Crowd(); Wallet(); SaveFiles(); Business(); Days(); Bank(); Orders(); Shoppers(); Tiers(); }
+               Streaming(); Templates(); Portal(); Crowd(); Wallet(); SaveFiles(); Business(); Days(); Bank(); AutoSaves(); CashGuards(); Orders(); Shoppers(); Tiers(); }
         Console.WriteLine("failures=" + failures);
         return failures == 0 ? 0 : 1;
     }
@@ -556,6 +607,7 @@ class CSharpLogicTests(unittest.TestCase):
                  "Business.cs": extract_block("GtaVietLifeWorld.cs", "business"),
                  "DayWatch.cs": extract_block("GtaVietLifeSaveFile.cs", "daywatch"),
                  "BankSync.cs": extract_block("GtaVietLifeSaveFile.cs", "banksync"),
+                 "AutoSave.cs": extract_block("GtaVietLifeSaveFile.cs", "autosave"),
                  "Order.cs": extract_block("GtaVietLifeShopFloor.cs", "order"),
                  "UisPlan.cs": extract_block("GtaVietLifeUisPlan.cs", "uisplan"),
                  "Harness.cs": HARNESS}

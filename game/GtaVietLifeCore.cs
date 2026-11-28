@@ -142,6 +142,61 @@ public class GtaVietLifeCore : Script
         Emit("ledger.income", "amount=" + amount + ";cat=" + Clean(cat) + ";note=" + Clean(note) + ";acct=cash");
     }
 
+    // ====== tu luu GTA: tien trong vi chi ben khi GTA luu, nen goi luu tu dong moi khi tien thay doi ======
+    readonly GvlAutoSave autoSave = new GvlAutoSave();
+    bool autoSaving, autoSaveSeen, autoSaveOffWarned;
+    int autoSaveStarted, autoSaveMoney;
+
+    static bool SafeToAutoSave(Ped me)
+    {
+        if (!me.IsAlive || Game.Player.WantedLevel > 0 || me.IsInAir || me.IsRagdoll) return false;
+        if (me.IsInVehicle() && me.CurrentVehicle != null && me.CurrentVehicle.Speed > 1f) return false;
+        if (GTA.Native.Function.Call<bool>(GTA.Native.Hash.GET_MISSION_FLAG)) return false;
+        if (GTA.Native.Function.Call<bool>(GTA.Native.Hash.IS_CUTSCENE_ACTIVE)) return false;
+        if (GTA.Native.Function.Call<bool>(GTA.Native.Hash.IS_SCREEN_FADED_OUT)) return false;
+        if (GTA.Native.Function.Call<bool>(GTA.Native.Hash.IS_PLAYER_SWITCH_IN_PROGRESS)) return false;
+        if (!GTA.Native.Function.Call<bool>(GTA.Native.Hash.IS_PLAYER_CONTROL_ON, Game.Player)) return false;
+        // Trong nha (ke ca noi that do mod nap) thi khong luu: nap lai co the dung o noi that chua co.
+        if (GTA.Native.Function.Call<int>(GTA.Native.Hash.GET_INTERIOR_FROM_ENTITY, me) != 0) return false;
+        object busy = Get("GVL.WorldMenu");
+        return !(busy is bool && (bool)busy);
+    }
+
+    void UpdateAutoSave(int now)
+    {
+        Ped me = Game.Player.Character;
+        if (me == null || !me.Exists()) return;
+        int money = Game.Player.Money;
+        if (autoSaving)
+        {
+            bool running = GTA.Native.Function.Call<bool>(GTA.Native.Hash.IS_AUTO_SAVE_IN_PROGRESS);
+            if (running) { autoSaveSeen = true; if (now - autoSaveStarted < 30000) return; }
+            else if (!autoSaveSeen && now - autoSaveStarted < 5000) return;
+            autoSaving = false;
+            if (!autoSaveSeen) { autoSave.Failed(now); Log("tu luu GTA: game khong luu (dang co viec khac), se thu lai"); return; }
+            autoSave.Saved(now, autoSaveMoney);
+            long seq = (long)(DateTime.UtcNow - new DateTime(1970, 1, 1)).TotalSeconds;
+            Set("GVL.GtaSave", new long[] { seq, autoSaveMoney, me.Model.Hash });
+            Emit("core.gta_saved", "wallet=" + autoSaveMoney);
+            Log("tu luu GTA xong, vi $" + autoSaveMoney);
+            return;
+        }
+        if (!autoSave.Due(now, money, SafeToAutoSave(me))) return;
+        if (GTA.Native.Function.Call<bool>(GTA.Native.Hash.GET_IS_AUTO_SAVE_OFF))
+        {
+            autoSave.Failed(now);
+            if (!autoSaveOffWarned)
+            {
+                autoSaveOffWarned = true;
+                GTA.UI.Notification.Show("~y~GTA Viet Life:~s~ Tu luu cua GTA dang TAT nen tien co the mat khi thoat. Bat lai: Tam dung > Cai dat > Luu va khoi chay > Tu dong luu.");
+                Log("tu luu GTA dang tat trong cai dat");
+            }
+            return;
+        }
+        GTA.Native.Function.Call(GTA.Native.Hash.DO_AUTO_SAVE);
+        autoSaving = true; autoSaveSeen = false; autoSaveStarted = now; autoSaveMoney = money;
+    }
+
     void OnTick(object sender, EventArgs e)
     {
         int now = Game.GameTime;
@@ -152,8 +207,10 @@ public class GtaVietLifeCore : Script
             gameDay++;
             Emit("core.day", "day=" + gameDay + ";weekday=" + (gameDay % 7));
             Save();
+            autoSave.DayPassed();
         }
         lastMinute = minute;
+        try { UpdateAutoSave(now); } catch (Exception ex) { autoSaving = false; Log("tu luu GTA loi: " + ex.Message); }
         currentWorldMinute = gameDay * 1440L + minute;
         MaintainHostSession(Stopwatch.GetTimestamp());
         if (hostConnected && now > nextResidentSync) { nextResidentSync = now + 10000; SyncResidentProfiles(); }

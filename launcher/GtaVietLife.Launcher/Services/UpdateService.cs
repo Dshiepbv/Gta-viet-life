@@ -40,7 +40,8 @@ public sealed class UpdateService {
   var updaterSource=Path.Combine(AppContext.BaseDirectory,"GtaVietLife.Updater.exe");if(!File.Exists(updaterSource))throw new FileNotFoundException("Updater helper is missing.",updaterSource);
   var updater=Path.Combine(Path.GetTempPath(),"GtaVietLife.Updater-"+Guid.NewGuid().ToString("N")+".exe");File.Copy(updaterSource,updater);
   var target=AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
-  var psi=new ProcessStartInfo(updater){UseShellExecute=true};psi.ArgumentList.Add(zip);psi.ArgumentList.Add(target);psi.ArgumentList.Add(Environment.ProcessId.ToString());
+  // Thu muc lam viec phai nam ngoai thu muc cai, neu khong Windows khong cho trinh cap nhat doi ten no.
+  var psi=new ProcessStartInfo(updater){UseShellExecute=true,WorkingDirectory=Path.GetTempPath()};psi.ArgumentList.Add(zip);psi.ArgumentList.Add(target);psi.ArgumentList.Add(Environment.ProcessId.ToString());
   Process.Start(psi);RuntimeManager.Log("Verified update "+release.Tag+" staged; handing off to updater.");
  }
 

@@ -115,3 +115,11 @@ Engine: 96 test pass; test mới `engine/tests/test_phase2_regressions.py` đã 
 - Tag v0.4.1 và v0.4.2 trỏ vào commit thiếu .gitattributes: build trên GitHub sẽ hỏng vì Windows đổi xuống dòng làm sai SHA-256 của Data Pack, nên không có Release. Bản dùng được: v0.4.3.
 
 - Tag v0.4.1, v0.4.2, v0.4.3 trỏ vào commit thiếu .gitattributes nên build hỏng, không có Release; xóa tag bị hệ thống chặn, để nguyên. Bản phát hành đúng: v0.4.4 (commit 3cbaf38).
+
+## 0.4.5 (2026-11-28): tự lưu khi thoát, cập nhật Launcher, chấm vào nhà
+- Mất tiền kinh doanh khi thoát: ví GTA chỉ bền khi GTA lưu. Core gọi `DO_AUTO_SAVE` khi tiền thay đổi (đứng yên 6 s, cách nhau ≥90 s, ngoài trời, không truy nã/nhiệm vụ/xe đang chạy) và mỗi ngày game. Tự lưu tắt trong cài đặt thì báo một lần.
+- World ghi tiền thu/chi chưa nằm trong file lưu GTA (`cashguard=` trong file lưu mod, ghi mỗi 5 s). Nạp lại đúng file GTA đó (ví bằng ví lúc lưu, cùng nhân vật) thì trả lại; nạp file khác thì không đụng.
+- Bù offline: quán hết hàng thì đóng cửa, không trả lương; không thu hồi mặt bằng khi tắt máy (ghi nợ); chủ nợ không tính lãi, không lấy tiền ví khi tắt máy.
+- Updater: WinExe (hết cửa sổ cmd đen), log ở `%LOCALAPPDATA%\GtaVietLife\updater.log`, rời thư mục cài trước khi đổi tên (nguyên nhân cập nhật thất bại: thư mục làm việc nằm trong thư mục cài), thử lại khi file còn khóa, kiểm exe PE. Test `cwd-inside` fail trên Updater cũ, pass trên bản mới.
+- Chấm vào nhà: dò mặt tiền bằng tia quét (tường có mái, gần đường, cách nhau 18 m), vòng tròn xanh lá (quán: vàng) thấy từ 40 m.
+- Chưa chạy trong game. Bước tiếp: người dùng test 0.4.5, gửi `GtaVietLifeCore.log`, `GtaVietLifeWorld.log`, `updater.log`.

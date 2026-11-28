@@ -48,6 +48,36 @@ internal static class GvlBankSync
 }
 // </gvl-testable:banksync>
 
+// <gvl-testable:autosave>
+// Khi nao goi luu tu dong cua GTA: tien thay doi (hoac qua ngay), tien da dung yen vai giay, cach lan truoc du lau, va dang an toan.
+internal sealed class GvlAutoSave
+{
+    public const int MinGapMs = 90000;
+    public const int QuietMs = 6000;
+    public const int MinChange = 1;
+    bool started, dayDue;
+    long savedMoney, lastMoney, lastSaveAt, lastChangeAt;
+
+    public void DayPassed() { dayDue = true; }
+
+    public bool Due(int now, long money, bool safe)
+    {
+        if (!started) { started = true; savedMoney = lastMoney = money; lastSaveAt = now; lastChangeAt = now; return false; }
+        if (now < lastSaveAt) { lastSaveAt = now; lastChangeAt = now; }   // GameTime bat dau lai sau khi nap
+        if (money != lastMoney) { lastMoney = money; lastChangeAt = now; }
+        if (!safe) return false;
+        if (Math.Abs(money - savedMoney) < MinChange && !dayDue) return false;
+        if (now - lastChangeAt < QuietMs) return false;
+        return now - lastSaveAt >= MinGapMs;
+    }
+
+    public void Saved(int now, long money) { savedMoney = money; lastSaveAt = now; dayDue = false; }
+
+    // Game khong chiu luu (dang lam nhiem vu, tat tu luu...): doi them mot quang roi thu lai.
+    public void Failed(int now) { lastSaveAt = now; }
+}
+// </gvl-testable:autosave>
+
 // <gvl-testable:savefile>
 // Ghi qua file tam roi File.Replace, giu ban .bak. Tai loi ca hai thi khong bao gio ghi de.
 internal sealed class GvlSaveFile

@@ -167,7 +167,7 @@ public class GtaVietLifeInteriors : Script
                 else if (furnishPending) Furnish(me);
             }
             if (now > nextBubble) { nextBubble = now + 500; UpdateBubble(me); }
-            if (autoDiscover && portal.Phase == GvlPortal.Outside && now > nextScan) { nextScan = now + 1500; DiscoverDoors(me); }
+            if (autoDiscover && portal.Phase == GvlPortal.Outside && now > nextScan) { nextScan = now + 1500; DiscoverDoors(me); DiscoverFacades(me); }
             if (portal.Phase == GvlPortal.Outside && now > nextMeasure) { nextMeasure = now + 1000; MeasureNearby(me); }
             if (portal.Phase == GvlPortal.Inside && now > nextHousehold) { nextHousehold = now + 1500; StepHousehold(me, now); }
             StepActivity(me, now);
@@ -236,6 +236,35 @@ public class GtaVietLifeInteriors : Script
             if (Function.Call<int>(Hash.GET_INTERIOR_AT_COORDS, p.X, p.Y, p.Z) != 0) continue;
             if (!FacesStreet(p)) continue;   // chi cua mat pho hai ben duong
             if (registry.Add(p.X, p.Y, p.Z, "scan")) { added++; dirty = true; }
+        }
+    }
+
+    // Quet hai ben va phia truoc: tuong toa nha co mai, gan duong, chua co loi vao trong 18 m thi dat mot loi vao.
+    void DiscoverFacades(Ped me)
+    {
+        if (me.IsInVehicle() || InteriorOf(me) != 0 || registry.Count >= GvlRegistry.Capacity) return;
+        Vector3 from = me.Position + new Vector3(0f, 0f, 0.3f);
+        Vector3[] dirs = { me.RightVector, -me.RightVector, me.ForwardVector };
+        foreach (Vector3 d in dirs)
+        {
+            Vector3 dir = new Vector3(d.X, d.Y, 0f);
+            if (dir.Length() < 0.1f) continue;
+            dir.Normalize();
+            RaycastResult hit = World.Raycast(from, from + dir * GvlFacade.Reach, IntersectFlags.Map, me);
+            if (!hit.DidHit) continue;
+            Vector3 n = hit.SurfaceNormal;
+            Vector3 flat = new Vector3(n.X, n.Y, 0f);
+            if (flat.Length() < 0.1f) continue;
+            flat.Normalize();
+            Vector3 door = hit.HitPosition + flat * 0.8f;
+            float ground = World.GetGroundHeight(new Vector3(door.X, door.Y, from.Z + 1f));
+            door.Z = ground > 0f && Math.Abs(ground - from.Z) < 4f ? ground : from.Z - 1f;
+            float roof;
+            bool roofBehind = RoofAbove(hit.HitPosition - flat * 2f, door.Z, me, out roof);
+            int nearby = registry.Within(door.X, door.Y, door.Z, GvlFacade.Gap).Count;
+            if (!GvlFacade.Accept(n.Z, hit.HitPosition.DistanceTo(from), nearby, roofBehind, roofBehind && nearby == 0 && FacesStreet(door))) continue;
+            if (Function.Call<int>(Hash.GET_INTERIOR_AT_COORDS, door.X, door.Y, door.Z) != 0) continue;
+            if (registry.Add(door.X, door.Y, door.Z, "facade")) { dirty = true; Log("loi vao mat tien moi " + GvlRegistry.MakeId(door.X, door.Y, door.Z)); return; }
         }
     }
 
@@ -988,8 +1017,8 @@ public class GtaVietLifeInteriors : Script
         {
             Vector3 p = me.Position;
             if (showMarkers)
-                foreach (GvlEntrance marked in registry.Within(p.X, p.Y, p.Z, 15f))
-                    DrawMarker(new Vector3(marked.X, marked.Y, marked.Z));
+                foreach (GvlEntrance marked in registry.Within(p.X, p.Y, p.Z, 40f))
+                    DrawDoorMarker(new Vector3(marked.X, marked.Y, marked.Z), marked.Purpose == GvlTier.Shop);
             GvlEntrance door = registry.Nearest(p.X, p.Y, p.Z, PromptRange);
             if (door != null)
                 GTA.UI.Screen.ShowSubtitle("~y~" + useKey + "~s~: vao " + (door.Purpose == GvlTier.Shop ? "quan" : "nha") +
@@ -1008,6 +1037,16 @@ public class GtaVietLifeInteriors : Script
             else if (near != null) GTA.UI.Screen.ShowSubtitle("~y~" + useKey + "~s~: " + near.Kind.Label +
                 (near.Bought ? "   ~y~" + buyKey + "~s~: ban lai" : ""), 100);
         }
+    }
+
+    // Vong tron xanh la tren mat dat (quan: vang) va mui ten nho phia tren, nhin thay tu xa.
+    static void DrawDoorMarker(Vector3 p, bool shop)
+    {
+        int r = shop ? 255 : 60, g = shop ? 200 : 230, b = shop ? 40 : 90;
+        Function.Call(Hash.DRAW_MARKER, 25, p.X, p.Y, p.Z + 0.05f, 0f, 0f, 0f, 0f, 0f, 0f, 1.2f, 1.2f, 1.2f,
+            r, g, b, 170, false, false, 2, false, 0, 0, false);
+        Function.Call(Hash.DRAW_MARKER, 2, p.X, p.Y, p.Z + 1.3f, 0f, 0f, 0f, 180f, 0f, 0f, 0.4f, 0.4f, 0.4f,
+            r, g, b, 200, true, true, 2, false, 0, 0, false);
     }
 
     static void DrawMarker(Vector3 p)
@@ -1219,6 +1258,19 @@ public sealed class GvlRegistry
             e.Tier = tier; e.Purpose = purpose == 1 ? 1 : 0; e.Area = area; e.Zone = f[7];
         }
         return true;
+    }
+}
+
+// Nha GTA phan lon khong co cua roi (cua dinh lien vao toa nha): dat loi vao o mat tuong quay ra pho.
+public static class GvlFacade
+{
+    public const float Gap = 18f;        // hai loi vao mat tien cach nhau it nhat
+    public const float Reach = 14f;      // tia quet tu nguoi choi toi tuong
+    public static bool Accept(float normalZ, float distance, int entrancesNearby, bool roofBehind, bool nearRoad)
+    {
+        if (Math.Abs(normalZ) > 0.3f) return false;           // mat dat, mai, cau thang: khong phai tuong
+        if (distance < 1.2f || distance > Reach) return false;
+        return roofBehind && nearRoad && entrancesNearby == 0;
     }
 }
 

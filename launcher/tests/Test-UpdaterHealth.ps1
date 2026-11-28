@@ -16,17 +16,20 @@ function New-Package([string]$Name,[string]$Body) {
   $zip=Join-Path $root "$Name.zip"; Compress-Archive -Path (Join-Path $dir "*") -DestinationPath $zip -Force; return $zip
 }
 try {
-  $env:GVL_UPDATE_HEALTH_SECONDS="6"
+  $env:GVL_UPDATE_HEALTH_SECONDS="6"; $env:GVL_UPDATER_QUIET="1"
   $confirm='File.Delete(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @"GtaVietLife\update-pending"));'
   $cases=@(
     @{Name="crash"; Body='Environment.Exit(7);'; Ok=$false},
     @{Name="hang"; Body='System.Threading.Thread.Sleep(60000);'; Ok=$false},
-    @{Name="healthy"; Body=$confirm; Ok=$true})
+    @{Name="healthy"; Body=$confirm; Ok=$true},
+    # The Launcher used to start the updater from inside the install folder; the move must still succeed.
+    @{Name="cwd-inside"; Body=$confirm; Ok=$true; InsideCwd=$true})
   foreach($case in $cases){
     $target=Join-Path $root ("install-"+$case.Name); New-Item -ItemType Directory -Force $target | Out-Null
     Set-Content (Join-Path $target "old.marker") "known-good"; Set-Content (Join-Path $target "unins000.dat") "uninstall"
     $zip=New-Package $case.Name $case.Body
-    $p=Start-Process -FilePath $updater -ArgumentList @("`"$zip`"","`"$target`"","2147483647") -Wait -PassThru -WindowStyle Hidden
+    $cwd = if ($case.InsideCwd) { $target } else { $root }
+    $p=Start-Process -FilePath $updater -ArgumentList @("`"$zip`"","`"$target`"","2147483647") -Wait -PassThru -WorkingDirectory $cwd
     if($case.Ok){
       if($p.ExitCode -ne 0){throw "$($case.Name): healthy update rejected ($($p.ExitCode))"}
       if(Test-Path (Join-Path $target "old.marker")){throw "$($case.Name): old files still active"}
@@ -41,7 +44,7 @@ try {
   Write-Host "Updater health tests passed."
 }
 finally {
-  Remove-Item Env:GVL_UPDATE_HEALTH_SECONDS -ErrorAction SilentlyContinue
+  Remove-Item Env:GVL_UPDATE_HEALTH_SECONDS, Env:GVL_UPDATER_QUIET -ErrorAction SilentlyContinue
   Start-Sleep -Milliseconds 500
   Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue
 }

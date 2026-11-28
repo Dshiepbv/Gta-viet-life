@@ -217,6 +217,7 @@ public class GtaVietLifeWorld : Script
             foreach (Shop nativeShop in shops) SyncEngineShopState(nativeShop);
         }
         if (now > nextEconBus) { nextEconBus = now + 2000; EconBus(); }
+        UpdateCashGuard(me, now);   // truoc khi bu offline: tra lai tien chua kip luu lan truoc
         if (!caughtUp) { ApplyPhoneCmds(); CatchUpOffline(); }
         else if (now > nextCmdCheck) { nextCmdCheck = now + 10000; ApplyPhoneCmds(); }
         if (now > nextSeenSave) { nextSeenSave = now + 120000; Save(); }
@@ -434,7 +435,7 @@ public class GtaVietLifeWorld : Script
             if (PayCash(rentPerDay, "housing", "tien nha")) { report += " Tien nha -$" + rentPerDay + "."; }
             else { debt += rentPerDay; report += " ~r~Thieu tien nha, ghi no $" + rentPerDay + ".~s~"; }
         }
-        if (debt > 0)
+        if (debt > 0 && !catching)   // luc tat may chu no khong tinh lai, khong lay tien trong vi
         {
             debt += debt / 20; // lãi 5% mỗi ngày
             int pay = Math.Min(Game.Player.Money, Math.Max(0, Game.Player.Money * 3 / 10));
@@ -456,6 +457,7 @@ public class GtaVietLifeWorld : Script
                 string nm = "Quan " + (i + 1);
                 int target = sh.Staff <= 0 ? 0 : (int)((15 + (sh.Level - 1) * 8 + sh.Staff * 12 + rnd.Next(0, 11) + Math.Max(0, rep / 5)) * ModeTraffic[sh.Mode] * ZoneMult(sh.Pos) * (sh.Indoor ? 1.15f : 1f) * Types[TIdx(sh.Type)].Traffic * (catching ? OfflineFactor : 1f));
                 int remain = Math.Max(0, target - sh.SoldToday);   // khach thay tan mat da ban theo thoi gian thuc
+                int stockAtOpen = sh.Stock + sh.SoldToday;
                 int sold = Math.Min(sh.Stock, remain);
                 sh.Stock -= sold;
                 int revenue, cogsNew;
@@ -463,7 +465,8 @@ public class GtaVietLifeWorld : Script
                 int totRev = sh.RevToday + revenue, totCogs = sh.CogsToday + cogsNew;
                 int tax = TaxOf(sh.Type, totRev);
                 EarnCash(revenue, "business", "doanh thu " + nm);
-                int wages = sh.Staff * WagePerDay;
+                int wages = GvlOffline.Wages(catching, stockAtOpen, sh.Staff, WagePerDay);
+                if (wages == 0 && catching && sh.Staff > 0) report += " " + nm + " het hang nen dong cua, khong tra luong.";
                 if (!PayCash(wages, "payroll", "luong " + nm)) { debt += wages; report += " ~r~Thieu tien tra luong " + nm + ", ghi no.~s~"; }
                 if (!PayCash(tax, "tax", "thue " + nm)) { debt += tax; report += " ~r~Thieu tien nop thue " + nm + ", ghi no.~s~"; }
                 int profit = totRev - totCogs - wages - tax - sh.Rent;
@@ -475,6 +478,11 @@ public class GtaVietLifeWorld : Script
                 if (sh.Rent > 0)
                 {
                     if (PayCash(sh.Rent, "rent", "mat bang " + nm)) { sh.Overdue = 0; report += ", " + FeeWord(sh.Mode) + " -$" + sh.Rent; }
+                    else if (!GvlOffline.MayEvict(catching))
+                    {
+                        debt += sh.Rent;   // luc tat may khong thu hoi mat bang; ghi no de Sep tra khi quay lai
+                        report += ". ~r~Thieu tien " + FeeWord(sh.Mode) + ", ghi no $" + sh.Rent + "~s~";
+                    }
                     else
                     {
                         sh.Overdue++;
@@ -2318,10 +2326,49 @@ public class GtaVietLifeWorld : Script
         if (amount <= 0) return true;
         Func<int, string, string, bool> pay = null;
         try { pay = AppDomain.CurrentDomain.GetData("GVL.PayCash") as Func<int, string, string, bool>; } catch { }
-        if (pay != null) { try { return pay(amount, cat, note); } catch (Exception ex) { Log("thanh toan tien mat loi: " + ex.Message); return false; } }
-        if (Game.Player.Money < amount) return false;
-        Game.Player.Money = Game.Player.Money - amount;
-        return true;
+        int before = Game.Player.Money;
+        bool ok;
+        if (pay != null) { try { ok = pay(amount, cat, note); } catch (Exception ex) { Log("thanh toan tien mat loi: " + ex.Message); ok = false; } }
+        else if (Game.Player.Money < amount) ok = false;
+        else { Game.Player.Money = Game.Player.Money - amount; ok = true; }
+        GuardCash(Game.Player.Money - before);
+        return ok;
+    }
+
+    // ====== tien chua nam trong file luu GTA: thoat game truoc khi GTA luu thi lan sau tra lai ======
+    readonly GvlCashGuard cashGuard = new GvlCashGuard();
+    bool cashRestored, cashDirty;
+    int nextCashSave;
+
+    void GuardCash(int delta)
+    {
+        if (delta == 0) return;
+        cashGuard.Record(delta);
+        cashDirty = true;
+    }
+
+    void UpdateCashGuard(Ped me, int now)
+    {
+        long[] saved = AppDomain.CurrentDomain.GetData("GVL.GtaSave") as long[];
+        if (saved != null && saved.Length >= 3 && cashGuard.GameSaved(saved[0], saved[1], (int)saved[2])) cashDirty = true;
+        if (!cashRestored)
+        {
+            cashRestored = true;
+            long amount = cashGuard.Restore(Game.Player.Money, me.Model.Hash);
+            cashDirty = true;
+            if (amount > 0)
+            {
+                EarnCash((int)Math.Min(amount, int.MaxValue), "business", "tien kinh doanh chua kip luu truoc khi thoat");
+                Notify("~g~Da tra lai $" + amount + "~s~ tien kinh doanh lan truoc chua kip luu khi thoat game.");
+                Log("[luu] tra lai $" + amount + " tien chua luu");
+            }
+            else if (amount < 0)
+            {
+                PayCash((int)Math.Min(-amount, int.MaxValue), "business", "chi phi kinh doanh chua kip luu truoc khi thoat");
+                Log("[luu] tru lai $" + (-amount) + " chi phi chua luu");
+            }
+        }
+        if (cashDirty && now > nextCashSave) { nextCashSave = now + 5000; cashDirty = false; Save(); }
     }
 
     void EarnCash(int amount, string cat, string note)
@@ -2329,13 +2376,15 @@ public class GtaVietLifeWorld : Script
         if (amount <= 0) return;
         Action<int, string, string> earn = null;
         try { earn = AppDomain.CurrentDomain.GetData("GVL.EarnCash") as Action<int, string, string>; } catch { }
+        int before = Game.Player.Money;
         if (earn != null)
         {
             try { earn(amount, cat, note); }
             catch (Exception ex) { Log("ghi nhan thu tien mat loi: " + ex.Message); }
-            return; // never apply a second credit after a delegate may have partially committed
+            // never apply a second credit after a delegate may have partially committed
         }
-        Game.Player.Money = Game.Player.Money + amount;
+        else Game.Player.Money = Game.Player.Money + amount;
+        GuardCash(Game.Player.Money - before);
     }
 
     bool Spend(int amount)
@@ -4764,6 +4813,7 @@ public class GtaVietLifeWorld : Script
             l.Add("rep=" + rep);
             l.Add("debt=" + debt);
             l.Add("seen=" + NowEpoch());
+            l.Add("cashguard=" + cashGuard.Serialize());
             foreach (int[] h in dayHist) l.Add("hist=" + string.Join(",", Array.ConvertAll(h, x => x.ToString())));
             l.Add("b2bday=" + b2bDay);
             foreach (int[] ct in contracts) l.Add("b2b=" + ct[0] + "," + ct[1]);
@@ -4874,6 +4924,7 @@ public class GtaVietLifeWorld : Script
             case "rep": rep = int.Parse(v); break;
             case "debt": debt = int.Parse(v); break;
             case "seen": lastSeen = long.Parse(v); break;
+            case "cashguard": cashGuard.Load(v); break;
             case "hist": { string[] q = v.Split(','); if (q.Length == 7) { int[] h = new int[7]; for (int z = 0; z < 7; z++) h[z] = int.Parse(q[z]); dayHist.Add(h); } break; }
             case "b2bday": b2bDay = int.Parse(v); break;
             case "b2b": { string[] q = v.Split(','); int dd = int.Parse(q[0]); if (dd >= 0 && dd < Deals.Length) contracts.Add(new int[] { dd, int.Parse(q[1]) }); break; }
@@ -4973,6 +5024,62 @@ public static class GvlCollateral
         long excess = (long)mortgage - (long)remainingAssets * 6L / 10L;
         if (excess <= 0 || proceeds <= 0) return 0;
         return (int)Math.Min(excess, proceeds);
+    }
+}
+
+// Luc tat may quan het hang thi dong cua: khong tra luong, khong bi thu hoi mat bang (chi ghi no tien thue).
+public static class GvlOffline
+{
+    public static int Wages(bool offline, int stockAtOpen, int staff, int wagePerDay)
+    {
+        if (staff <= 0 || (offline && stockAtOpen <= 0)) return 0;
+        return staff * wagePerDay;
+    }
+
+    public static bool MayEvict(bool offline) { return !offline; }
+}
+
+// Tien kinh doanh thu/chi tu lan GTA luu gan nhat. Thoat game ma GTA chua luu thi vi bi tra ve muc cu;
+// lan nap sau chi tra lai khi vi dung bang muc cua lan luu do (tuc la dang choi tiep file luu do).
+public sealed class GvlCashGuard
+{
+    public long Pending;            // tien chua nam trong file luu GTA
+    public long SavedWallet = -1;   // vi ngay sau lan GTA tu luu gan nhat
+    public long SavedSeq;           // so thu tu lan luu (Core tang dan)
+    public int SavedModel;
+
+    public void Record(int delta) { Pending += delta; }
+
+    // Core bao GTA vua luu xong; tra ve true neu la lan luu moi.
+    public bool GameSaved(long seq, long wallet, int model)
+    {
+        if (seq <= SavedSeq) return false;
+        SavedSeq = seq; SavedWallet = wallet; SavedModel = model; Pending = 0;
+        return true;
+    }
+
+    // Goi mot lan luc vua nap game. Tra ve so tien can tra lai (am = can tru), 0 neu khong lam gi.
+    public long Restore(long walletNow, int modelNow)
+    {
+        long amount = 0;
+        if (Pending != 0 && SavedWallet >= 0 && walletNow == SavedWallet && modelNow == SavedModel)
+        {
+            amount = Pending;
+            if (amount < 0) amount = -Math.Min(-amount, walletNow);
+        }
+        Pending = 0;
+        return amount;
+    }
+
+    public string Serialize() { return Pending + "," + SavedWallet + "," + SavedSeq + "," + SavedModel; }
+
+    public bool Load(string v)
+    {
+        string[] q = (v ?? "").Split(',');
+        long p, w, s; int m;
+        if (q.Length != 4 || !long.TryParse(q[0], out p) || !long.TryParse(q[1], out w) || !long.TryParse(q[2], out s) || !int.TryParse(q[3], out m)) return false;
+        Pending = p; SavedWallet = w; SavedSeq = s; SavedModel = m;
+        return true;
     }
 }
 // </gvl-testable:business>
