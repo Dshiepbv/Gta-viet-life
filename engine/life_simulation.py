@@ -450,7 +450,7 @@ class LifeSimulationEngine:
         activity, location = planned, planned_location
         if (state.profile.actor_kind != "player" and ((state.current_activity == "eat" and state.hunger > 55) or state.hunger >= 92)):
             activity = "eat"
-        elif state.profile.actor_kind != "player" and state.thirst >= 92:
+        elif state.profile.actor_kind != "player" and ((state.current_activity == "drink" and state.thirst > 55) or state.thirst >= 92):
             activity = "drink"
         elif (state.current_activity == "sleep" and state.energy < 80) or state.energy <= 8:
             activity, location = "sleep", state.profile.home_location_id
