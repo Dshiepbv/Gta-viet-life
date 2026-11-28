@@ -40,6 +40,28 @@ jobs:
           if(!$godot){throw "Pinned Godot executable not found."}
           & $godot.FullName --headless --editor --path adapters/godot --quit --verbose 2>&1 | Tee-Object godot-validation.log
           if($LASTEXITCODE -ne 0){Get-Content godot-validation.log; throw "Godot headless project import/script parse failed."}
+          $token="gvl-ci-smoke-token-2026-11-28-000000000000"
+          $tokenFile=Join-Path $PWD "gvl-ci-token.txt"
+          $dataDir=Join-Path $PWD "gvl-ci-data"
+          Set-Content -Path $tokenFile -Value $token -NoNewline
+          $hostProc=Start-Process -FilePath "python" -ArgumentList @("engine/host.py","--host","127.0.0.1","--port","5580","--token-file",$tokenFile,"--data-dir",$dataDir) -PassThru -WindowStyle Hidden
+          try {
+            $ready=$false
+            for($i=0;$i -lt 30;$i++){
+              if(Test-NetConnection -ComputerName "127.0.0.1" -Port 5580 -InformationLevel Quiet){$ready=$true;break}
+              Start-Sleep -Milliseconds 500
+            }
+            if(!$ready){throw "Engine Host did not start for Godot live smoke test."}
+            $env:GVL_ENGINE_TOKEN=$token
+            $env:GVL_GODOT_SMOKE="1"
+            & $godot.FullName --headless --path adapters/godot --quit-after 1200 2>&1 | Tee-Object godot-smoke.log
+            if($LASTEXITCODE -ne 0){Get-Content godot-smoke.log; throw "Godot live adapter smoke test failed."}
+            if(!(Select-String -Path godot-smoke.log -Pattern "GVL_GODOT_SMOKE_OK")){Get-Content godot-smoke.log; throw "Godot live smoke acceptance marker missing."}
+          } finally {
+            Remove-Item Env:GVL_ENGINE_TOKEN -ErrorAction SilentlyContinue
+            Remove-Item Env:GVL_GODOT_SMOKE -ErrorAction SilentlyContinue
+            if($hostProc -and !$hostProc.HasExited){Stop-Process -Id $hostProc.Id -Force}
+          }
       - name: Set release version
         shell: pwsh
         run: |

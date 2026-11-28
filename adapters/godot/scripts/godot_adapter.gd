@@ -161,7 +161,10 @@ func _boot() -> void:
 	if not await _register_world_catalog():
 		status_text = "World catalog registration failed."
 		return
-	status_text = "Connected — NPC, building, door and object commands use the canonical Host."
+	status_text = "Connected — NPC, player, building, door and object commands use the canonical Host."
+	if OS.has_environment("GVL_GODOT_SMOKE"):
+		await _run_smoke_test()
+		return
 	_run_adapter_loop.call_deferred()
 
 func _run_adapter_loop() -> void:
@@ -275,6 +278,60 @@ func _restore_player_needs() -> void:
 		if actor.has("health"):
 			player_needs["health"] = float(actor["health"])
 		break
+
+func _run_smoke_test() -> void:
+	var before_snapshot := await _request("/engine/v1/simulation/snapshot")
+	var before_player: Dictionary = {}
+	for actor in before_snapshot.get("npcs", []):
+		if actor.get("npc_id", "") == PLAYER_ID:
+			before_player = actor
+			break
+	if before_player.is_empty():
+		push_error("Godot smoke: registered player actor missing from canonical snapshot.")
+		get_tree().quit(1)
+		return
+	var queued := await _request("/engine/v1/world/interact", {
+		"request_id": _next_request_id("smoke-toilet"),
+		"actor_id": PLAYER_ID, "target_kind": "object", "target_id": "object.toilet.godot",
+		"action": "use", "adapter_id": ADAPTER_ID
+	})
+	if not queued.get("accepted", false):
+		push_error("Godot smoke: physical toilet interaction was not queued.")
+		get_tree().quit(1)
+		return
+	await _poll_world_commands()
+	var after_snapshot := await _request("/engine/v1/simulation/snapshot")
+	var after_player: Dictionary = {}
+	var after_npc: Dictionary = {}
+	for actor in after_snapshot.get("npcs", []):
+		if actor.get("npc_id", "") == PLAYER_ID:
+			after_player = actor
+		elif actor.get("npc_id", "") == NPC_ID:
+			after_npc = actor
+	if after_player.is_empty() or float(after_player.get("needs", {}).get("bladder", 100.0)) >= float(before_player.get("needs", {}).get("bladder", 0.0)):
+		push_error("Godot smoke: physical toilet use did not update player bladder state.")
+		get_tree().quit(1)
+		return
+	var talk := await _request("/engine/v1/simulation/interact", {
+		"request_id": _next_request_id("smoke-talk"),
+		"npc_id": NPC_ID, "player_id": PLAYER_ID, "interaction": "talk"
+	})
+	if talk.is_empty() or after_npc.is_empty():
+		push_error("Godot smoke: player/NPC interaction failed.")
+		get_tree().quit(1)
+		return
+	var final_snapshot := await _request("/engine/v1/simulation/snapshot")
+	for actor in final_snapshot.get("npcs", []):
+		if actor.get("npc_id", "") == PLAYER_ID:
+			after_player = actor
+		elif actor.get("npc_id", "") == NPC_ID:
+			after_npc = actor
+	if not after_player.get("relationships", {}).has(NPC_ID) or not after_npc.get("relationships", {}).has(PLAYER_ID):
+		push_error("Godot smoke: reciprocal player/NPC relationship was not persisted.")
+		get_tree().quit(1)
+		return
+	print("GVL_GODOT_SMOKE_OK")
+	get_tree().quit(0)
 
 func _observe_player_state() -> void:
 	await _request("/engine/v1/simulation/actors/observe", {
