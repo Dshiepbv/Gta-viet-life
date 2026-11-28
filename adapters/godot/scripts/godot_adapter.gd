@@ -22,13 +22,16 @@ var locations := {
 	"park.godot": Vector2(470, 420),
 	"bed.anchor.godot": Vector2(300, 260),
 	"fridge.anchor.godot": Vector2(210, 310),
-	"counter.anchor.godot": Vector2(740, 320)
+	"counter.anchor.godot": Vector2(740, 320),
+	"toilet.anchor.godot": Vector2(270, 300),
+	"shower.anchor.godot": Vector2(310, 300)
 }
-var labels := {"home.godot": "HOME DOOR", "home.interior.godot": "HOME INTERIOR", "work.godot": "CAFE DOOR", "work.interior.godot": "CAFE INTERIOR", "park.godot": "PARK"}
-var world_target_points := {"home.godot": "building.home.godot", "home.interior.godot": "building.home.godot", "work.godot": "building.cafe.godot", "work.interior.godot": "building.cafe.godot", "bed.anchor.godot": "object.bed.godot", "fridge.anchor.godot": "object.fridge.godot", "counter.anchor.godot": "object.counter.godot"}
+var labels := {"home.godot": "HOME DOOR", "home.interior.godot": "HOME INTERIOR", "work.godot": "CAFE DOOR", "work.interior.godot": "CAFE INTERIOR", "park.godot": "PARK", "toilet.anchor.godot": "TOILET", "shower.anchor.godot": "SHOWER"}
+var world_target_points := {"home.godot": "building.home.godot", "home.interior.godot": "building.home.godot", "work.godot": "building.cafe.godot", "work.interior.godot": "building.cafe.godot", "bed.anchor.godot": "object.bed.godot", "fridge.anchor.godot": "object.fridge.godot", "counter.anchor.godot": "object.counter.godot", "toilet.anchor.godot": "object.toilet.godot", "shower.anchor.godot": "object.shower.godot"}
 var status_text := "Waiting for Engine Host…"
 var nearby := false
 var busy := false
+var player_needs := {"hunger": 20.0, "thirst": 18.0, "energy": 90.0, "hygiene": 90.0, "health": 100.0, "fitness": 50.0}
 
 func _ready() -> void:
 	token = OS.get_environment("GVL_ENGINE_TOKEN").strip_edges()
@@ -49,6 +52,13 @@ func _unhandled_input(event: InputEvent) -> void:
 func _process(_delta: float) -> void:
 	var movement := Input.get_vector("ui_left", "ui_right", "ui_up", "ui_down")
 	player.position += movement * 190.0 * _delta
+	var sim_minutes: float = _delta / POLL_SECONDS
+	player_needs["hunger"] = clampf(float(player_needs["hunger"]) + 0.08 * sim_minutes, 0.0, 100.0)
+	player_needs["thirst"] = clampf(float(player_needs["thirst"]) + 0.10 * sim_minutes, 0.0, 100.0)
+	player_needs["energy"] = clampf(float(player_needs["energy"]) - 0.05 * sim_minutes, 0.0, 100.0)
+	player_needs["hygiene"] = clampf(float(player_needs["hygiene"]) - 0.035 * sim_minutes, 0.0, 100.0)
+	if float(player_needs["hunger"]) >= 98.0 or float(player_needs["thirst"]) >= 98.0 or float(player_needs["energy"]) <= 2.0:
+		player_needs["health"] = clampf(float(player_needs["health"]) - 0.08 * sim_minutes, 0.0, 100.0)
 	queue_redraw()
 	nearby = resident.global_position.distance_to(player.global_position) < 85.0
 	if Input.is_action_just_pressed("ui_accept") and nearby and not busy:
@@ -59,13 +69,14 @@ func _draw() -> void:
 		var p: Vector2 = locations[location_id]
 		draw_rect(Rect2(p - Vector2(35, 25), Vector2(70, 50)), Color(0.18, 0.22, 0.27), true)
 		draw_string(ThemeDB.fallback_font, p + Vector2(-34, 42), labels[location_id], HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color.WHITE)
-	for anchor in ["bed.anchor.godot", "fridge.anchor.godot", "counter.anchor.godot"]:
+	for anchor in ["bed.anchor.godot", "fridge.anchor.godot", "counter.anchor.godot", "toilet.anchor.godot", "shower.anchor.godot"]:
 		draw_circle(locations[anchor], 7.0, Color(0.2, 0.75, 0.85))
 	draw_circle(player.position, 85.0, Color(0.2, 0.8, 0.5, 0.08))
 	draw_circle(player.position, 10.0, Color(0.95, 0.72, 0.15))
 	draw_string(ThemeDB.fallback_font, Vector2(20, 35), "GTA VIET LIFE — GODOT SECOND ADAPTER", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color.WHITE)
 	draw_string(ThemeDB.fallback_font, Vector2(20, 65), status_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(0.7, 0.9, 0.75))
-	draw_string(ThemeDB.fallback_font, Vector2(20, 95), "Move with arrow keys. Approach the green social area and press Enter to talk.", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color.WHITE)
+	draw_string(ThemeDB.fallback_font, Vector2(20, 95), "Move with arrow keys. E uses nearby objects; Enter talks to the resident.", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color.WHITE)
+	draw_string(ThemeDB.fallback_font, Vector2(20, 118), "Hunger %.0f  Thirst %.0f  Energy %.0f  Hygiene %.0f" % [player_needs["hunger"], player_needs["thirst"], player_needs["energy"], player_needs["hygiene"]], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.9, 0.85, 0.6))
 	if resident:
 		draw_string(ThemeDB.fallback_font, resident.position + Vector2(-38, -38), resident.display_name + " · " + resident.current_activity, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color.WHITE)
 
@@ -135,6 +146,17 @@ func _boot() -> void:
 	if profile.is_empty() or not profile.get("registered", false):
 		status_text = "NPC registration failed (identity conflict or Host logs)."
 		return
+	var player_profile := await _request("/engine/v1/simulation/actors", {
+		"request_id": _next_request_id("register-player"),
+		"npc": {
+			"npc_id": PLAYER_ID, "display_name": "Player",
+			"home_location_id": "home.interior.godot", "occupation": "citizen",
+			"actor_kind": "player", "life_goal": "health", "schedule": []
+		}
+	})
+	if player_profile.is_empty() or not player_profile.get("registered", false):
+		status_text = "Player actor registration failed."
+		return
 	if not await _register_world_catalog():
 		status_text = "World catalog registration failed."
 		return
@@ -144,6 +166,7 @@ func _boot() -> void:
 func _run_adapter_loop() -> void:
 	while is_inside_tree():
 		await _heartbeat()
+		await _observe_player_state()
 		await _poll_commands()
 		await _poll_world_commands()
 		await get_tree().create_timer(POLL_SECONDS).timeout
@@ -171,7 +194,9 @@ func _register_world_catalog() -> bool:
 	for item in [
 		{"id": "object.bed.godot", "building": "building.home.godot", "kind": "bed", "anchor": "bed.anchor.godot"},
 		{"id": "object.fridge.godot", "building": "building.home.godot", "kind": "fridge", "anchor": "fridge.anchor.godot"},
-		{"id": "object.counter.godot", "building": "building.cafe.godot", "kind": "counter", "anchor": "counter.anchor.godot"}
+		{"id": "object.counter.godot", "building": "building.cafe.godot", "kind": "counter", "anchor": "counter.anchor.godot"},
+		{"id": "object.toilet.godot", "building": "building.home.godot", "kind": "toilet", "anchor": "toilet.anchor.godot"},
+		{"id": "object.shower.godot", "building": "building.home.godot", "kind": "shower", "anchor": "shower.anchor.godot"}
 	]:
 		var result := await _request("/engine/v1/world/objects", {
 			"request_id": _next_request_id("object"),
@@ -226,6 +251,7 @@ func _poll_world_commands() -> void:
 		elif success and command.get("command_type", "") == "interaction.use_object":
 			player.position = locations[semantic]
 			outcome = "object_interaction_executed"
+			_apply_player_object_effect(str(payload.get("target_id", "")))
 			status_text = "Used world object: " + str(payload.get("target_id", ""))
 		else:
 			success = false
@@ -235,6 +261,26 @@ func _poll_world_commands() -> void:
 			"result": {"success": success, "status": "completed" if success else "unsupported",
 				"outcome": outcome, "adapter_id": ADAPTER_ID}
 		})
+
+func _observe_player_state() -> void:
+	await _request("/engine/v1/simulation/actors/observe", {
+		"request_id": _next_request_id("player-observation"),
+		"actor_id": PLAYER_ID,
+		"observed": player_needs.duplicate(true)
+	})
+
+func _apply_player_object_effect(target_id: String) -> void:
+	if target_id.ends_with(".bed.godot"):
+		player_needs["energy"] = clampf(float(player_needs["energy"]) + 35.0, 0.0, 100.0)
+		player_needs["health"] = clampf(float(player_needs["health"]) + 1.0, 0.0, 100.0)
+	elif target_id.ends_with(".fridge.godot"):
+		player_needs["hunger"] = clampf(float(player_needs["hunger"]) - 15.0, 0.0, 100.0)
+		player_needs["thirst"] = clampf(float(player_needs["thirst"]) - 15.0, 0.0, 100.0)
+	elif target_id.ends_with(".counter.godot"):
+		player_needs["hunger"] = clampf(float(player_needs["hunger"]) - 20.0, 0.0, 100.0)
+		player_needs["thirst"] = clampf(float(player_needs["thirst"]) - 10.0, 0.0, 100.0)
+	elif target_id.ends_with(".shower.godot"):
+		player_needs["hygiene"] = 100.0
 
 func _poll_commands() -> void:
 	var result := await _request("/engine/v1/adapter/commands")
