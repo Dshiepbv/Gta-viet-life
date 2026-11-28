@@ -23,8 +23,10 @@ public partial class MainWindow:Window {
     Log("Startup self-check failed: "+ex);
     if(UpdateHealth.Pending){Application.Current.Shutdown(1);return;}
    }
-   try{if(await new UpdateService().CheckAndLaunchUpdaterAsync(CancellationToken.None)){Application.Current.Shutdown();return;}}
-   catch(Exception ex){Log("Update check failed: "+ex.Message);}
+   try{
+    var newer=await new UpdateService().FindNewerAsync(CancellationToken.None);
+    if(newer!=null){UpdateButton.Content="Cập nhật lên "+newer.Tag;Log("Có bản mới "+newer.Tag+". Bấm nút cập nhật để cài.");}
+   }catch(Exception ex){Log("Update check failed: "+ex.Message);}
    if(File.Exists(settings.GameExecutable)){await Prepare();if(ready&&settings.AutoLaunchGame&&!RuntimeManager.GameRunning())Play_Click(this,new RoutedEventArgs());}else Set("CẦN CHỌN GTA V","Chọn GTA5.exe một lần để lưu đường dẫn.");};
   Closing+=async(_,e)=>{
    if(stopped)return;
@@ -87,6 +89,29 @@ public partial class MainWindow:Window {
     finally{recovering=false;}
    }
   }
+ }
+ async void Update_Click(object s,RoutedEventArgs e){
+  if(busy||closing)return;
+  if(RuntimeManager.GameRunning()){MessageBox.Show("Hãy thoát GTA V trước khi cập nhật.","GTA Viet Life");return;}
+  busy=true;UpdateButton.IsEnabled=false;StartButton.IsEnabled=false;PlayButton.IsEnabled=false;Progress.IsIndeterminate=true;
+  var handedOver=false;
+  try{
+   Set("ĐANG KIỂM TRA BẢN MỚI","Đọc danh sách phát hành trên GitHub.");
+   var updates=new UpdateService();
+   var newer=await updates.FindNewerAsync(CancellationToken.None);
+   if(newer==null){
+    Set("KHÔNG CÓ BẢN MỚI","Đang dùng bản "+UpdateService.Current.ToString(3)+".");
+    MessageBox.Show("Chưa có bản phát hành nào mới hơn "+UpdateService.Current.ToString(3)+".","GTA Viet Life");return;
+   }
+   if(MessageBox.Show("Cài bản "+newer.Tag+" (đang dùng "+UpdateService.Current.ToString(3)+")?\nTải khoảng vài trăm MB, Launcher sẽ tự mở lại. Save game được giữ nguyên.",
+      "GTA Viet Life",MessageBoxButton.YesNo,MessageBoxImage.Question)!=MessageBoxResult.Yes){Set("ĐÃ HỦY CẬP NHẬT","Bạn có thể bấm lại sau.");return;}
+   // Dịch vụ đang chạy giữ file trong thư mục cài: dừng trước khi trình cập nhật thay thư mục.
+   timer.Stop();cts?.Cancel();ready=false;await runtime.StopAsync();
+   Set("ĐANG TẢI BẢN "+newer.Tag,"Đang tải và kiểm tra checksum. Đừng tắt Launcher.");
+   await updates.InstallAsync(newer,CancellationToken.None);
+   handedOver=true;stopped=true;runtime.Dispose();Application.Current.Shutdown();
+  }catch(Exception ex){Log("Update failed: "+ex);Set("CẬP NHẬT THẤT BẠI",ex.Message+" Bấm 'Kiểm tra & khởi động' để chạy lại dịch vụ.");}
+  finally{if(!handedOver){busy=false;UpdateButton.IsEnabled=true;StartButton.IsEnabled=true;Progress.IsIndeterminate=false;}}
  }
  void AutoLaunch_Click(object s,RoutedEventArgs e){settings.AutoLaunchGame=AutoLaunchBox.IsChecked==true;settings.Save();}
  void Export_Click(object s,RoutedEventArgs e){

@@ -415,13 +415,29 @@ static class Harness
               && GvlBankSync.Decide(new long[] { 1, 3000000000L, 9 }, 0, 100) == GvlBankSync.None, "impossible balance ignored");
     }
 
+    static void Orders()
+    {
+        GvlOrder o = new GvlOrder();
+        o.Move(1, 5); o.Paid(0);
+        Check(!o.Busy && o.Choice == 0 && o.Tick(99999) == GvlOrder.Nothing, "nothing happens before ordering");
+        o.Open(); o.Move(-1, 5); Check(o.Choice == 4, "choice wraps backwards");
+        o.Move(1, 5); o.Move(1, 5); Check(o.Choice == 1, "choice wraps forwards");
+        o.Cancel(); Check(!o.Busy, "cancel before paying");
+        o.Open(); o.Paid(1000); o.Move(1, 5); Check(o.Choice == 1, "no change after paying");
+        o.Open(); Check(o.State == GvlOrder.Preparing, "cannot reopen while preparing");
+        Check(o.Tick(1000 + GvlOrder.PrepareMs - 1) == GvlOrder.Nothing, "still preparing");
+        Check(o.Tick(1000 + GvlOrder.PrepareMs) == GvlOrder.Serve && o.State == GvlOrder.Eating, "served once");
+        int end = 1000 + GvlOrder.PrepareMs + GvlOrder.EatMs;
+        Check(o.Tick(end - 1) == GvlOrder.Nothing && o.Tick(end) == GvlOrder.Finish && o.Tick(end + 1) == GvlOrder.Nothing, "finished once");
+    }
+
     static int Main(string[] args)
     {
         if (args.Length > 0 && args[0] == "control") Check(false, "control case");
         else { Paths(); PermanentErrorDoesNotBlock(); BoundedRetry(404, GvlSendRules.MaxNotFoundAttempts);
                BoundedRetry(500, GvlSendRules.MaxServerErrorAttempts); TransientErrorKeepsEverything();
                CoalescingAndPersistence(); Capacity(); Batches(); Fade();
-               Streaming(); Templates(); Portal(); Crowd(); Wallet(); SaveFiles(); Business(); Days(); Bank(); }
+               Streaming(); Templates(); Portal(); Crowd(); Wallet(); SaveFiles(); Business(); Days(); Bank(); Orders(); }
         Console.WriteLine("failures=" + failures);
         return failures == 0 ? 0 : 1;
     }
@@ -448,6 +464,7 @@ class CSharpLogicTests(unittest.TestCase):
                  "Business.cs": testable_block("GtaVietLifeWorld.cs", "business"),
                  "DayWatch.cs": testable_block("GtaVietLifeSaveFile.cs", "daywatch"),
                  "BankSync.cs": testable_block("GtaVietLifeSaveFile.cs", "banksync"),
+                 "Order.cs": testable_block("GtaVietLifeShopFloor.cs", "order"),
                  "Harness.cs": HARNESS}
         for name, text in files.items():
             (folder / name).write_text(text, encoding="utf-8-sig")
@@ -491,6 +508,19 @@ class SaveSafetyTests(unittest.TestCase):
         self.assertGreater(len(changes), 5)
         self.assertEqual([line for line in changes
                           if 'Post("bank"' not in line and "void Deposit(" not in line], [])
+
+    def test_text_elements_are_kept_alive_while_drawing(self):
+        for path in sorted(GAME.glob("*.cs")):
+            source = path.read_text(encoding="utf-8-sig")
+            made = len(re.findall(r"new GTA\.UI\.TextElement\(", source))
+            self.assertEqual(made, len(re.findall(r"GC\.KeepAlive\(t\);", source)), path.name)
+
+    def test_aborted_scripts_clear_their_menu_flag(self):
+        for module, flag in (("World", "WorldMenu"), ("Economy", "EconMenu"), ("Personal", "PersonalMenu"),
+                             ("DoiSong", "LifeMenu")):
+            source = (GAME / ("GtaVietLife%s.cs" % module)).read_text(encoding="utf-8-sig")
+            body = source[source.index("void OnAborted("):][:400]
+            self.assertIn('SetData("GVL.%s", false)' % flag, body, module)
 
     def test_core_reads_the_wallet_on_the_script_thread(self):
         source = (GAME / "GtaVietLifeCore.cs").read_text(encoding="utf-8-sig")

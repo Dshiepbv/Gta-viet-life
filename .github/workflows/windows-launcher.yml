@@ -65,7 +65,7 @@ jobs:
       - name: Set release version
         shell: pwsh
         run: |
-          if ($env:GITHUB_REF_TYPE -eq "tag") { $version = $env:GITHUB_REF_NAME.TrimStart("v") } else { $version = "0.3.3" }
+          if ($env:GITHUB_REF_TYPE -eq "tag") { $version = $env:GITHUB_REF_NAME.TrimStart("v") } else { $version = "0.3.5" }
           "GVL_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - name: Install packaging tools
         shell: pwsh
@@ -83,7 +83,7 @@ jobs:
           try {
             $names=$zip.Entries | ForEach-Object { $_.FullName.Replace("\","/") }
             $required=@("GtaVietLife.Launcher.exe","GtaVietLife.Updater.exe","manifest.json","runtime/engine/GtaVietLifeEngine.exe","runtime/bridge/GtaVietLifeBridge.exe","game/GtaVietLifeIcons/food.png")
-            foreach($m in "","Core","World","Economy","Personal","DoiSong","Interiors"){ $required+="game/GtaVietLife$m.dll" }
+            foreach($m in "","Core","World","Economy","Personal","DoiSong","Interiors","ShopFloor"){ $required+="game/GtaVietLife$m.dll" }
             foreach($file in $required){ if($names -notcontains $file){throw "Package missing required file: $file"} }
           } finally {$zip.Dispose()}
       - uses: actions/upload-artifact@v4

@@ -201,6 +201,8 @@ public class GtaVietLifeDoiSong : Script
 
     void OnAborted(object sender, EventArgs e)
     {
+        menuOpen = false;
+        AppDomain.CurrentDomain.SetData("GVL.LifeMenu", false);   // truoc tien: cac module khac khong duoc coi menu con mo
         // Dang tua gio thi da tru tien: ap dung ket qua truoc khi luu, khong de man hinh den.
         try { FinishFadeIfDue(int.MaxValue); } catch (Exception ex) { Log("ket thuc tua gio loi: " + ex.Message); }
         Save();
@@ -1059,7 +1061,10 @@ public class GtaVietLifeDoiSong : Script
     {
         GTA.UI.TextElement t = new GTA.UI.TextElement(s, new PointF(x, y), scale, c);
         t.Outline = true;
-        t.Draw();
+        try { t.Draw(); }
+        catch (InvalidOperationException ex) { Log("ve chu loi: " + ex.Message); }   // mat mot khung hinh, khong sap script
+        // Khong co dong nay, bo don rac co the huy t ngay trong luc Draw dang doc chuoi cua no.
+        GC.KeepAlive(t);
     }
 
     // dong trang thai nho o goc phai tren: cang thang + benh + say

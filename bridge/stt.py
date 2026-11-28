@@ -86,20 +86,36 @@ class STT:
         _add_cuda_dlls()
         from faster_whisper import WhisperModel
         model = cfg.get("whisper_model", "large-v3-turbo")
-        device = cfg.get("whisper_device", "cuda")
-        if device == "cpu":
-            cpu_model = cfg.get("whisper_cpu_model", "small")
-            self.model = WhisperModel(cpu_model, device="cpu", compute_type="int8", cpu_threads=int(cfg.get("whisper_cpu_threads", 8)))
-            print(f"[stt] {cpu_model} chạy trên CPU")
+        self._factory = WhisperModel
+        self._cfg = cfg
+        self.on_cpu = False
+        if cfg.get("whisper_device", "cuda") == "cpu":
+            self._use_cpu()
         else:
             try:
                 self.model = WhisperModel(model, device="cuda", compute_type=cfg.get("whisper_compute", "int8_float16"))
                 print(f"[stt] {model} chạy trên GPU")
             except Exception as e:  # thiếu CUDA/cuDNN → chạy CPU
                 print(f"[stt] Không chạy được GPU ({e}). Chuyển sang CPU, sẽ chậm hơn.")
-                self.model = WhisperModel(cfg.get("whisper_cpu_model", "small"), device="cpu", compute_type="int8")
+                self._use_cpu()
         # Không đặt prompt mặc định: khi tiếng thu kém, Whisper hay chép lại đúng prompt thành "câu nói"
         self.prompt = cfg.get("whisper_prompt") or None
+
+    def _use_cpu(self):
+        name = self._cfg.get("whisper_cpu_model", "small")
+        self.model = self._factory(name, device="cpu", compute_type="int8",
+                                   cpu_threads=int(self._cfg.get("whisper_cpu_threads", 8)))
+        self.on_cpu = True
+        print(f"[stt] {name} chạy trên CPU")
+
+    def _recognise(self, audio: np.ndarray) -> str:
+        segments, _ = self.model.transcribe(audio, language="vi", beam_size=1, temperature=0.0,
+                                            vad_filter=True,
+                                            vad_parameters=dict(threshold=0.3, min_silence_duration_ms=400),
+                                            no_speech_threshold=0.5, log_prob_threshold=-1.0,
+                                            initial_prompt=self.prompt, condition_on_previous_text=False)
+        # segments là generator: lỗi thư viện GPU chỉ lộ ra khi đọc kết quả.
+        return " ".join(s.text.strip() for s in segments).strip()
 
     def transcribe(self, audio: np.ndarray) -> str:
         dur = audio.size / RATE
@@ -114,12 +130,15 @@ class STT:
             return ""
         _save_wav(audio)
         audio = audio / peak * 0.9
-        segments, _ = self.model.transcribe(audio, language="vi", beam_size=1, temperature=0.0,
-                                            vad_filter=True,
-                                            vad_parameters=dict(threshold=0.3, min_silence_duration_ms=400),
-                                            no_speech_threshold=0.5, log_prob_threshold=-1.0,
-                                            initial_prompt=self.prompt, condition_on_previous_text=False)
-        text = " ".join(s.text.strip() for s in segments).strip()
+        try:
+            text = self._recognise(audio)
+        except (RuntimeError, OSError) as e:
+            if self.on_cpu:
+                raise
+            # Ví dụ thiếu cublas64_12.dll: mô hình nạp được trên GPU nhưng không chạy được.
+            print(f"[stt] GPU lỗi khi nhận dạng ({e}). Chuyển sang CPU; lần đầu phải tải mô hình, hãy chờ.")
+            self._use_cpu()
+            text = self._recognise(audio)
         if not text:
             print("[mic] nghe được tiếng nhưng không nhận ra chữ nào")
         return text

@@ -56,3 +56,20 @@ Engine: 96 test pass; test mới `engine/tests/test_phase2_regressions.py` đã 
 - Bản cũ: `artifacts\0.2.0`, `0.3.0`, `0.3.1`, `0.3.2`
 - Chưa commit, chưa push. GitHub đang ở 7755684 (0.3.0).
 - Còn lại: tiền quán/tồn kho/lương sang sổ cái; M2 gom quan hệ và trí nhớ; khóa ký bản cập nhật; đổi tên exe; danh bạ cửa; test trong game.
+
+## Cập nhật cuối: 0.3.3 đã lên GitHub
+- Commit 9be2a43; CI Windows #276 xanh: https://github.com/Dshiepbv/Gta-viet-life/actions/runs/46144377564 (artifact `GtaVietLife-Windows-Installer`, hết hạn 2027-02-26)
+- Workflow APK đã phát hành release `dash-13`.
+- Dòng "Chưa commit, chưa push" ở trên không còn đúng. Chỉ NOTES.md và CLAUDE.md đang sửa trên máy.
+
+## 0.3.4: sửa lỗi sau lần test trong game
+- [x] World sập khi vẽ chữ, cờ menu · [x] STT chuyển CPU · [x] F7 rơi · [x] đồ chồng nhau · [ ] Build 0.3.4 · chưa commit
+- Log người dùng gửi: GtaVietLife-Diagnostics.zip (2026-11-28 20:02)
+- Chờ người dùng test lại; ini cũ trong scripts không bị ghi đè, mặc định SpawnFurniture=false nằm trong mã.
+
+- [x] Build 0.3.4: `E:\AI\Projects\Gta-vietlife\artifacts\GtaVietLife-Setup-0.3.4.exe`. Chưa commit, chưa push (GitHub đang ở 9be2a43, bản 0.3.3).
+
+## 0.3.5
+- [x] ShopFloor · [x] Nút cập nhật · [ ] Build 0.3.5 · chưa commit
+- Người dùng muốn: không menu game, tương tác trực tiếp trong quán; nhà/quán thử dùng mô hình có sẵn, sau tự dựng.
+- Nút cập nhật cần release tag v* (CI phát hành khi push tag): hỏi người dùng trước.

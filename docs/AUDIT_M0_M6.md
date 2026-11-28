@@ -195,3 +195,21 @@ Chưa làm: M2 gom quan hệ và trí nhớ về engine; M4 sổ cái làm chủ
 - Bộ đếm game tạo lại, hoặc phải đọc `Core.sav.bak`, thì dùng nguồn event mới và đối soát lại theo game.
 - Test: `test_bank_ownership.py`, `test_csharp_logic.py`. Phần gọi HTTP và áp số dư trong game chưa có test chạy.
 - Chưa chuyển: tiền quán, tồn kho, lương; lịch trả góp vẫn ở script (sổ cái chỉ giữ tổng nợ). Event bị Engine từ chối (ghi ở deadletter) sẽ bị số dư sổ cái ghi đè.
+
+## 12. Lần chạy đầu trong GTA V (2026-11-28, bản 0.3.3, build 1.0.3889.0, SHVDN 3.7.0-nightly.206)
+
+Cả 7 script nạp được, Engine Host trả 200 cho mọi yêu cầu trong log. Lỗi thấy được và sửa trong 0.3.4 (chưa chạy lại trong game):
+
+| Hiện tượng | Nguyên nhân | Sửa |
+|---|---|---|
+| Phím J ngừng ăn, F7 và H ngừng theo | `GtaVietLifeWorld` bị hủy: `Collection was modified` trong `TextElement.InternalDraw`. Suy đoán: bộ dọn rác hủy phần tử chữ khi đang vẽ. Cờ `GVL.WorldMenu` không được xóa | `GC.KeepAlive`, bắt lỗi khi vẽ, xóa cờ menu khi script bị hủy |
+| Giữ N không ra chữ | `cublas64_12.dll` thiếu, lỗi chỉ lộ khi nhận dạng | Chuyển sang CPU và nhận dạng lại |
+| F7 rơi tự do | Thả nhân vật khi địa hình chưa nạp | Quay về chỗ cũ, chờ tối đa 10 giây |
+| Đồ đạc chồng lên nhau | Mod sinh thêm đồ trong nội thất đã có đồ | Mặc định không sinh (`SpawnFurniture=false`) |
+
+Còn mở: tương tác với đồ vật chỉ là một hoạt cảnh đứng tại chỗ và cộng chỉ số; số mẫu nội thất bị giới hạn bởi nội thất gốc.
+
+## 13. Đợt 0.3.5: phục vụ tại quán và nút cập nhật (chưa chạy trong game)
+
+- `GtaVietLifeShopFloor.cs`: trong nội thất có máy tính tiền của game, đến quầy bấm E, đổi món bằng `,` `.`, trả tiền qua `GVL.PayCash`, nhận chỉ số qua `GVL.NeedsAdd`. Người bán: dùng người đang đứng ở quầy, không có thì sinh thêm. Một người dọn đi giữa tối đa 3 điểm. Vị trí đứng và tên mô hình đồ ăn chưa kiểm trong game. Quản lý quán sở hữu vẫn dùng menu J.
+- Launcher: nút Cập nhật đọc danh sách release, chỉ nhận tag `v*` có đủ gói và checksum (bỏ qua release APK `dash-*`); dừng dịch vụ trước khi trình cập nhật thay thư mục. Repo chưa có release `v*` nào.

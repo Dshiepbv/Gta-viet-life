@@ -112,7 +112,8 @@ public class GtaVietLifeInteriors : Script
     readonly HashSet<string> registeredWithEngine = new HashSet<string>();
     readonly Dictionary<int, bool> doorModel = new Dictionary<int, bool>();
 
-    bool enabled = true, autoDiscover = true, showMarkers = true, dirty, furnishPending;
+    bool enabled = true, autoDiscover = true, showMarkers = true, dirty, furnishPending, spawnFurniture;
+    Vector3 teleportOrigin;
     Keys useKey = Keys.H, teleportKey = Keys.F7;
     int testIndex = -1, teleportUntil;
     TestPoint teleporting;
@@ -129,6 +130,7 @@ public class GtaVietLifeInteriors : Script
         enabled = Settings.GetValue("Interiors", "Enabled", true);
         autoDiscover = Settings.GetValue("Interiors", "AutoDiscoverDoors", true);
         showMarkers = Settings.GetValue("Interiors", "ShowMarkers", true);
+        spawnFurniture = Settings.GetValue("Interiors", "SpawnFurniture", false);
         useKey = Settings.GetValue("Keys", "Interior", useKey);
         teleportKey = Settings.GetValue("Keys", "TestTeleport", teleportKey);
         Load();
@@ -276,7 +278,8 @@ public class GtaVietLifeInteriors : Script
         if (portal.Phase != GvlPortal.Outside) { Notify("Ra khoi nha truoc khi dich chuyen."); return; }
         testIndex = (testIndex + 1) % TestPoints.Length;
         teleporting = TestPoints[testIndex];
-        teleportUntil = Game.GameTime + 6000;
+        teleportUntil = Game.GameTime + 10000;
+        teleportOrigin = me.Position;
         Vector3 p = teleporting.Pos;
         float z = p.Z > 0f ? p.Z + 0.3f : 80f;
         Travel(me, new Vector3(p.X, p.Y, z), "");
@@ -295,8 +298,17 @@ public class GtaVietLifeInteriors : Script
             if (Function.Call<bool>(Hash.GET_GROUND_Z_FOR_3D_COORD, p.X, p.Y, 80f, height, false)) ground = height.GetResult<float>();
         }
         if (now < teleportUntil && (!loaded || ground <= 0f)) return;
-        if (ground <= 0f) { Vector3 street = World.GetNextPositionOnStreet(new Vector3(p.X, p.Y, 30f)); Place(me, street); }
-        else Place(me, new Vector3(p.X, p.Y, ground + 0.3f));
+        if (!loaded || ground <= 0f)
+        {
+            // Dia hinh chua nap: tha nhan vat o do se roi xuyen ban do. Tra ve cho cu.
+            Place(me, teleportOrigin);
+            Release(me);
+            Notify("~y~Diem " + (testIndex + 1) + " chua nap duoc,~s~ da quay ve. Bam lai " + teleportKey + " de thu diem tiep.");
+            Log("diem thu '" + teleporting.Name + "' khong nap duoc");
+            teleporting = null;
+            return;
+        }
+        Place(me, new Vector3(p.X, p.Y, ground + 0.3f));
         Release(me);
         Notify("~g~Diem " + (testIndex + 1) + "/" + TestPoints.Length + "~s~: " + teleporting.Name);
         teleporting = null;
@@ -423,7 +435,9 @@ public class GtaVietLifeInteriors : Script
         if (interior == 0) return;
         foreach (AnchorKind kind in Kinds)
         {
-            Anchor anchor = FindExisting(kind, spawn, interior) ?? SpawnFurniture(me, kind, spawn, interior);
+            // Mac dinh chi dung do co san trong noi that; do sinh them de chong len nhau.
+            Anchor anchor = FindExisting(kind, spawn, interior);
+            if (anchor == null && spawnFurniture) anchor = SpawnFurniture(me, kind, spawn, interior);
             if (anchor != null) anchors.Add(anchor);
         }
         Log("noi that " + building + ": " + anchors.Count + "/" + Kinds.Length + " diem sinh hoat");
@@ -517,6 +531,8 @@ public class GtaVietLifeInteriors : Script
             bool arrived = me.Position.DistanceTo2D(activity.Pos) < 1.2f;
             if (!arrived && now < activityUntil) return;
             if (!arrived && me.Position.DistanceTo2D(activity.Pos) > 2.5f) { StopActivity(me); Notify("Khong toi duoc cho do."); return; }
+            Vector3 toward = activity.Pos - me.Position;
+            me.Heading = (float)(Math.Atan2(-toward.X, toward.Y) * 180.0 / Math.PI);   // quay mat vao do vat
             Function.Call(Hash.TASK_START_SCENARIO_IN_PLACE, me, activity.Kind.Scenario, 0, true);
             activityStage = 1; activityUntil = now + activity.Kind.Seconds * 1000;
             return;
@@ -526,8 +542,18 @@ public class GtaVietLifeInteriors : Script
         AddNeeds(kind.Hunger, kind.Thirst, kind.Energy);
         if (kind.Hygiene > 0f) AppDomain.CurrentDomain.SetData("GVL.HygAdd", kind.Hygiene);
         Emit("building.activity", "id=" + building + ";kind=" + kind.Id);
-        Notify("Xong: " + kind.Label + ".");
+        Notify("~g~Xong: " + kind.Label + ".~s~" + Gains(kind));
         StopActivity(me);
+    }
+
+    static string Gains(AnchorKind kind)
+    {
+        string text = "";
+        if (kind.Hunger > 0f) text += " No +" + (int)kind.Hunger;
+        if (kind.Thirst > 0f) text += " Nuoc +" + (int)kind.Thirst;
+        if (kind.Energy > 0f) text += " Nang luong +" + (int)kind.Energy;
+        if (kind.Hygiene > 0f) text += " Ve sinh +" + (int)kind.Hygiene;
+        return text;
     }
 
     void StopActivity(Ped me) { activity = null; me.Task.ClearAll(); }
@@ -706,7 +732,11 @@ public class GtaVietLifeInteriors : Script
         {
             DrawMarker(Templates[template].Spawn);
             Anchor near = NearestAnchor(me.Position, 2.2f);
-            if (activity != null) GTA.UI.Screen.ShowSubtitle("Dang " + activity.Kind.Label + "... ~y~" + useKey + "~s~: dung", 100);
+            if (activity != null)
+            {
+                string left = activityStage == 1 ? " con " + Math.Max(0, (activityUntil - Game.GameTime + 999) / 1000) + " giay" : "";
+                GTA.UI.Screen.ShowSubtitle("Dang " + activity.Kind.Label + left + "... ~y~" + useKey + "~s~: dung", 100);
+            }
             else if (me.Position.DistanceTo(Templates[template].Spawn) < PromptRange) GTA.UI.Screen.ShowSubtitle("~y~" + useKey + "~s~: ra ngoai", 100);
             else if (near != null) GTA.UI.Screen.ShowSubtitle("~y~" + useKey + "~s~: " + near.Kind.Label, 100);
         }

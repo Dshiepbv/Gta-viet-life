@@ -3,9 +3,9 @@
 File này được Claude Code tự nạp mỗi phiên. Phần 0 riêng cho dự án; phần 1–8 là luật làm việc chung; phần 9 là trạng thái.
 
 ## 0. Dự án: GTA VietLife (mod GTA V, thư mục `E:\AI\Projects\Gta-vietlife`)
-- Tình trạng (2026-11-28): đích là GTA V Legacy; đã có bộ cài 0.3.3, chưa chạy trong GTA V. Tiến độ phiên gần nhất: `NOTES.md`. Kiểm toán: `docs/AUDIT_M0_M6.md`. Hợp đồng dữ liệu: `docs/SHARED_STATE_CONTRACT.md`.
+- Tình trạng (2026-11-28): đích là GTA V Legacy; đã có bộ cài 0.3.5, đã chạy 0.3.3 trong GTA V Legacy 1.0.3889.0 + SHVDN nightly 3.7.0.206. Tiến độ phiên gần nhất: `NOTES.md`. Kiểm toán: `docs/AUDIT_M0_M6.md`. Hợp đồng dữ liệu: `docs/SHARED_STATE_CONTRACT.md`.
 - Mục tiêu mod (1 câu): Life Simulator, người chơi và mọi NPC có vòng đời, sinh hoạt, kinh tế, quan hệ, tương tác vật lý, ký ức và lưu bền.
-- Loại mod và nền tảng: 7 script C# SHVDN v3 (`game/`, phát hành dạng DLL biên dịch sẵn), engine Python + SQLite (`engine/`), bridge hội thoại (`bridge/`), Launcher/Updater .NET (`launcher/`), adapter Godot tham chiếu, app Android dashboard.
+- Loại mod và nền tảng: 8 script C# SHVDN v3 (`game/`, phát hành dạng DLL biên dịch sẵn), engine Python + SQLite (`engine/`), bridge hội thoại (`bridge/`), Launcher/Updater .NET (`launcher/`), adapter Godot tham chiếu, app Android dashboard.
 - Phiên bản game và thư viện: GTA V Legacy; biên dịch theo SHVDN API 3.6.0 (ghim SHA-256), khi chơi dùng SHVDN nightly cho build từ 1.0.3258; .NET 8 (launcher), net48 (script), Python 3.11. Build game đích: chưa ghi nhận.
 - Test: `python -B -m unittest discover -s engine/tests` · `python -B -m unittest discover -s tests` (đối chiếu C#/host, biên dịch logic C# bằng `csc.exe` của .NET Framework) · trong `bridge/`: `python -B -m unittest test_engine_context`
 - Đóng gói (test, 7 DLL, Launcher, exe dịch vụ, chạy thử, bộ cài): `packaging/Build-Package.ps1 -InnoCompiler <ISCC.exe> -WorkDir <thư mục ngoài repo>`; chỉ DLL: `packaging/Build-Scripts.ps1`. Python để đóng gói phải có tkinter. Kết quả ở `artifacts/`.
@@ -51,6 +51,7 @@ File này được Claude Code tự nạp mỗi phiên. Phần 0 riêng cho dự
 - Tải save GTA cũ: giữ đời sống và sổ cái hiện hành, chỉ đối soát tiền mặt; cấm `Personal` ghi đè ví GTA, cấm mô phỏng lại. Cài đặt ở đợt 3. · 2026-11-28
 - Launcher độc lập theo đặc tả M6. · 2026-11-28
 - M4 khi Engine tắt: cho chơi tiếp, lưu bền rồi gửi bù; khi sổ cái đã nhận đủ thì sổ cái là chuẩn. · 2026-11-28
+- Tương tác trong quán diễn ra trực tiếp (vào quán, gọi món, thấy người bán và người dọn), không dùng menu game. Thử nghiệm dùng nội thất có sẵn, về sau tự dựng mô hình. · 2026-11-28
 
 ### Đã bác bỏ (lý do · từ khóa kích hoạt)
 - (phương án) · vì (lý do) · từ khóa: (...)
@@ -112,8 +113,8 @@ Khi tôi chỉ ra lỗi: đề xuất 1 dòng rút kinh nghiệm; tôi duyệt m
 Văn phong con người: không mở bài "Không phải X mà là Y", không câu dài 4 mệnh đề, không kết bằng châm ngôn, không rải emoji và in đậm. Không để lộ trao đổi nội bộ giữa tôi và AI. Commit message và changelog viết rõ việc đã làm.
 
 ## 9. Trạng thái (giữ 5 mục gần nhất, mới nhất ở dưới)
-- [2026-11-28] Đợt 1 đã push (28ae051), CI #272 xanh. G2 + dọn dedup + M3 UIS + bộ cài Legacy 0.2.0 xong trên máy; 77 engine + 15 contract/C# + 2 bridge + test Launcher/Updater/exe đóng gói pass. | Bước tiếp: chủ dự án test trong GTA V Legacy tối nay, gửi `GtaVietLife*.log`, `ScriptHookVDotNet.log`; sau đó E4 E6 E7 E8 G3. | Chưa đạt so yêu cầu: danh bạ 500–1000 cửa, offset nội thất theo tòa nhà.
-- [2026-11-28] Bản 0.3.0 (đã push, 7755684, CI #275 xanh): E4 E6 E7 E8 E10 E12 B1 G3 G5 G6; bộ cài build lại. Chi tiết `docs/AUDIT_M0_M6.md` mục 8. | Bước tiếp: test trong GTA V Legacy, gửi log; kiểm CI; sổ cái làm chủ ngân hàng/quán, G4 G7, M6.
 - [2026-11-28] Bản 0.3.1 trên máy, chưa commit: E9 E11 E14 G4 G7–G13, một phần M6. Chi tiết audit mục 9. | Bước tiếp: test trong GTA V Legacy; chốt sổ cái khi Engine tắt, khóa ký, tên exe; hỏi trước khi push (đổi `bridge/dashboard.html` sẽ phát hành APK công khai).
 - [2026-11-28] Bản 0.3.2 trên máy, chưa commit: thêm M1 (đếm ngày theo Core), M3 (hạn lệnh, giữ state vật thể), M5 (token, protocol). | Bước tiếp: chốt M4; làm M2; test trong game; hỏi trước khi push.
-- [2026-11-28] Bản 0.3.3 trên máy, chưa commit: sổ cái làm chủ số dư ngân hàng (chơi khi Engine tắt, gửi bù); nợ được ghi vào sổ cái. Quán, tồn kho, lương chưa chuyển. | Bước tiếp: chuyển quán và lương; M2; test trong game; hỏi trước khi push.
+- [2026-11-28] Bản 0.3.3 (đã push, 9be2a43, CI #276 xanh): sổ cái làm chủ số dư ngân hàng (chơi khi Engine tắt, gửi bù); nợ được ghi vào sổ cái. Quán, tồn kho, lương chưa chuyển. | Bước tiếp: chuyển quán và lương; M2; test trong game; hỏi trước khi push.
+- [2026-11-28] Test 0.3.3 trong game: World sập khi vẽ chữ, F7 rơi, đồ sinh thêm chồng nhau, STT chết vì thiếu cublas. Sửa trong 0.3.4 (trên máy, chưa commit). | Bước tiếp: test lại 0.3.4; tương tác nội thất cần thiết kế lại.
+- [2026-11-28] Bản 0.3.5 (trên máy, chưa commit): ShopFloor (gọi món tại quầy, người bán, người dọn), nút Cập nhật trong Launcher. | Bước tiếp: test trong game; phát hành v0.3.5 thì nút cập nhật mới có bản để tải (cần chủ dự án đồng ý); quản lý quán không menu.

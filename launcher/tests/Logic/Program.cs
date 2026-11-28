@@ -66,6 +66,21 @@ try
         Check(!all.Contains("abc123") && !all.Contains("SECRET") && !all.Contains("K1"), "secrets removed");
     }
 
+    // ---- releases: dashboard APK releases must not hide the Launcher release
+    string Release(string tag, string flags, params string[] names) =>
+        "{\"tag_name\":\"" + tag + "\"," + flags + "\"assets\":[" + string.Join(",", names.Select(n =>
+            "{\"name\":\"" + n + "\",\"browser_download_url\":\"https://example.test/" + tag + "/" + n + "\"}")) + "]}";
+    var both = new[] { ReleaseFeed.PackageName, ReleaseFeed.ChecksumsName };
+    var feed = "[" + string.Join(",",
+        Release("dash-13", "", "GtaDashboard-13.apk"), Release("v0.3.9", "", both), Release("v0.10.0", "", both),
+        Release("v0.11.0", "\"prerelease\":true,", both), Release("v0.12.0", "\"draft\":true,", both),
+        Release("v0.13.0", "", ReleaseFeed.PackageName)) + "]";
+    var found = ReleaseFeed.Newest(feed);
+    Check(found?.Tag == "v0.10.0" && found.PackageUrl.EndsWith("v0.10.0/" + ReleaseFeed.PackageName), "newest installable release: " + found?.Tag);
+    Check(ReleaseFeed.Newest("[" + Release("dash-1", "", "a.apk") + "]") == null && ReleaseFeed.Newest("{}") == null, "no launcher release");
+    Check(!ReleaseFeed.IsNewer(new Version("0.3.5"), new Version("0.3.5.0")), "same version is not newer");
+    Check(ReleaseFeed.IsNewer(new Version("0.3.6"), new Version("0.3.5.0")), "newer version");
+
     // ---- installer
     Write("src/GtaVietLifeCore.dll", "core-v2"); Write("src/GtaVietLifeWorld.dll", "world-v2");
     Write("src/GtaVietLifeCore.ini", "default"); Write("src/GtaVietLifeNew.ini", "new-default");

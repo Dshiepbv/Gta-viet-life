@@ -1,7 +1,7 @@
 # Dung toan bo bo cai: kiem thu, bien dich module game, Launcher, Updater, Engine Host, Bridge,
 # manifest.json, goi zip cap nhat va file cai dat duy nhat. Dung chung cho may local va CI.
 param(
-  [string]$Version = "0.3.3",
+  [string]$Version = "0.3.5",
   [string]$Dotnet = "dotnet",
   [string]$Python = "python",
   [Parameter(Mandatory = $true)][string]$InnoCompiler,
@@ -40,7 +40,7 @@ $api = Join-Path $WorkDir "shvdn\ScriptHookVDotNet3.dll"
 
 Invoke-Step "Engine tests" { & $Python -m unittest discover -s engine/tests }
 Invoke-Step "Wire contract and C# logic tests" { & $Python -m unittest discover -s tests }
-Invoke-Step "Bridge tests" { Push-Location bridge; & $Python -m unittest test_engine_context test_news_lock test_dashboard_access; Pop-Location }
+Invoke-Step "Bridge tests" { Push-Location bridge; & $Python -m unittest test_engine_context test_news_lock test_dashboard_access test_stt_fallback; Pop-Location }
 $logic = Join-Path $WorkDir "logic-bin"
 Invoke-Step "Launcher logic tests build" { & $Dotnet build launcher/tests/Logic/GtaVietLife.Launcher.Logic.Tests.csproj -c Release --artifacts-path (Join-Path $WorkDir "logic") -o $logic -v quiet --nologo }
 Invoke-Step "Launcher logic tests" { & $Dotnet (Join-Path $logic "GtaVietLife.Launcher.Logic.Tests.dll") }

@@ -273,6 +273,8 @@ public class GtaVietLifeEconomy : Script
 
     void OnAborted(object sender, EventArgs e)
     {
+        menuOpen = false;
+        AppDomain.CurrentDomain.SetData("GVL.EconMenu", false);   // truoc tien: cac module khac khong duoc coi menu con mo
         Save();
         foreach (Blip b in blips) if (b != null && b.Exists()) b.Delete();
         BusSet("GVL.EconMenu", false);
@@ -850,7 +852,10 @@ public class GtaVietLifeEconomy : Script
     {
         GTA.UI.TextElement t = new GTA.UI.TextElement(s, new PointF(x, y), scale, c);
         t.Outline = true;
-        t.Draw();
+        try { t.Draw(); }
+        catch (InvalidOperationException ex) { Log("ve chu loi: " + ex.Message); }   // mat mot khung hinh, khong sap script
+        // Khong co dong nay, bo don rac co the huy t ngay trong luc Draw dang doc chuoi cua no.
+        GC.KeepAlive(t);
     }
 
     void DrawHud(Ped me)

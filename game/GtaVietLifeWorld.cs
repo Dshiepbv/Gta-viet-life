@@ -307,6 +307,8 @@ public class GtaVietLifeWorld : Script
 
     void OnAborted(object sender, EventArgs e)
     {
+        menuOpen = false;
+        AppDomain.CurrentDomain.SetData("GVL.WorldMenu", false);   // truoc tien: cac module khac khong duoc coi menu con mo
         ClearResFile();
         Save();
         foreach (Ped p in staffPeds) if (p != null && p.Exists()) p.Delete();
@@ -4417,6 +4419,9 @@ public class GtaVietLifeWorld : Script
             Notify("Cho dung cua nhan vien: huong " + (staffAngle + 1) + "/4 (F9 de xoay tiep)");
             Save();
         }
+        // Dang o quay cua hang: phim E thuoc ve file GtaVietLifeShopFloor.
+        object atCounter = AppDomain.CurrentDomain.GetData("GVL.ShopCounter");
+        if (e.KeyCode == sitKey && !menuOpen && atCounter is bool && (bool)atCounter) return;
         if (e.KeyCode == sitKey && !menuOpen && nearFurn.Length > 0 && Game.GameTime > doorCool) { doorCool = Game.GameTime + 700; if (!RequestEngineWorldInteraction("object", "object.home." + Math.Max(0, homeIdx) + "." + nearFurn, "use")) UseFurniture(); return; }
         if (e.KeyCode == sitKey && !menuOpen && enterUntil <= 0 && Game.GameTime > doorCool && nearFurn.Length == 0 && !insideHome && !Game.Player.Character.IsInVehicle() && Game.Player.Character.Position.DistanceTo2D(WorkSpot) < 8f)
         { if (!RequestEngineWorldInteraction("building", "building.workplace", "enter")) StartWork(); return; }
@@ -4480,7 +4485,10 @@ public class GtaVietLifeWorld : Script
     {
         GTA.UI.TextElement t = new GTA.UI.TextElement(s, new PointF(x, y), scale, c);
         t.Outline = true;
-        t.Draw();
+        try { t.Draw(); }
+        catch (InvalidOperationException ex) { Log("ve chu loi: " + ex.Message); }   // mat mot khung hinh, khong sap script
+        // Khong co dong nay, bo don rac co the huy t ngay trong luc Draw dang doc chuoi cua no.
+        GC.KeepAlive(t);
     }
 
     void DrawBar(string label, float value, float x, float y, Color fill)
