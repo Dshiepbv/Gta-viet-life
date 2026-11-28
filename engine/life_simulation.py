@@ -116,6 +116,9 @@ class NPCState:
     mood: float = 70.0
     age_minutes: int = 0
     work_minutes: int = 0
+    manual_activity: str = ""
+    manual_activity_until: int = 0
+    manual_location_id: str = ""
 
     def __post_init__(self) -> None:
         if not self.location_id:
@@ -194,6 +197,9 @@ class SQLiteLifeStore:
                     bladder=s.get("bladder", 10.0), fitness=s.get("fitness", 50.0),
                     mood=s.get("mood", 70.0), age_minutes=s.get("age_minutes", 0),
                     work_minutes=s.get("work_minutes", 0),
+                    manual_activity=s.get("manual_activity", ""),
+                    manual_activity_until=s.get("manual_activity_until", 0),
+                    manual_location_id=s.get("manual_location_id", ""),
                 ))
             return minute, result
 
@@ -219,6 +225,9 @@ class SQLiteLifeStore:
                     "hygiene": state.hygiene, "bladder": state.bladder,
                     "fitness": state.fitness, "mood": state.mood,
                     "age_minutes": state.age_minutes, "work_minutes": state.work_minutes,
+                    "manual_activity": state.manual_activity,
+                    "manual_activity_until": state.manual_activity_until,
+                    "manual_location_id": state.manual_location_id,
                 }
                 self.connection.execute(
                     """INSERT INTO npc_state(npc_id,profile_json,state_json,updated_at)
@@ -259,6 +268,45 @@ class SQLiteLifeStore:
                     "INSERT OR IGNORE INTO request_dedup(request_id,response_json) VALUES(?,?)",
                     (request_id, json.dumps(response, ensure_ascii=False)),
                 )
+
+    def set_player_activity(self, actor_id: str, activity: str, location_id: str,
+                            duration_minutes: int, request_id: Optional[str] = None) -> dict:
+        if not isinstance(actor_id, str) or not actor_id or len(actor_id) > 128:
+            raise ValueError("invalid_actor_id")
+        if not isinstance(activity, str) or activity not in ("work", "commute", "study", "exercise", "socialize", "leisure", "free_time"):
+            raise ValueError("unsupported_player_activity")
+        if not isinstance(location_id, str) or not location_id or len(location_id) > 128:
+            raise ValueError("invalid_activity_location")
+        if isinstance(duration_minutes, bool) or not isinstance(duration_minutes, int) or not 1 <= duration_minutes <= 1440:
+            raise ValueError("invalid_activity_duration")
+        if request_id is not None and (not request_id or len(request_id) > 128):
+            raise ValueError("invalid_request_id")
+        dedup_key = "player_activity:" + request_id if request_id else None
+        with self._lock:
+            if dedup_key:
+                cached = self.store.get_request_result(dedup_key)
+                if cached is not None:
+                    return cached
+            state = self.npcs.get(actor_id)
+            if state is None:
+                raise KeyError("actor_not_found")
+            if state.profile.actor_kind != "player":
+                raise ValueError("manual_activity_only_for_player")
+            state.manual_activity = activity
+            state.manual_activity_until = self.simulation_minute + duration_minutes
+            state.manual_location_id = location_id
+            state.current_activity = activity
+            state.location_id = location_id
+            state.last_transition_minute = self.simulation_minute
+            self.events = []
+            self._record(state, "player_activity_started", {
+                "activity": activity, "location_id": location_id, "duration_minutes": duration_minutes,
+            })
+            result = {"accepted": True, "actor_id": actor_id, "activity": activity,
+                      "location_id": location_id, "until_minute": state.manual_activity_until}
+            self.store.save(self.simulation_minute, [state], self.events,
+                            (dedup_key, result) if dedup_key else None)
+            return result
 
     def observe_player_state(self, actor_id: str, observed: dict, request_id: Optional[str] = None) -> dict:
         """Accept adapter-observed player body meters; the game remains authoritative for native player physiology."""
@@ -447,6 +495,13 @@ class LifeSimulationEngine:
     def _tick_npc(self, state: NPCState) -> None:
         minute_of_day = self.simulation_minute % 1440
         planned, planned_location = self._scheduled(state, minute_of_day)
+        if state.profile.actor_kind == "player" and state.manual_activity:
+            if self.simulation_minute <= state.manual_activity_until:
+                planned, planned_location = state.manual_activity, state.manual_location_id or state.location_id
+            else:
+                state.manual_activity = ""
+                state.manual_activity_until = 0
+                state.manual_location_id = ""
         activity, location = planned, planned_location
         if (state.profile.actor_kind != "player" and ((state.current_activity == "eat" and state.hunger > 55) or state.hunger >= 92)):
             activity = "eat"
