@@ -401,10 +401,10 @@ class LifeSimulationEngine:
         state.bladder += 0.11
         if not is_player:
             state.hygiene -= 0.035
-            if state.bladder >= 94 and activity not in ("toilet", "use_bathroom"):
-                activity = "toilet"
-            if state.hygiene <= 8 and activity not in ("shower", "bathe"):
-                activity = "shower"
+            if (state.current_activity in ("toilet", "use_bathroom") and state.bladder > 20) or state.bladder >= 94:
+                activity, location = "toilet", state.profile.home_location_id
+            elif (state.current_activity in ("shower", "bathe") and state.hygiene < 80) or state.hygiene <= 8:
+                activity, location = "shower", state.profile.home_location_id
             state.thirst += 0.08
         if activity == "sleep":
             if not is_player:

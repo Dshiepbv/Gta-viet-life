@@ -361,6 +361,24 @@ class LifeSimulationTests(unittest.TestCase):
         engine.advance(1)
         self.assertEqual(player.current_activity, "free_time")
 
+    def test_personal_care_needs_route_npc_back_to_home(self):
+        engine = LifeSimulationEngine()
+        npc = engine.register_npc(NPCProfile(
+            npc_id="npc.personal-care", display_name="An", home_location_id="home.personal-care",
+            occupation="worker",
+            schedule=(ScheduleBlock(0, 1440, "work", "work.personal-care"),),
+        ))
+        npc.bladder = 95
+        npc.hygiene = 90
+        engine.advance(1)
+        self.assertEqual(npc.current_activity, "toilet")
+        self.assertEqual(npc.location_id, "home.personal-care")
+        npc.bladder = 10
+        npc.hygiene = 7
+        engine.advance(1)
+        self.assertEqual(npc.current_activity, "shower")
+        self.assertEqual(npc.location_id, "home.personal-care")
+
 
 if __name__ == "__main__":
     unittest.main()

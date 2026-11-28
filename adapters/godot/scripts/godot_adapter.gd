@@ -130,7 +130,7 @@ func _boot() -> void:
 		"npc": {
 			"npc_id": NPC_ID,
 			"display_name": resident.display_name,
-			"home_location_id": "home.godot",
+			"home_location_id": "home.interior.godot",
 			"occupation": "barista",
 			"traits": ["friendly", "disciplined"],
 			"life_goal": "career",
