@@ -20,3 +20,5 @@ Sửa lần lượt: E7, E10, E8, E4, E6, G3, B1, E12; sau đó build bộ cài.
 
 Engine: 96 test pass; test mới `engine/tests/test_phase2_regressions.py` đã thấy fail trên mã cũ (18/19).
 Đổi một kỳ vọng trong `test_host.py`: giờ game lùi không còn mô phỏng lại (theo hợp đồng mục 4).
+
+- CI #274 (a6ea0ed) fail: test_news_lock in tiếng Việt ra console cp1252. Đã sửa test; trước khi push nên chạy test với `PYTHONIOENCODING=cp1252`.

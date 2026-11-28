@@ -1,3 +1,5 @@
+import contextlib
+import io
 import os
 import sys
 import tempfile
@@ -38,6 +40,11 @@ class Brain:
         return self.result
 
 
+def quiet():
+    # The bridge prints Vietnamese, which a cp1252 console (CI) cannot encode.
+    return contextlib.redirect_stdout(io.StringIO())
+
+
 class NewsLockTests(unittest.TestCase):
     def bridge(self, result):
         bridge = Bridge.__new__(Bridge)
@@ -48,12 +55,13 @@ class NewsLockTests(unittest.TestCase):
 
     def test_empty_news_releases_the_lock(self):
         bridge = self.bridge([])
-        bridge.news({"hour": 7})
+        with quiet():
+            bridge.news({"hour": 7})
         self.assertFalse(bridge.busy.locked())
 
     def test_failing_model_releases_the_lock(self):
         bridge = self.bridge(RuntimeError("offline"))
-        with self.assertRaises(RuntimeError):
+        with quiet(), self.assertRaises(RuntimeError):
             bridge.news({"hour": 7})
         self.assertFalse(bridge.busy.locked())
 
