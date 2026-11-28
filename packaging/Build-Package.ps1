@@ -1,7 +1,7 @@
-# Dung toan bo bo cai: kiem thu, bien dich module game, Launcher, Updater, Engine Host, Bridge,
+﻿# Dung toan bo bo cai: kiem thu, bien dich module game, Launcher, Updater, Engine Host, Bridge,
 # manifest.json, goi zip cap nhat va file cai dat duy nhat. Dung chung cho may local va CI.
 param(
-  [string]$Version = "0.4.5",
+  [string]$Version = "0.4.6",
   [string]$Dotnet = "dotnet",
   [string]$Python = "python",
   [Parameter(Mandatory = $true)][string]$InnoCompiler,

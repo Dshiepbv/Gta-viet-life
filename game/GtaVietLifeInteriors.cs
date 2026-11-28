@@ -112,7 +112,7 @@ public class GtaVietLifeInteriors : Script
     readonly HashSet<string> registeredWithEngine = new HashSet<string>();
     readonly Dictionary<int, bool> doorModel = new Dictionary<int, bool>();
 
-    bool enabled = true, autoDiscover = true, showMarkers = true, dirty, furnishPending;
+    bool enabled = true, autoDiscover = true, showMarkers = true, dirty, furnishPending, mpMapsAsked;
     readonly Dictionary<string, List<GvlPlacement>> owned = new Dictionary<string, List<GvlPlacement>>();
     readonly List<Member> household = new List<Member>();
     Keys cycleKey = Keys.F5, buyKey = Keys.F6;
@@ -154,6 +154,12 @@ public class GtaVietLifeInteriors : Script
             Ped me = Game.Player.Character;
             if (me == null || !me.Exists()) return;
             int now = Game.GameTime;
+            if (!mpMapsAsked)
+            {
+                // Biet thu, penthouse, can ho cao cap la noi that cua ban do Online: phai nap ban do do vao Story thi moi vao duoc.
+                mpMapsAsked = true;
+                if (Settings.GetValue("Interiors", "LoadOnlineInteriors", true)) { Function.Call(Hash.ON_ENTER_MP); Log("da nap ban do noi that Online cho che do Story"); }
+            }
             if (me.IsDead) { if (portal.Phase != GvlPortal.Outside || building.Length > 0) LeaveEverything(false); return; }
 
             StepPrepare(me, now);
@@ -294,7 +300,14 @@ public class GtaVietLifeInteriors : Script
             Vector3 c = door + new Vector3((float)Math.Cos(angle) * 2.5f, (float)Math.Sin(angle) * 2.5f, 0f);
             if (RoofAbove(c, door.Z, me, out height)) { start = c; found = true; }
         }
-        float area = 20f, top = 0f;   // khong do duoc: coi nhu ki-ot, khong bao gio mo noi that lon
+        float area = 20f, top = 0f;
+        if (!found)
+        {
+            // Khong co mai quanh "cua": cot den, bien bao... khong phai toa nha, an di.
+            e.Tier = -1; dirty = true;
+            Log("bo loi vao " + e.Id + ": khong co mai, khong phai toa nha");
+            return;
+        }
         if (found)
         {
             int cells = GvlFootprint.Cells(delegate(int ix, int iy)
@@ -342,7 +355,7 @@ public class GtaVietLifeInteriors : Script
             {
                 if (e.Shift) { MarkDoor(me); return; }
                 GvlEntrance door = registry.Nearest(me.Position.X, me.Position.Y, me.Position.Z, PromptRange);
-                if (door != null) BeginEnter(me, door);
+                if (door != null && door.Tier >= 0) BeginEnter(me, door);
             }
             else if (portal.Phase == GvlPortal.Inside && template >= 0)
             {
@@ -1018,9 +1031,9 @@ public class GtaVietLifeInteriors : Script
             Vector3 p = me.Position;
             if (showMarkers)
                 foreach (GvlEntrance marked in registry.Within(p.X, p.Y, p.Z, 40f))
-                    DrawDoorMarker(new Vector3(marked.X, marked.Y, marked.Z), marked.Purpose == GvlTier.Shop);
+                    if (marked.Tier >= 0) DrawDoorMarker(new Vector3(marked.X, marked.Y, marked.Z), marked.Purpose == GvlTier.Shop);
             GvlEntrance door = registry.Nearest(p.X, p.Y, p.Z, PromptRange);
-            if (door != null)
+            if (door != null && door.Tier >= 0)
                 GTA.UI.Screen.ShowSubtitle("~y~" + useKey + "~s~: vao " + (door.Purpose == GvlTier.Shop ? "quan" : "nha") +
                     (door.Tier > 0 ? " (cap " + door.Tier + ")" : ""), 100);
         }
