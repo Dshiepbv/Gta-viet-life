@@ -731,7 +731,10 @@ class SocietySimulation:
                         wage = contract["hourly_wage"]
                         if wage <= 0:
                             continue
-                        txid = "payroll:" + contract["contract_id"] + ":" + str(sim_minute)
+                        payload = event.get("payload", {})
+                        work_total = payload.get("total_work_minutes")
+                        payroll_key = work_total if isinstance(work_total, int) else sim_minute
+                        txid = "payroll:" + contract["contract_id"] + ":" + employee_id + ":" + str(payroll_key)
                         transactions.append(self._post_transaction_locked(txid, "payroll",
                             "Hourly wage for " + employee_id,
                             [{"account_id": contract["cash_account_id"], "amount": -wage},

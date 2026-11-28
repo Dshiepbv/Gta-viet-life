@@ -683,6 +683,43 @@ class LifeSimulationEngine:
             self.store.save(self.simulation_minute, states_to_save, self.events, request_result)
             return result
 
+    def record_player_work(self, actor_id: str, duration_minutes: int,
+                           request_id: Optional[str] = None) -> dict:
+        if not isinstance(actor_id, str) or not actor_id or len(actor_id) > 128:
+            raise ValueError("invalid_actor_id")
+        if isinstance(duration_minutes, bool) or not isinstance(duration_minutes, int) or not 1 <= duration_minutes <= 1440:
+            raise ValueError("invalid_work_duration")
+        if request_id is not None and (not request_id or len(request_id) > 128):
+            raise ValueError("invalid_request_id")
+        dedup_key = "player_work:" + request_id if request_id else None
+        with self._lock:
+            if dedup_key:
+                cached = self.store.get_request_result(dedup_key)
+                if cached is not None:
+                    return cached
+            state = self.npcs.get(actor_id)
+            if state is None:
+                raise KeyError("actor_not_found")
+            if state.profile.actor_kind != "player":
+                raise ValueError("work_report_only_for_player_actor")
+            previous = state.work_minutes
+            state.work_minutes += duration_minutes
+            completed_hours = state.work_minutes // 60 - previous // 60
+            self.events = []
+            for index in range(completed_hours):
+                boundary = ((previous // 60) + index + 1) * 60
+                self._record(state, "work_hour_completed", {
+                    "hours": 1, "total_work_minutes": boundary, "source": "native_player_job",
+                })
+            self._record(state, "player_work_completed", {
+                "duration_minutes": duration_minutes, "total_work_minutes": state.work_minutes,
+            })
+            result = {"recorded": True, "actor_id": actor_id, "duration_minutes": duration_minutes,
+                      "total_work_minutes": state.work_minutes, "completed_hours": completed_hours}
+            self.store.save(self.simulation_minute, [state], self.events,
+                            (dedup_key, result) if dedup_key else None)
+            return result
+
     def set_player_activity(self, actor_id: str, activity: str, location_id: str,
                             duration_minutes: int, request_id: Optional[str] = None) -> dict:
         if not isinstance(actor_id, str) or not actor_id or len(actor_id) > 128:

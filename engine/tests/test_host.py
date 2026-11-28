@@ -333,4 +333,19 @@ class HostTests(unittest.TestCase):
   self.assertEqual(player["activity"],"work")
   self.assertEqual(player["actor_kind"],"player")
 
+ def test_player_native_work_completion_records_hours_once(self):
+  actor={"npc_id":"player.native-worker","display_name":"Player","home_location_id":"home.player",
+         "occupation":"mechanic","actor_kind":"player"}
+  self.req("/engine/v1/simulation/actors",{"request_id":"native-worker-register","npc":actor})
+  code,result=self.req("/engine/v1/simulation/actors/work-completed",{"request_id":"native-shift-1",
+       "actor_id":"player.native-worker","duration_minutes":240})
+  self.assertEqual(code,200); self.assertEqual(result["completed_hours"],4)
+  self.assertEqual(result["total_work_minutes"],240)
+  events=self.state.simulation.store.connection.execute(
+       "SELECT COUNT(*) AS n FROM life_events WHERE event_type='work_hour_completed'").fetchone()["n"]
+  self.assertEqual(events,4)
+  self.req("/engine/v1/simulation/actors/work-completed",{"request_id":"native-shift-1",
+       "actor_id":"player.native-worker","duration_minutes":240})
+  self.assertEqual(self.state.simulation.npcs["player.native-worker"].work_minutes,240)
+
 if __name__=="__main__":unittest.main()
