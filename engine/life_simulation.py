@@ -16,7 +16,7 @@ from typing import Dict, List, Optional, Sequence
 
 
 MAX_ADVANCE_MINUTES = 7 * 24 * 60
-NEED_KEYS = ("hunger", "energy", "social", "stress", "hygiene", "bladder")
+NEED_KEYS = ("hunger", "thirst", "energy", "social", "stress", "hygiene", "bladder")
 MINUTES_PER_LIFE_YEAR = 365 * 24 * 60
 
 
@@ -99,6 +99,7 @@ class NPCProfile:
 class NPCState:
     profile: NPCProfile
     hunger: float = 35.0
+    thirst: float = 25.0
     energy: float = 85.0
     social: float = 65.0
     stress: float = 10.0
@@ -184,7 +185,7 @@ class SQLiteLifeStore:
                 )
                 s = json.loads(row["state_json"])
                 result.append(NPCState(
-                    profile=profile, hunger=s["hunger"], energy=s["energy"],
+                    profile=profile, hunger=s["hunger"], thirst=s.get("thirst",25.0), energy=s["energy"],
                     social=s["social"], stress=s["stress"], affinity=s.get("affinity", {}),
                     current_activity=s["current_activity"], location_id=s["location_id"],
                     last_transition_minute=s["last_transition_minute"], memories=s.get("memories", []),
@@ -210,7 +211,7 @@ class SQLiteLifeStore:
             for state in states:
                 p = asdict(state.profile)
                 s = {
-                    "hunger": state.hunger, "energy": state.energy, "social": state.social,
+                    "hunger": state.hunger, "thirst": state.thirst, "energy": state.energy, "social": state.social,
                     "stress": state.stress, "affinity": state.affinity,
                     "current_activity": state.current_activity, "location_id": state.location_id,
                     "last_transition_minute": state.last_transition_minute, "memories": state.memories[-100:],
@@ -259,6 +260,40 @@ class SQLiteLifeStore:
                     (request_id, json.dumps(response, ensure_ascii=False)),
                 )
 
+    def observe_player_state(self, actor_id: str, observed: dict, request_id: Optional[str] = None) -> dict:
+        """Accept adapter-observed player body meters; the game remains authoritative for native player physiology."""
+        if not isinstance(actor_id, str) or not actor_id or len(actor_id) > 128:
+            raise ValueError("invalid_actor_id")
+        if not isinstance(observed, dict) or len(observed) > 12:
+            raise ValueError("invalid_observed_state")
+        if request_id is not None and (not request_id or len(request_id) > 128):
+            raise ValueError("invalid_request_id")
+        allowed = {"hunger", "thirst", "energy", "hygiene", "health", "fitness"}
+        if set(observed) - allowed:
+            raise ValueError("unsupported_observed_field")
+        normalized = {}
+        for key, value in observed.items():
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value <= 100:
+                raise ValueError("invalid_observed_" + key)
+            normalized[key] = float(value)
+        dedup_key = "player_observation:" + request_id if request_id else None
+        with self._lock:
+            if dedup_key:
+                cached = self.store.get_request_result(dedup_key)
+                if cached is not None:
+                    return cached
+            state = self.npcs.get(actor_id)
+            if state is None:
+                raise KeyError("actor_not_found")
+            if state.profile.actor_kind != "player":
+                raise ValueError("observations_only_allowed_for_player_actor")
+            for key, value in normalized.items():
+                setattr(state, key, self._clamp(value))
+            result = {"updated": True, "actor_id": actor_id, "observed": normalized}
+            self.store.save(self.simulation_minute, [state], [],
+                            (dedup_key, result) if dedup_key else None)
+            return result
+
     def apply_physical_interaction(self, actor_id: str, object_kind: str) -> dict:
         """Apply canonical human-life consequences only after the adapter confirms a physical object use."""
         if not isinstance(actor_id, str) or not actor_id or len(actor_id) > 128:
@@ -268,8 +303,8 @@ class SQLiteLifeStore:
         effects = {
             "food": ("eat", {"hunger": -35.0, "mood": 3.0, "bladder": 8.0}),
             "meal": ("eat", {"hunger": -35.0, "mood": 3.0, "bladder": 8.0}),
-            "fridge": ("eat", {"hunger": -15.0, "bladder": 4.0}),
-            "vending_machine": ("eat", {"hunger": -15.0, "bladder": 5.0}),
+            "fridge": ("eat", {"hunger": -15.0, "thirst": -15.0, "bladder": 4.0}),
+            "vending_machine": ("drink", {"thirst": -20.0}),
             "bed": ("sleep", {"energy": 35.0, "health": 1.0, "stress": -8.0}),
             "toilet": ("toilet", {"bladder": -90.0}),
             "shower": ("shower", {"hygiene": 85.0, "stress": -5.0}),
@@ -413,66 +448,89 @@ class LifeSimulationEngine:
         minute_of_day = self.simulation_minute % 1440
         planned, planned_location = self._scheduled(state, minute_of_day)
         activity, location = planned, planned_location
-        if (state.current_activity == "eat" and state.hunger > 55) or state.hunger >= 92:
+        if (state.profile.actor_kind != "player" and ((state.current_activity == "eat" and state.hunger > 55) or state.hunger >= 92)):
             activity = "eat"
+        elif state.profile.actor_kind != "player" and state.thirst >= 92:
+            activity = "drink"
         elif (state.current_activity == "sleep" and state.energy < 80) or state.energy <= 8:
             activity, location = "sleep", state.profile.home_location_id
         elif ((state.current_activity == "socialize" and state.social < 55)
               or (state.social <= 8 and planned in ("free_time", "leisure"))):
             activity = "socialize"
 
+        is_player = state.profile.actor_kind == "player"
         state.age_minutes += 1
-        state.hygiene -= 0.035
         state.bladder += 0.11
-        if state.bladder >= 94 and activity not in ("toilet", "use_bathroom"):
-            activity = "toilet"
-        if state.hygiene <= 8 and activity not in ("shower", "bathe"):
-            activity = "shower"
+        if not is_player:
+            state.hygiene -= 0.035
+            if state.bladder >= 94 and activity not in ("toilet", "use_bathroom"):
+                activity = "toilet"
+            if state.hygiene <= 8 and activity not in ("shower", "bathe"):
+                activity = "shower"
+            state.thirst += 0.08
         if activity == "sleep":
-            state.energy += 1.7
-            state.health += 0.025
-            state.hunger += 0.35
+            if not is_player:
+                state.energy += 1.7
+                state.health += 0.025
+                state.hunger += 0.35
+                state.thirst += 0.15
             state.stress -= 0.35
         elif activity == "eat":
-            state.hunger -= 4.0
-            state.bladder += 0.04
-            state.energy += 0.15
+            if not is_player:
+                state.hunger -= 4.0
+                state.thirst += 0.08
+                state.bladder += 0.04
+                state.energy += 0.15
             state.stress -= 0.1
+        elif activity == "drink":
+            state.thirst -= 4.0
+            state.stress -= 0.05
         elif activity in ("work", "commute"):
-            state.energy -= 0.65
-            state.hunger += 0.75
+            if not is_player:
+                state.energy -= 0.65
+                state.hunger += 0.75
+                state.thirst += 0.15
             state.stress += 0.45 if activity == "work" else 0.2
         elif activity == "socialize":
             state.social += 2.2
-            state.energy -= 0.25
-            state.hunger += 0.35
+            if not is_player:
+                state.energy -= 0.25
+                state.hunger += 0.35
+                state.thirst += 0.08
             state.stress -= 0.3
         elif activity in ("leisure", "free_time"):
-            state.energy -= 0.2
-            state.hunger += 0.35
+            if not is_player:
+                state.energy -= 0.2
+                state.hunger += 0.35
+                state.thirst += 0.03
             state.social += 0.15
             state.stress -= 0.25
         elif activity in ("shower", "bathe"):
-            state.hygiene += 3.5
+            if not is_player:
+                state.hygiene += 3.5
             state.stress -= 0.2
         elif activity in ("toilet", "use_bathroom"):
             state.bladder -= 12.0
             state.stress -= 0.1
         elif activity == "exercise":
-            state.fitness += 0.12
-            state.energy -= 0.55
-            state.hunger += 0.65
+            if not is_player:
+                state.fitness += 0.12
+                state.energy -= 0.55
+                state.hunger += 0.65
+                state.thirst += 0.35
             state.stress -= 0.35
         elif activity == "study":
-            state.energy -= 0.3
+            if not is_player:
+                state.energy -= 0.3
             state.stress += 0.15
             state.goal_progress = self._clamp(state.goal_progress + 0.015)
         else:
-            state.energy -= 0.15
-            state.hunger += 0.4
+            if not is_player:
+                state.energy -= 0.15
+                state.hunger += 0.4
 
         # Basic autonomic needs apply equally to the player avatar and every NPC.
-        if state.hunger >= 98 or state.energy <= 2 or state.hygiene <= 1 or state.bladder >= 99:
+        if not is_player and (state.hunger >= 98 or state.thirst >= 98 or state.energy <= 2 or state.hygiene <= 1 or state.bladder >= 99):
             state.health -= 0.08
         if activity == "work":
             state.work_minutes += 1
@@ -625,7 +683,7 @@ class LifeSimulationEngine:
                              "traits": list(profile.traits), "skills": dict(profile.skills),
                              "life_goal": profile.life_goal, "goal_progress": state.goal_progress},
                 "current_state": {"activity": state.current_activity, "location_id": state.location_id,
-                                  "needs": {"hunger": state.hunger, "energy": state.energy,
+                                  "needs": {"hunger": state.hunger, "thirst": state.thirst, "energy": state.energy,
                                             "social": state.social, "stress": state.stress,
                                             "hygiene": state.hygiene, "bladder": state.bladder,
                                             "health": state.health, "fitness": state.fitness, "mood": state.mood},
@@ -717,7 +775,7 @@ class LifeSimulationEngine:
                     "age_years": s.profile.age_years + (s.age_minutes // MINUTES_PER_LIFE_YEAR),
                     "life_stage": life_stage(s.profile.age_years + (s.age_minutes // MINUTES_PER_LIFE_YEAR)),
                     "health": s.health, "fitness": s.fitness, "mood": s.mood,
-                    "needs": {"hunger": s.hunger, "energy": s.energy, "social": s.social,
+                    "needs": {"hunger": s.hunger, "thirst": s.thirst, "energy": s.energy, "social": s.social,
                               "stress": s.stress, "hygiene": s.hygiene, "bladder": s.bladder},
                     "relationships": dict(s.affinity), "memory_count": len(s.memories),
                 } for s in sorted(self.npcs.values(), key=lambda item: item.profile.npc_id)],
