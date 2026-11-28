@@ -111,3 +111,5 @@ Engine: 96 test pass; test mới `engine/tests/test_phase2_regressions.py` đã 
 ## 0.4.0 / 0.4.1
 - 0.4.0 phát hành (93d38a8). 0.4.1: Data Pack vi-VN. Lệnh test: python -m pytest engine/tests tests (cần pytest).
 - Chưa làm: bài tự kiểm tự động trong game; giá VND chưa dùng trong script C#; đổi tên exe.
+
+- Tag v0.4.1 và v0.4.2 trỏ vào commit thiếu .gitattributes: build trên GitHub sẽ hỏng vì Windows đổi xuống dòng làm sai SHA-256 của Data Pack, nên không có Release. Bản dùng được: v0.4.3.

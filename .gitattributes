@@ -1,0 +1,2 @@
+# Data Pack files are checked against SHA-256 in pack.json: keep their bytes exactly as committed.
+data/packs/** -text

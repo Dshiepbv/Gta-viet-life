@@ -3,10 +3,10 @@ on:
   push:
     branches: [main]
     tags: ['v*']
-    paths: ['.gitignore','data/**','launcher/**','engine/**','tests/**','bridge/**','game/**','adapters/godot/**','packaging/**','docs/**','.github/workflows/windows-launcher.yml']
+    paths: ['.gitignore','.gitattributes','data/**','launcher/**','engine/**','tests/**','bridge/**','game/**','adapters/godot/**','packaging/**','docs/**','.github/workflows/windows-launcher.yml']
   pull_request:
     branches: [main]
-    paths: ['.gitignore','data/**','launcher/**','engine/**','tests/**','bridge/**','game/**','adapters/godot/**','packaging/**','docs/**','.github/workflows/windows-launcher.yml']
+    paths: ['.gitignore','.gitattributes','data/**','launcher/**','engine/**','tests/**','bridge/**','game/**','adapters/godot/**','packaging/**','docs/**','.github/workflows/windows-launcher.yml']
   workflow_dispatch:
 permissions:
   contents: write
@@ -65,7 +65,7 @@ jobs:
       - name: Set release version
         shell: pwsh
         run: |
-          if ($env:GITHUB_REF_TYPE -eq "tag") { $version = $env:GITHUB_REF_NAME.TrimStart("v") } else { $version = "0.4.1" }
+          if ($env:GITHUB_REF_TYPE -eq "tag") { $version = $env:GITHUB_REF_NAME.TrimStart("v") } else { $version = "0.4.3" }
           "GVL_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - name: Install packaging tools
         shell: pwsh
