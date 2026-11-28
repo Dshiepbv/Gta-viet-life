@@ -273,6 +273,7 @@ class SQLiteLifeStore:
             "bed": ("sleep", {"energy": 35.0, "health": 1.0, "stress": -8.0}),
             "toilet": ("toilet", {"bladder": -90.0}),
             "shower": ("shower", {"hygiene": 85.0, "stress": -5.0}),
+            "sofa": ("leisure", {"energy": 8.0, "mood": 3.0, "stress": -2.0}),
             "gym_equipment": ("exercise", {"fitness": 8.0, "energy": -12.0, "stress": -5.0}),
             "computer": ("study", {"goal_progress": 0.5, "energy": -3.0}),
             "book": ("study", {"goal_progress": 0.5, "mood": 2.0}),
