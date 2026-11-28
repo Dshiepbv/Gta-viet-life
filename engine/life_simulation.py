@@ -269,123 +269,6 @@ class SQLiteLifeStore:
                     (request_id, json.dumps(response, ensure_ascii=False)),
                 )
 
-    def set_player_activity(self, actor_id: str, activity: str, location_id: str,
-                            duration_minutes: int, request_id: Optional[str] = None) -> dict:
-        if not isinstance(actor_id, str) or not actor_id or len(actor_id) > 128:
-            raise ValueError("invalid_actor_id")
-        if not isinstance(activity, str) or activity not in ("work", "commute", "study", "exercise", "socialize", "leisure", "free_time"):
-            raise ValueError("unsupported_player_activity")
-        if not isinstance(location_id, str) or not location_id or len(location_id) > 128:
-            raise ValueError("invalid_activity_location")
-        if isinstance(duration_minutes, bool) or not isinstance(duration_minutes, int) or not 1 <= duration_minutes <= 1440:
-            raise ValueError("invalid_activity_duration")
-        if request_id is not None and (not request_id or len(request_id) > 128):
-            raise ValueError("invalid_request_id")
-        dedup_key = "player_activity:" + request_id if request_id else None
-        with self._lock:
-            if dedup_key:
-                cached = self.store.get_request_result(dedup_key)
-                if cached is not None:
-                    return cached
-            state = self.npcs.get(actor_id)
-            if state is None:
-                raise KeyError("actor_not_found")
-            if state.profile.actor_kind != "player":
-                raise ValueError("manual_activity_only_for_player")
-            state.manual_activity = activity
-            state.manual_activity_until = self.simulation_minute + duration_minutes
-            state.manual_location_id = location_id
-            state.current_activity = activity
-            state.location_id = location_id
-            state.last_transition_minute = self.simulation_minute
-            self.events = []
-            self._record(state, "player_activity_started", {
-                "activity": activity, "location_id": location_id, "duration_minutes": duration_minutes,
-            })
-            result = {"accepted": True, "actor_id": actor_id, "activity": activity,
-                      "location_id": location_id, "until_minute": state.manual_activity_until}
-            self.store.save(self.simulation_minute, [state], self.events,
-                            (dedup_key, result) if dedup_key else None)
-            return result
-
-    def observe_player_state(self, actor_id: str, observed: dict, request_id: Optional[str] = None) -> dict:
-        """Accept adapter-observed player body meters; the game remains authoritative for native player physiology."""
-        if not isinstance(actor_id, str) or not actor_id or len(actor_id) > 128:
-            raise ValueError("invalid_actor_id")
-        if not isinstance(observed, dict) or len(observed) > 12:
-            raise ValueError("invalid_observed_state")
-        if request_id is not None and (not request_id or len(request_id) > 128):
-            raise ValueError("invalid_request_id")
-        allowed = {"hunger", "thirst", "energy", "hygiene", "health", "fitness"}
-        if set(observed) - allowed:
-            raise ValueError("unsupported_observed_field")
-        normalized = {}
-        for key, value in observed.items():
-            if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value <= 100:
-                raise ValueError("invalid_observed_" + key)
-            normalized[key] = float(value)
-        dedup_key = "player_observation:" + request_id if request_id else None
-        with self._lock:
-            if dedup_key:
-                cached = self.store.get_request_result(dedup_key)
-                if cached is not None:
-                    return cached
-            state = self.npcs.get(actor_id)
-            if state is None:
-                raise KeyError("actor_not_found")
-            if state.profile.actor_kind != "player":
-                raise ValueError("observations_only_allowed_for_player_actor")
-            for key, value in normalized.items():
-                setattr(state, key, self._clamp(value))
-            result = {"updated": True, "actor_id": actor_id, "observed": normalized}
-            self.store.save(self.simulation_minute, [state], [],
-                            (dedup_key, result) if dedup_key else None)
-            return result
-
-    def apply_physical_interaction(self, actor_id: str, object_kind: str) -> dict:
-        """Apply canonical human-life consequences only after the adapter confirms a physical object use."""
-        if not isinstance(actor_id, str) or not actor_id or len(actor_id) > 128:
-            raise ValueError("invalid_actor_id")
-        if not isinstance(object_kind, str) or not object_kind or len(object_kind) > 64:
-            raise ValueError("invalid_object_kind")
-        effects = {
-            "food": ("eat", {"hunger": -35.0, "mood": 3.0, "bladder": 8.0}),
-            "meal": ("eat", {"hunger": -35.0, "mood": 3.0, "bladder": 8.0}),
-            "fridge": ("eat", {"hunger": -15.0, "thirst": -15.0, "bladder": 4.0}),
-            "vending_machine": ("drink", {"thirst": -20.0}),
-            "bed": ("sleep", {"energy": 35.0, "health": 1.0, "stress": -8.0}),
-            "toilet": ("toilet", {"bladder": -90.0}),
-            "shower": ("shower", {"hygiene": 85.0, "stress": -5.0}),
-            "sofa": ("leisure", {"energy": 8.0, "mood": 3.0, "stress": -2.0}),
-            "gym_equipment": ("exercise", {"fitness": 8.0, "energy": -12.0, "stress": -5.0}),
-            "computer": ("study", {"goal_progress": 0.5, "energy": -3.0}),
-            "book": ("study", {"goal_progress": 0.5, "mood": 2.0}),
-            "hobby": ("leisure", {"mood": 8.0, "stress": -6.0}),
-            "social_seating": ("socialize", {"social": 15.0, "mood": 4.0}),
-        }
-        key = object_kind.strip().lower().replace("-", "_").replace(" ", "_")
-        if key not in effects:
-            return {"applied": False, "reason": "no_life_effect_mapping", "actor_id": actor_id}
-        activity, changes = effects[key]
-        with self._lock:
-            state = self.npcs.get(actor_id)
-            if state is None:
-                return {"applied": False, "reason": "actor_not_registered", "actor_id": actor_id}
-            for field_name, delta in changes.items():
-                if field_name == "goal_progress":
-                    state.goal_progress = self._clamp(state.goal_progress + delta)
-                else:
-                    setattr(state, field_name, self._clamp(getattr(state, field_name) + delta))
-            state.current_activity = activity
-            state.last_transition_minute = self.simulation_minute
-            self.events = []
-            self._record(state, "physical_activity_completed", {
-                "object_kind": key, "activity": activity, "actor_kind": state.profile.actor_kind,
-            })
-            self.store.save(self.simulation_minute, [state], self.events)
-            return {"applied": True, "actor_id": actor_id, "actor_kind": state.profile.actor_kind,
-                    "activity": activity, "changes": changes}
-
     def pending_commands(self, limit: int = 50) -> List[dict]:
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 200:
             raise ValueError("invalid_command_limit")
@@ -799,6 +682,123 @@ class LifeSimulationEngine:
             request_result = (dedup_key, result) if dedup_key else None
             self.store.save(self.simulation_minute, states_to_save, self.events, request_result)
             return result
+
+    def set_player_activity(self, actor_id: str, activity: str, location_id: str,
+                            duration_minutes: int, request_id: Optional[str] = None) -> dict:
+        if not isinstance(actor_id, str) or not actor_id or len(actor_id) > 128:
+            raise ValueError("invalid_actor_id")
+        if not isinstance(activity, str) or activity not in ("work", "commute", "study", "exercise", "socialize", "leisure", "free_time"):
+            raise ValueError("unsupported_player_activity")
+        if not isinstance(location_id, str) or not location_id or len(location_id) > 128:
+            raise ValueError("invalid_activity_location")
+        if isinstance(duration_minutes, bool) or not isinstance(duration_minutes, int) or not 1 <= duration_minutes <= 1440:
+            raise ValueError("invalid_activity_duration")
+        if request_id is not None and (not request_id or len(request_id) > 128):
+            raise ValueError("invalid_request_id")
+        dedup_key = "player_activity:" + request_id if request_id else None
+        with self._lock:
+            if dedup_key:
+                cached = self.store.get_request_result(dedup_key)
+                if cached is not None:
+                    return cached
+            state = self.npcs.get(actor_id)
+            if state is None:
+                raise KeyError("actor_not_found")
+            if state.profile.actor_kind != "player":
+                raise ValueError("manual_activity_only_for_player")
+            state.manual_activity = activity
+            state.manual_activity_until = self.simulation_minute + duration_minutes
+            state.manual_location_id = location_id
+            state.current_activity = activity
+            state.location_id = location_id
+            state.last_transition_minute = self.simulation_minute
+            self.events = []
+            self._record(state, "player_activity_started", {
+                "activity": activity, "location_id": location_id, "duration_minutes": duration_minutes,
+            })
+            result = {"accepted": True, "actor_id": actor_id, "activity": activity,
+                      "location_id": location_id, "until_minute": state.manual_activity_until}
+            self.store.save(self.simulation_minute, [state], self.events,
+                            (dedup_key, result) if dedup_key else None)
+            return result
+
+    def observe_player_state(self, actor_id: str, observed: dict, request_id: Optional[str] = None) -> dict:
+        """Accept adapter-observed player body meters; the game remains authoritative for native player physiology."""
+        if not isinstance(actor_id, str) or not actor_id or len(actor_id) > 128:
+            raise ValueError("invalid_actor_id")
+        if not isinstance(observed, dict) or len(observed) > 12:
+            raise ValueError("invalid_observed_state")
+        if request_id is not None and (not request_id or len(request_id) > 128):
+            raise ValueError("invalid_request_id")
+        allowed = {"hunger", "thirst", "energy", "hygiene", "health", "fitness"}
+        if set(observed) - allowed:
+            raise ValueError("unsupported_observed_field")
+        normalized = {}
+        for key, value in observed.items():
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value <= 100:
+                raise ValueError("invalid_observed_" + key)
+            normalized[key] = float(value)
+        dedup_key = "player_observation:" + request_id if request_id else None
+        with self._lock:
+            if dedup_key:
+                cached = self.store.get_request_result(dedup_key)
+                if cached is not None:
+                    return cached
+            state = self.npcs.get(actor_id)
+            if state is None:
+                raise KeyError("actor_not_found")
+            if state.profile.actor_kind != "player":
+                raise ValueError("observations_only_allowed_for_player_actor")
+            for key, value in normalized.items():
+                setattr(state, key, self._clamp(value))
+            result = {"updated": True, "actor_id": actor_id, "observed": normalized}
+            self.store.save(self.simulation_minute, [state], [],
+                            (dedup_key, result) if dedup_key else None)
+            return result
+
+    def apply_physical_interaction(self, actor_id: str, object_kind: str) -> dict:
+        """Apply canonical human-life consequences only after the adapter confirms a physical object use."""
+        if not isinstance(actor_id, str) or not actor_id or len(actor_id) > 128:
+            raise ValueError("invalid_actor_id")
+        if not isinstance(object_kind, str) or not object_kind or len(object_kind) > 64:
+            raise ValueError("invalid_object_kind")
+        effects = {
+            "food": ("eat", {"hunger": -35.0, "mood": 3.0, "bladder": 8.0}),
+            "meal": ("eat", {"hunger": -35.0, "mood": 3.0, "bladder": 8.0}),
+            "fridge": ("eat", {"hunger": -15.0, "thirst": -15.0, "bladder": 4.0}),
+            "vending_machine": ("drink", {"thirst": -20.0}),
+            "bed": ("sleep", {"energy": 35.0, "health": 1.0, "stress": -8.0}),
+            "toilet": ("toilet", {"bladder": -90.0}),
+            "shower": ("shower", {"hygiene": 85.0, "stress": -5.0}),
+            "sofa": ("leisure", {"energy": 8.0, "mood": 3.0, "stress": -2.0}),
+            "gym_equipment": ("exercise", {"fitness": 8.0, "energy": -12.0, "stress": -5.0}),
+            "computer": ("study", {"goal_progress": 0.5, "energy": -3.0}),
+            "book": ("study", {"goal_progress": 0.5, "mood": 2.0}),
+            "hobby": ("leisure", {"mood": 8.0, "stress": -6.0}),
+            "social_seating": ("socialize", {"social": 15.0, "mood": 4.0}),
+        }
+        key = object_kind.strip().lower().replace("-", "_").replace(" ", "_")
+        if key not in effects:
+            return {"applied": False, "reason": "no_life_effect_mapping", "actor_id": actor_id}
+        activity, changes = effects[key]
+        with self._lock:
+            state = self.npcs.get(actor_id)
+            if state is None:
+                return {"applied": False, "reason": "actor_not_registered", "actor_id": actor_id}
+            for field_name, delta in changes.items():
+                if field_name == "goal_progress":
+                    state.goal_progress = self._clamp(state.goal_progress + delta)
+                else:
+                    setattr(state, field_name, self._clamp(getattr(state, field_name) + delta))
+            state.current_activity = activity
+            state.last_transition_minute = self.simulation_minute
+            self.events = []
+            self._record(state, "physical_activity_completed", {
+                "object_kind": key, "activity": activity, "actor_kind": state.profile.actor_kind,
+            })
+            self.store.save(self.simulation_minute, [state], self.events)
+            return {"applied": True, "actor_id": actor_id, "actor_kind": state.profile.actor_kind,
+                    "activity": activity, "changes": changes}
 
     def pending_commands(self, limit: int = 50) -> List[dict]:
         return self.store.pending_commands(limit)
