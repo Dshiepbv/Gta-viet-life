@@ -274,6 +274,36 @@ class HostTests(unittest.TestCase):
   self.req("/engine/v1/simulation/advance",{"request_id":"work-hour-1","minutes":60})
   self.assertEqual(self.state.society.account("pay.employee")["balance"],50)
 
+ def test_unfunded_payroll_accrues_and_settles_when_business_is_funded(self):
+  npc={"npc_id":"npc.pending-worker","display_name":"Worker","home_location_id":"home.pending","occupation":"clerk",
+       "schedule":[{"start_minute":0,"end_minute":1440,"activity":"work","location_id":"shop.pending"}]}
+  self.req("/engine/v1/simulation/npcs",{"request_id":"pending-worker-register","npc":npc})
+  self.req("/engine/v1/world/accounts/ensure",{"request_id":"pending-owner","account_id":"pending.owner","owner_id":"owner","opening_balance":0,"allow_negative":True})
+  self.req("/engine/v1/world/accounts/ensure",{"request_id":"pending-cash","account_id":"pending.cash","owner_id":"business","opening_balance":0,"allow_negative":False})
+  self.req("/engine/v1/world/accounts/ensure",{"request_id":"pending-employee","account_id":"pending.employee","owner_id":"npc.pending-worker","opening_balance":0,"allow_negative":True})
+  self.req("/engine/v1/world/buildings",{"request_id":"pending-building","building_id":"pending.building","category":"commercial","name":"Pending Shop",
+       "adapter_maps":{"godot4.reference":{"entrance":"pending.door"}},"interactions":["enter"]})
+  self.req("/engine/v1/world/properties",{"request_id":"pending-property","property_id":"pending.property","building_id":"pending.building",
+       "owner_account_id":"pending.owner","value":1000,"rent":0})
+  self.req("/engine/v1/world/businesses",{"request_id":"pending-business","business_id":"pending.business","property_id":"pending.property",
+       "owner_account_id":"pending.owner","cash_account_id":"pending.cash","category":"retail"})
+  self.req("/engine/v1/world/employment/contracts",{"request_id":"pending-contract","contract_id":"pending.contract",
+       "employee_id":"npc.pending-worker","employee_account_id":"pending.employee","business_id":"pending.business","hourly_wage":50})
+  self.req("/engine/v1/simulation/advance",{"request_id":"pending-work-hour","minutes":60})
+  self.assertEqual(self.state.society.account("pending.employee")["balance"],0)
+  pending=self.req("/engine/v1/world/snapshot")[1]["payroll_accruals"]
+  self.assertEqual(pending[0]["status"],"pending")
+  sync={"request_id":"pending-fund-sync","business_id":"pending.business","adapter_id":"godot4.reference",
+        "cash_balance":100,"inventory":{},"is_open":True}
+  self.assertEqual(self.req("/engine/v1/world/businesses/sync",sync)[0],200)
+  self.assertEqual(self.state.society.account("pending.employee")["balance"],50)
+  self.assertEqual(self.state.society.account("pending.cash")["balance"],50)
+  sync["request_id"]="pending-repeat-sync"
+  self.req("/engine/v1/world/businesses/sync",sync)
+  self.assertEqual(self.state.society.account("pending.cash")["balance"],50)
+  self.assertEqual(self.state.society.account("pending.employee")["balance"],50)
+
+
  def test_family_and_social_relationships_are_canonical_for_player_and_npc(self):
   player={"npc_id":"player.family","display_name":"Player","home_location_id":"home.family",
           "occupation":"citizen","actor_kind":"player","household_id":"household.family"}

@@ -75,7 +75,7 @@ class SocietySimulation:
                     business_id TEXT PRIMARY KEY, property_id TEXT NOT NULL, owner_account_id TEXT NOT NULL,
                     cash_account_id TEXT NOT NULL, category TEXT NOT NULL,
                     inventory_json TEXT NOT NULL, employees_json TEXT NOT NULL,
-                    is_open INTEGER NOT NULL DEFAULT 1,
+                    is_open INTEGER NOT NULL DEFAULT 1, native_cash_balance INTEGER NOT NULL DEFAULT 0,
                     FOREIGN KEY(property_id) REFERENCES world_properties(property_id));
                 CREATE TABLE IF NOT EXISTS world_employment_contracts(
                     contract_id TEXT PRIMARY KEY, employee_id TEXT NOT NULL, employee_account_id TEXT NOT NULL,
@@ -83,6 +83,12 @@ class SocietySimulation:
                     status TEXT NOT NULL DEFAULT 'active', started_minute INTEGER NOT NULL,
                     FOREIGN KEY(employee_account_id) REFERENCES world_accounts(account_id),
                     FOREIGN KEY(business_id) REFERENCES world_businesses(business_id));
+                CREATE TABLE IF NOT EXISTS world_payroll_accruals(
+                    accrual_id TEXT PRIMARY KEY, contract_id TEXT NOT NULL, employee_id TEXT NOT NULL,
+                    employee_account_id TEXT NOT NULL, cash_account_id TEXT NOT NULL,
+                    amount INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
+                    created_minute INTEGER NOT NULL, paid_transaction_id TEXT);
+                CREATE INDEX IF NOT EXISTS idx_payroll_pending ON world_payroll_accruals(status,created_minute);
                 CREATE TABLE IF NOT EXISTS world_social_relationships(
                     actor_id TEXT NOT NULL, target_id TEXT NOT NULL, relation_type TEXT NOT NULL,
                     strength REAL NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'active',
@@ -102,6 +108,12 @@ class SocietySimulation:
                 CREATE TABLE IF NOT EXISTS world_processed_life_events(
                     event_id TEXT PRIMARY KEY, processed_minute INTEGER NOT NULL);
             """)
+            business_columns = {row["name"] for row in self.db.execute("PRAGMA table_info(world_businesses)")}
+            if "native_cash_balance" not in business_columns:
+                self.db.execute("ALTER TABLE world_businesses ADD COLUMN native_cash_balance INTEGER NOT NULL DEFAULT 0")
+                self.db.execute("""UPDATE world_businesses
+                    SET native_cash_balance=COALESCE((SELECT balance FROM world_accounts
+                    WHERE account_id=world_businesses.cash_account_id),0)""")
             self.db.execute("INSERT OR IGNORE INTO world_accounts(account_id,owner_id,balance,allow_negative,currency) VALUES('system:opening_equity','system',0,1,'USD')")
 
     def register_building(self, building_id: str, category: str, name: str,
@@ -422,8 +434,11 @@ class SocietySimulation:
                     raise ValueError("business_identity_conflict")
                 self.db.execute("UPDATE world_businesses SET category=? WHERE business_id=?", (category, business_id))
             else:
-                self.db.execute("""INSERT INTO world_businesses(business_id,property_id,owner_account_id,cash_account_id,category,inventory_json,employees_json)
-                    VALUES(?,?,?,?,?,'{}','[]')""", (business_id, property_id, owner_account_id, cash_account_id, category))
+                cash_balance = int(self.db.execute("SELECT balance FROM world_accounts WHERE account_id=?", (cash_account_id,)).fetchone()["balance"])
+                self.db.execute("""INSERT INTO world_businesses
+                    (business_id,property_id,owner_account_id,cash_account_id,category,inventory_json,employees_json,native_cash_balance)
+                    VALUES(?,?,?,?,?,'{}','[]',?)""",
+                    (business_id, property_id, owner_account_id, cash_account_id, category, cash_balance))
         return {"business_id": business_id, "created": True}
 
     def set_inventory(self, business_id: str, inventory: dict) -> dict:
@@ -469,7 +484,7 @@ class SocietySimulation:
             if cached:
                 return json.loads(cached["response_json"])
             row = self.db.execute(
-                """SELECT b.cash_account_id,p.building_id,bu.adapter_maps_json
+                """SELECT b.cash_account_id,b.native_cash_balance,p.building_id,bu.adapter_maps_json
                 FROM world_businesses b
                 JOIN world_properties p ON p.property_id=b.property_id
                 JOIN world_buildings bu ON bu.building_id=p.building_id
@@ -486,7 +501,7 @@ class SocietySimulation:
             ).fetchone()
             if not account:
                 raise KeyError("business_cash_account_not_found")
-            delta = cash_balance - int(account["balance"])
+            delta = cash_balance - int(row["native_cash_balance"])
             equity_id = "system:business_sync_equity"
             self.db.execute(
                 """INSERT OR IGNORE INTO world_accounts
@@ -501,11 +516,13 @@ class SocietySimulation:
                      {"account_id": equity_id, "amount": -delta}],
                 )
             self.db.execute(
-                "UPDATE world_businesses SET inventory_json=?,is_open=? WHERE business_id=?",
-                (json.dumps(normalized, ensure_ascii=False, sort_keys=True), int(is_open), business_id),
+                "UPDATE world_businesses SET inventory_json=?,is_open=?,native_cash_balance=? WHERE business_id=?",
+                (json.dumps(normalized, ensure_ascii=False, sort_keys=True), int(is_open), cash_balance, business_id),
             )
+            payroll_settled = self._settle_pending_payroll_locked()
             result = {"synced": True, "business_id": business_id, "cash_balance": cash_balance,
-                      "cash_delta": delta, "inventory": normalized, "is_open": is_open}
+                      "cash_delta": delta, "inventory": normalized, "is_open": is_open,
+                      "payroll_settled": payroll_settled}
             self.db.execute(
                 "INSERT INTO world_request_dedup(request_id,response_json) VALUES(?,?)",
                 (request_id, json.dumps(result, ensure_ascii=False)),
@@ -708,8 +725,40 @@ class SocietySimulation:
                      int(self.minute_provider())))
         return {"contract_id": contract_id, "created": True}
 
+    def _settle_pending_payroll_locked(self) -> list:
+        settled = []
+        rows = self.db.execute(
+            "SELECT * FROM world_payroll_accruals WHERE status='pending' ORDER BY created_minute,accrual_id"
+        ).fetchall()
+        for accrual in rows:
+            cash = self.db.execute(
+                "SELECT balance,allow_negative FROM world_accounts WHERE account_id=?",
+                (accrual["cash_account_id"],),
+            ).fetchone()
+            if not cash:
+                continue
+            if not cash["allow_negative"] and int(cash["balance"]) < int(accrual["amount"]):
+                continue
+            transaction_id = "payroll:" + accrual["accrual_id"]
+            transaction = self._post_transaction_locked(
+                transaction_id, "payroll", "Hourly wage for " + accrual["employee_id"],
+                [{"account_id": accrual["cash_account_id"], "amount": -int(accrual["amount"])},
+                 {"account_id": accrual["employee_account_id"], "amount": int(accrual["amount"])}],
+            )
+            self.db.execute(
+                "UPDATE world_payroll_accruals SET status='paid',paid_transaction_id=? WHERE accrual_id=? AND status='pending'",
+                (transaction_id, accrual["accrual_id"]),
+            )
+            settled.append({"accrual_id": accrual["accrual_id"], "transaction_id": transaction_id,
+                            "duplicate": transaction.get("duplicate", False)})
+        return settled
+
+    def settle_pending_payroll(self) -> list:
+        with self.lock, self.db:
+            return self._settle_pending_payroll_locked()
+
     def process_life_event(self, event: dict) -> Optional[dict]:
-        """Idempotently consume durable life events and settle any linked economic consequence."""
+        """Persist payroll obligations first; settle only when the employer cash account can fund them."""
         if not isinstance(event, dict):
             raise ValueError("life_event_object_required")
         event_id = event.get("event_id")
@@ -722,24 +771,32 @@ class SocietySimulation:
             if event.get("event_type") == "work_hour_completed":
                 employee_id = event.get("npc_id")
                 sim_minute = event.get("sim_minute")
+                payload = event.get("payload", {})
+                if not isinstance(payload, dict):
+                    payload = {}
                 if isinstance(employee_id, str) and isinstance(sim_minute, int):
+                    work_total = payload.get("total_work_minutes")
+                    payroll_key = work_total if isinstance(work_total, int) and not isinstance(work_total, bool) else sim_minute
                     contracts = self.db.execute("""SELECT c.contract_id,c.employee_account_id,c.hourly_wage,b.cash_account_id
                         FROM world_employment_contracts c JOIN world_businesses b ON b.business_id=c.business_id
                         WHERE c.employee_id=? AND c.status='active' ORDER BY c.contract_id""", (employee_id,)).fetchall()
-                    transactions = []
+                    accrual_ids = []
                     for contract in contracts:
-                        wage = contract["hourly_wage"]
+                        wage = int(contract["hourly_wage"])
                         if wage <= 0:
                             continue
-                        payload = event.get("payload", {})
-                        work_total = payload.get("total_work_minutes")
-                        payroll_key = work_total if isinstance(work_total, int) else sim_minute
-                        txid = "payroll:" + contract["contract_id"] + ":" + employee_id + ":" + str(payroll_key)
-                        transactions.append(self._post_transaction_locked(txid, "payroll",
-                            "Hourly wage for " + employee_id,
-                            [{"account_id": contract["cash_account_id"], "amount": -wage},
-                             {"account_id": contract["employee_account_id"], "amount": wage}]))
-                    result = {"employee_id": employee_id, "transactions": transactions}
+                        accrual_id = "payroll-accrual:" + hashlib.sha256(
+                            (contract["contract_id"] + "|" + employee_id + "|" + str(payroll_key)).encode("utf-8")
+                        ).hexdigest()
+                        self.db.execute("""INSERT OR IGNORE INTO world_payroll_accruals
+                            (accrual_id,contract_id,employee_id,employee_account_id,cash_account_id,amount,status,created_minute)
+                            VALUES(?,?,?,?,?,?,'pending',?)""",
+                            (accrual_id, contract["contract_id"], employee_id, contract["employee_account_id"],
+                             contract["cash_account_id"], wage, sim_minute))
+                        accrual_ids.append(accrual_id)
+                    settled = self._settle_pending_payroll_locked()
+                    result = {"employee_id": employee_id, "accrual_ids": accrual_ids,
+                              "settled": settled}
             self.db.execute("INSERT INTO world_processed_life_events(event_id,processed_minute) VALUES(?,?)",
                             (event_id, int(self.minute_provider())))
             return result or {"event_id": event_id, "processed": True}
@@ -772,6 +829,7 @@ class SocietySimulation:
             self.db.execute("UPDATE world_properties SET tenant_account_id=NULL,lease_until=0 "
                             "WHERE tenant_account_id IS NOT NULL AND lease_until>0 AND lease_until<=?",
                             (now,))
+            self._settle_pending_payroll_locked()
 
     def snapshot(self) -> dict:
         with self.lock:
@@ -792,5 +850,7 @@ class SocietySimulation:
             traffic = [dict(r) for r in self.db.execute("SELECT * FROM world_traffic_segments ORDER BY segment_id")]
             employment = [dict(r) for r in self.db.execute("SELECT * FROM world_employment_contracts ORDER BY contract_id")]
             relationships = [dict(r) for r in self.db.execute("SELECT * FROM world_social_relationships ORDER BY actor_id,target_id")]
+            payroll_accruals = [dict(r) for r in self.db.execute("SELECT * FROM world_payroll_accruals ORDER BY created_minute,accrual_id")]
             return {"buildings": buildings, "objects": objects, "properties": properties, "businesses": businesses,
-                    "employment": employment, "relationships": relationships, "traffic": traffic}
+                    "employment": employment, "payroll_accruals": payroll_accruals,
+                    "relationships": relationships, "traffic": traffic}

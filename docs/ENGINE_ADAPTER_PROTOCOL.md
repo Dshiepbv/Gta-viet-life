@@ -254,3 +254,8 @@ The Godot reference adapter now registers `player.godot` through the same actor 
 ### Trait-driven behavior
 
 NPC trait tags are now behavior inputs, not dialogue decoration. Extroversion and introversion alter social recovery, anxiety and calm alter work stress, curiosity and discipline alter study progress, ambition and discipline alter career progress, and shared traits influence autonomous relationship formation. Direct player interactions also account for friendly/kind/introverted traits while preserving bounded relationship scores.
+
+
+### Payroll accrual and native cash reconciliation
+
+Hourly work creates a durable payroll accrual before settlement. If the employer account cannot fund the wage, the obligation remains pending rather than failing the simulation clock. Funding received through a later native business snapshot settles the pending accrual. Business snapshots reconcile against the last native cash observation, not the post-payroll ledger balance, so repeated unchanged snapshots cannot reverse payroll transactions.
