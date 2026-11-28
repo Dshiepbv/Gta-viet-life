@@ -93,6 +93,9 @@ class NPCProfile:
         for previous, current in zip(ordered, ordered[1:]):
             if current.start_minute < previous.end_minute:
                 raise ValueError("overlapping_schedule_blocks")
+        # JSON round trips turn tuples into lists; one canonical type keeps equality stable after restart.
+        for name in ("traits", "schedule", "knowledge"):
+            object.__setattr__(self, name, tuple(getattr(self, name)))
 
 
 @dataclass
@@ -361,6 +364,11 @@ class LifeSimulationEngine:
                 return block.activity, block.location_id
         return "free_time", state.location_id
 
+    def _begin_batch(self) -> None:
+        """Start a new event/command batch so an operation never re-submits an earlier one."""
+        self.events = []
+        self.commands = []
+
     def _record(self, state: NPCState, event_type: str, payload: dict) -> None:
         event_id = uuid.uuid4().hex
         self.events.append({
@@ -555,8 +563,7 @@ class LifeSimulationEngine:
                 cached = self.store.get_request_result(dedup_key)
                 if cached is not None:
                     return cached
-            self.events = []
-            self.commands = []
+            self._begin_batch()
             for _ in range(minutes):
                 self.simulation_minute += 1
                 for state in self.npcs.values():
@@ -592,6 +599,7 @@ class LifeSimulationEngine:
             state = self.npcs.get(npc_id)
             if state is None:
                 raise KeyError("npc_not_found")
+            self._begin_batch()
             if affinity_delta:
                 state.affinity[player_id] = round(max(-100.0, min(100.0,
                     state.affinity.get(player_id, 0.0) + affinity_delta * 5.0)), 3)
@@ -696,7 +704,7 @@ class LifeSimulationEngine:
                 })
                 player_state.memories = player_state.memories[-100:]
                 states_to_save.append(player_state)
-            self.events = []
+            self._begin_batch()
             result = {"npc_id": npc_id, "interaction": interaction, "affinity": state.affinity[player_id],
                       "social_need": state.social, "memory_recorded": True,
                       "player_memory_recorded": player_state is not None,
@@ -728,7 +736,7 @@ class LifeSimulationEngine:
             previous = state.work_minutes
             state.work_minutes += duration_minutes
             completed_hours = state.work_minutes // 60 - previous // 60
-            self.events = []
+            self._begin_batch()
             for index in range(completed_hours):
                 boundary = ((previous // 60) + index + 1) * 60
                 self._record(state, "work_hour_completed", {
@@ -772,7 +780,7 @@ class LifeSimulationEngine:
             state.current_activity = activity
             state.location_id = location_id
             state.last_transition_minute = self.simulation_minute
-            self.events = []
+            self._begin_batch()
             self._record(state, "player_activity_started", {
                 "activity": activity, "location_id": location_id, "duration_minutes": duration_minutes,
             })
@@ -853,7 +861,7 @@ class LifeSimulationEngine:
                     setattr(state, field_name, self._clamp(getattr(state, field_name) + delta))
             state.current_activity = activity
             state.last_transition_minute = self.simulation_minute
-            self.events = []
+            self._begin_batch()
             self._record(state, "physical_activity_completed", {
                 "object_kind": key, "activity": activity, "actor_kind": state.profile.actor_kind,
             })

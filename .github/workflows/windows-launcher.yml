@@ -3,10 +3,10 @@ on:
   push:
     branches: [main]
     tags: ['v*']
-    paths: ['launcher/**','engine/**','bridge/**','game/**','adapters/godot/**','packaging/**','docs/**','.github/workflows/windows-launcher.yml']
+    paths: ['launcher/**','engine/**','tests/**','bridge/**','game/**','adapters/godot/**','packaging/**','docs/**','.github/workflows/windows-launcher.yml']
   pull_request:
     branches: [main]
-    paths: ['launcher/**','engine/**','bridge/**','game/**','adapters/godot/**','packaging/**','docs/**','.github/workflows/windows-launcher.yml']
+    paths: ['launcher/**','engine/**','tests/**','bridge/**','game/**','adapters/godot/**','packaging/**','docs/**','.github/workflows/windows-launcher.yml']
   workflow_dispatch:
 permissions:
   contents: write
@@ -69,6 +69,8 @@ jobs:
           "GVL_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - name: Test Engine Host
         run: python -m unittest discover -s engine/tests -v
+      - name: Test GTA adapter wire contract and C# send logic
+        run: python -m unittest discover -s tests -v
       - name: Test Vietnamese dialogue context integration
         working-directory: bridge
         run: python -m unittest test_engine_context -v

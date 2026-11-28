@@ -319,7 +319,8 @@ def make_handler(bridge: Bridge):
                     self._send("not found", 404)
             except Exception as e:
                 print(f"[http] lỗi {self.path}: {e}")
-                self._send(f"none\n0\n", 200)
+                # /gvl_event has a durable sender: report failure so the batch is not silently discarded.
+                self._send(f"none\n0\n", 500 if self.path == "/gvl_event" else 200)
 
     return Handler
 

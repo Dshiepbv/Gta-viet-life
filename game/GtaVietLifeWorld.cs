@@ -2784,9 +2784,9 @@ public class GtaVietLifeWorld : Script
         try
         {
             AppDomain d = AppDomain.CurrentDomain;
-            object connected = d.GetData("GVL.Engine.Connected");
+            // Core giu bao cao ca lam trong hang ben va gui khi engine ket noi lai.
             Action<string, string> post = d.GetData("GVL.Engine.WorldPost") as Action<string, string>;
-            if (!(connected is bool) || !(bool)connected || post == null) return;
+            if (post == null) return;
             string body = "{\"request_id\":\"" + Guid.NewGuid().ToString("N") +
                 "\",\"actor_id\":\"player.main\",\"duration_minutes\":" +
                 durationMinutes.ToString(CultureInfo.InvariantCulture) + "}";

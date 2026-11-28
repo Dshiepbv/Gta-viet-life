@@ -1,0 +1,124 @@
+# Kiểm toán mã nguồn M0–M6 (2026-11-28, main tại 16477fb)
+
+## Cách kiểm và giới hạn
+
+- Đã chạy: 63 test engine pass, 2 test bridge pass (Python 3.15.0 trên máy; CI ghim 3.11). Một ca đối chứng cố ý sai trả FAILED.
+- Đã chạy lại các ca tái hiện lỗi engine R1–R21 và B1.
+- Chưa chạy: build C# (máy không có `dotnet`), GTA V (không thấy cài đặt ở đường dẫn phổ biến và registry), Godot, Launcher, installer. Trạng thái "CI #61 xanh" chưa kiểm được (máy không có `gh`).
+- Nhãn bằng chứng: [T] tái hiện bằng script; [Đ] đọc mã và đã đối chiếu lần hai; [S] đọc mã một lần, chưa đối chiếu lại.
+- Chưa đọc hết: một số đoạn của `game/GtaVietLifeWorld.cs` (props, vào nhà, vẽ icon), XAML, `android/`, `bridge/stt.py`, `tts.py`, `overlay.py`, `dashboard.html`, một phần `adapters/godot`.
+- Viết tắt: Core, World, Eco, Pers, DS là `game/GtaVietLife{Core,World,Economy,Personal,DoiSong}.cs`; Chat là `game/GtaVietLife.cs`; LS là `engine/life_simulation.py`; SOC là `engine/society.py`.
+
+## 1. Bảng trạng thái
+
+| Module | Thực trạng code | Lỗ hổng cốt lõi | Hành động tiếp theo | Sẵn sàng |
+|---|---|---|---|---|
+| M0 Life Core | Logic thật: LS (nhu cầu, lịch, trí nhớ, SQLite), nhu cầu phía game ở World và DS. `engine/world.py`, `contracts.py`, `adapters/base.py` chỉ có test dùng | Đăng ký lại NPC sau restart bị từ chối; ghi trí nhớ thoại làm mất lệnh đang chờ; migration đứt giữa chừng làm DB không mở được | Sửa E2, E3, E7; bỏ hoặc nối khung `world.py` | Chạy được offline, chưa chạy trong game |
+| M1 Bridge/Clock | Logic thật: Core (HTTP, handshake, outbox, đồng hồ), `engine/host.py` | Chặn mất báo cáo nhu cầu và công việc của người chơi; hàng đợi gửi bị kẹt; lùi giờ rồi tính lại; 5 bộ đếm ngày riêng | Sửa E1, E5, E6; một nguồn thời gian | Chưa thông |
+| M2 Social | Logic thật: bridge (LLM, `memory.db`), Chat, Pers, SOC quan hệ | Quan hệ lưu 3 nơi, trí nhớ 2 nơi; `news()` rỗng gây treo khóa; một số khóa AppDomain ghi mà không ai đọc | Chọn engine làm chủ quan hệ và trí nhớ; sửa B1 | Chạy rời rạc |
+| M3 World/Objects | Logic thật: World, catalog và outbox ở SOC | Lệnh không hết hạn, không lọc theo adapter; engine phát lệnh toilet/shower mà GTA báo không hỗ trợ; đăng ký lại vật thể xóa state | Thêm hạn lệnh; khớp danh sách hoạt động hai phía | Chưa kiểm va chạm, nội thất trong game |
+| M4 Economy/Work | Logic thật hai phía: Eco, World; sổ kép SQLite ở SOC | Sổ không phải nguồn chính: số dư đầu kỳ cộng trùng hoặc bị bỏ; trùng ID khác nội dung vẫn báo thành công; không kiểm tiền tệ, tràn số. Mua, thuê, bán, hợp đồng lao động chưa có script GTA nào gọi | Sửa E4, E8; chốt quyền sở hữu số dư | Chưa tin được số liệu |
+| M5 Compat/Host | HTTP host thật; adapter Godot là bản tham chiếu hẹp | Mở được 2 host cùng cổng và DB; token ngoài ASCII gây TypeError; protocol chỉ kiểm lúc handshake; tài liệu giao thức lệch code | Khóa một tiến trình; đồng bộ tài liệu | Chưa chạy host thật cùng game |
+| M6 Integration/Launcher | Logic thật: `launcher/`, `packaging/`, workflow CI build đủ 6 script | `install.bat` chỉ cài bridge; đóng Launcher có thể để lại tiến trình; checksum không ký; không có unit test C# | Build thử tại máy; test đóng và cập nhật | Chưa chạy |
+
+## 2. Lỗi theo mức ưu tiên
+
+Bảng mô tả mã tại `16477fb`. Trạng thái sửa xem mục 6.
+
+### P0: mất tiền, mất dữ liệu, treo script, đường M0–M1–M4 không thông
+
+| Mã | Lỗi | Hậu quả | Vị trí | Bằng chứng |
+|---|---|---|---|---|
+| G1 | `FadeWait` tự xếp lại vào hàng đợi đang được `while` rút | Chọn viện phí hoặc giải trí: đã trừ tiền, vòng lặp không thoát trong một tick | DS:173-177, 951-953 | [Đ] |
+| G2 | `RestoreWallet` đặt `Game.Player.Money` bằng số đã lưu khi gặp nhân vật | Mất tiền GTA cộng vào trong lúc không điều khiển nhân vật đó | Pers:303-325 | [Đ] |
+| G3 | World đọc save trong một `try` chung, ghi đè trực tiếp, không bản sao | Một dòng lỗi làm mất phần sau; lần lưu kế tiếp ghi đè file | World:4710, 4760-4841 | [Đ] |
+| E1 | `PostWorldRequest` chỉ nhận đường dẫn `/engine/v1/world/` | `actors/observe` và `work-completed` bị bỏ im lặng | Core:646-647; World:374, 2793 | [Đ] |
+| E2 | Sau restart, đăng ký lại hồ sơ y hệt bị `npc_identity_conflict` | Dừng đồng bộ cư dân và số dư ví | LS:186, 350; Core:538-542, 561-594 | [T] R1 |
+| E3 | `record_dialogue_memory` gửi lại danh sách lệnh cũ | Mọi lệnh NPC đang chờ bị đánh dấu superseded | LS:587-621 | [T] R2 |
+| E4 | Số dư đầu kỳ và event cùng đổ vào một tài khoản | Ví thật 1500 thành 2000 hoặc 500 | SOC:329-335, 644-661; Core:261-279 | [T] R11 |
+| E5 | Lỗi HTTP vĩnh viễn bị đưa lại đầu hàng; hàng chỉ ở RAM | Mọi gửi sau đó bị chặn; ngoại tuyến thì mất | Core:644-691 | [Đ], R21 |
+| E6 | Giờ lùi thì đặt lại mốc, không có định danh save | Tải save cũ làm mô phỏng và có thể trả lương lại | host.py:59-85 | [T] R3, R4 |
+| E7 | DDL commit trước khi ghi `schema_version` | Đứt giữa chừng thì lần sau không mở được DB | LS:143-170 | [T] R14 |
+
+### P1: sai số liệu hoặc khai thác được
+
+| Mã | Lỗi | Vị trí | Bằng chứng |
+|---|---|---|---|
+| E8 | Cùng `transaction_id` khác nội dung báo thành công; không kiểm tiền tệ; tràn số thành REAL; đặt trước ID `payroll:` làm lương đánh dấu đã trả mà không có tiền; bán lại cùng lệnh báo thiếu hàng | SOC:285-299, 552-558, 742-751 | [T] R5–R9 |
+| E9 | Lưu thất bại vẫn đổi bộ nhớ; ack commit trước hiệu ứng; `request_id` trùng chạy society hai lần | LS:560-569; SOC:237-258; host.py:27-33 | [T] R13, R15, R16 |
+| E10 | Mở được 2 host cùng cổng và DB; không bật WAL, foreign_keys, busy_timeout, backup | host.py:298-322; LS:134-135 | [T] R17 |
+| E11 | Dùng chung không gian dedup giữa các endpoint world | SOC:177, 481 | [T] R10 |
+| E12 | Ngữ cảnh quá 16000 ký tự trả prompt rỗng | `bridge/engine_context.py:7` | [T] R19 |
+| E13 | Một event lỗi làm cả lô bị từ chối và gửi lại mãi | SOC:618-661; Core:290-342 | [T] R12 phía engine; chưa biết C# có sinh ra không |
+| E14 | Dashboard nghe `0.0.0.0:5588`, GET `/data` không cần PIN, PIN rỗng thì POST mở | `bridge/dashboard.py:108-133, 173` | [S] |
+| B1 | `news()` nhận kết quả rỗng thì không nhả khóa, `stop()` treo | `bridge/main.py:146-148, 175` | [T] B1 |
+| G4 | Bán bất động sản đang thế chấp không kiểm khoản vay; phần nợ thiếu khi phát mãi bị bỏ | World:969-981, 998-1013; Eco:304 | [Đ] |
+| G5 | `Core.sav` mất hoặc reset thì seq quay lại, engine bỏ event mới vì coi là trùng | Core:395-405; SOC:634-642 | [T] R11 phần engine |
+| G6 | Gọi `Game.Player.Money` trong `Task.Run` | Core:265, 519-540 | [Đ], hậu quả trong game chưa đo |
+| G7 | Hợp đồng B2B giữ chỉ số quán; đóng quán thì trỏ sang quán khác | World:726, 1240-1251 | [S] |
+
+### P2: hành vi game
+
+| Mã | Lỗi | Vị trí | Bằng chứng |
+|---|---|---|---|
+| G8 | NPC đứng đơ khi `/stop` lỗi hoặc nói chuyện người thứ hai trước khi thả người đầu | Chat:201-205, 229, 633-637 | [S] |
+| G9 | `Residents.txt` cũ sống qua phiên, ped khác có thể nhận danh tính cư dân | World:3764-3765 | [S] |
+| G10 | Xe bị tịch thu vẫn gọi lại được từ garage với giá thường | Eco:543-548; Pers:544 | [S] |
+| G11 | Menu của các script chồng nhau, một phím số chạy hai hành động tốn tiền | World:4326 | [S] |
+| G12 | Cư dân do engine điều khiển không được trả về lịch gốc khi engine tắt | World:3624, 3707-3711 | [S] |
+| G13 | Gọi tài xế thất bại chỉ hoàn một phần phí | World:2937-3018 | [S] |
+
+## 3. Nguồn dữ liệu đang lệch
+
+| Dữ kiện | Nơi đang giữ |
+|---|---|
+| Tiền mặt, ngân hàng | Ví GTA; `GtaVietLifeEconomy.sav`; `wallet_SPx` trong Personal.sav; tài khoản `legacy:*` trong SQLite |
+| Tiền quán | World.sav; tài khoản ledger; `native_cash_balance` |
+| Quan hệ | `memory.db` (affinity); `NPCState.affinity`; `world_social_relationships` |
+| Trí nhớ | `memory.db`; `NPCState.memories` (tối đa 100) |
+| Ngày, giờ | Core, Economy, Personal, DoiSong, World đếm riêng; engine giữ `simulation_minute` |
+| Danh tính NPC | bridge gán nghề ngẫu nhiên; engine ghi "resident" |
+| Nơi lưu | 6 file `.sav`, `Residents.txt`, `Dash.json`, 2 file SQLite, Apps Script properties |
+
+Không nơi nào quay lui khi người chơi tải save GTA cũ. Ngân hàng, nợ và quán dùng chung cho cả 3 nhân vật; chỉ ví tiền mặt tách riêng.
+
+## 4. Kế hoạch đưa M0 + M1 + M4 chạy thông
+
+| Đợt | Việc | Tiêu chí nghiệm thu |
+|---|---|---|
+| 1. Thông đường ống (làm được trên máy này) | E1, E2, E3, E5, G1; thêm test đối chiếu mọi đường dẫn C# gửi với bộ lọc và route của host | Test mới fail trên code hiện tại, pass sau sửa; CI build 6 script pass |
+| 2. Lưu bền | E7, E10, G3, G2: migration một giao dịch, khóa một tiến trình, WAL, backup, ghi file nguyên tử | Ngắt tiến trình giữa lúc lưu và migration vẫn mở lại được |
+| 3. Sổ cái và thời gian | E4, E6, E8, G5, G6 theo `SHARED_STATE_CONTRACT.md` | Phát lại cùng event không đổi số dư; tải save cũ không mô phỏng lại; số dư bằng tổng bút toán |
+| 4. Chạy thật | Máy có GTA V, ghi build game và phiên bản SHVDN; ngủ, đi làm, mua bán, thoát, vào lại | Log script hook không lỗi; ví trong game khớp sổ cái sau mỗi bước |
+
+## 5. Đặc tả M6: Launcher độc lập (yêu cầu chốt 2026-11-28)
+
+Launcher chạy độc lập với GTA V và Life Simulator Runtime. Người dùng không bao giờ phải chép file `.cs` hay chạy `install.bat`.
+
+| Yêu cầu | Hiện trạng mã (đọc 2026-11-28, chưa chạy) | Khoảng cách |
+|---|---|---|
+| Bộ gồm `GTA Viet Life Launcher.exe`, `Setup.exe`, Updater, `manifest.json`, `config.json` | Có `GtaVietLife.Launcher.exe`, `GtaVietLife-Setup-<ver>.exe`, `GtaVietLife.Updater.exe`; cấu hình Launcher là `launcher.json`; `config.json` chỉ dành cho bridge | Chưa có `manifest.json`; tên file chưa đúng yêu cầu |
+| Tự kiểm môi trường và tương thích GTA V | `RuntimeManager.InstallAdapter` kiểm DLL script hook, .NET 4.8, VC++, log Script Hook V | Người dùng phải tự chọn file exe; chưa có bảng build được hỗ trợ; log chưa khớp build vẫn báo sẵn sàng |
+| Cập nhật qua staging và checksum | `UpdateService` tải zip, so SHA-256; Updater giải nén vào thư mục tạm rồi đổi chỗ | Checksum lấy cùng release, không ký; không kiểm từng file theo manifest |
+| Rollback nguyên tử | Chỉ khôi phục khi đổi thư mục bị lỗi; script trong game chép từng file, có backup | Bản mới khởi động hỏng không được quay lui; bộ script có thể cài dở; thư mục gỡ cài đặt của Inno có thể mất sau cập nhật (chưa kiểm) |
+| Không ghi đè save người dùng | Chỉ chép `.cs`, icon và `.ini` còn thiếu; dữ liệu engine ở `%LOCALAPPDATA%\GtaVietLife\Data` | Có sửa cổng trong `GtaVietLifeCore.ini` (có backup); chưa có test chứng minh không đụng `.sav` và SQLite |
+| Quản lý tiến trình và heartbeat | Poll 3 giây, tự khởi động lại host và bridge | Đóng cửa sổ không chờ dừng xong; kill theo tên tiến trình |
+| Xuất gói log | Gộp log thành một file `.txt` trên Desktop, che khóa bí mật | Chưa phải gói nén; thiếu `GtaVietLifeCore.deadletter.log`; vị trí log game chưa thống nhất |
+| Khởi chạy game tự động | Nút Play chạy thẳng exe đã chọn | Chưa tự chạy sau khi sẵn sàng; chưa kiểm với Steam, Epic, Rockstar Launcher |
+
+Nghiệm thu M6: máy sạch cài bằng Setup, một thao tác là vào game; ngắt giữa lúc cập nhật vẫn còn bản chạy được; mã băm mọi file save trước và sau cập nhật không đổi.
+
+## 6. Tiến độ sửa lỗi
+
+| Mã | Trạng thái 2026-11-28 | Test |
+|---|---|---|
+| E1 | Đã sửa, chưa chạy trong game. Báo cáo ca làm được xếp hàng cả khi ngoại tuyến | `tests/test_adapter_wire_contract.py` |
+| E2 | Đã sửa; một hồ sơ bị từ chối không còn chặn hồ sơ khác và số dư ví | `engine/tests/test_phase1_regressions.py`, wire contract |
+| E3 | Đã sửa | `test_phase1_regressions.py` |
+| E5 | Đã sửa cho cả ba hàng gửi (world, event engine, event bridge). Yêu cầu bị loại ghi vào `GtaVietLifeCore.deadletter.log` | `tests/test_csharp_logic.py` cho lớp thuần; đoạn gọi HTTP trong Core chưa có test chạy |
+| E13 | Đã sửa (cùng loại E5): engine trả danh sách `rejected` thay vì từ chối cả lô | `test_phase1_regressions.py` |
+| G1 | Đã sửa, chưa chạy trong game | `test_csharp_logic.py` |
+
+Tác dụng phụ cần xử lý ở đợt 2: chỉ số cơ thể người chơi nay tới engine định kỳ nên `request_dedup` tăng liên tục (chưa đo).
+
+Các mã khác vẫn mở, gồm G2 (Personal ghi đè ví GTA, trái hợp đồng đã chốt) và E4, E6 (đợt 3).

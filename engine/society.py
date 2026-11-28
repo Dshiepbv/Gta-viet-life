@@ -615,51 +615,69 @@ class SocietySimulation:
             raise ValueError("invalid_event_batch")
         accepted = 0
         duplicates = 0
+        rejected = []
         with self.lock, self.db:
             self.db.execute("INSERT OR IGNORE INTO world_accounts(account_id,owner_id,balance,allow_negative,currency) VALUES('legacy:player_cash','player.main',0,1,'USD')")
             self.db.execute("INSERT OR IGNORE INTO world_accounts(account_id,owner_id,balance,allow_negative,currency) VALUES('legacy:player_bank','player.main',0,1,'USD')")
             self.db.execute("INSERT OR IGNORE INTO world_accounts(account_id,owner_id,balance,allow_negative,currency) VALUES('system:legacy_counterparty','system',0,1,'USD')")
             for event in events:
-                if not isinstance(event, dict):
-                    raise ValueError("invalid_legacy_event")
-                seq = event.get("sequence")
-                if isinstance(seq, bool) or not isinstance(seq, int) or seq < 0:
-                    raise ValueError("invalid_event_sequence")
-                event_type = event.get("event_type")
-                if not isinstance(event_type, str) or not event_type or len(event_type) > 96:
-                    raise ValueError("invalid_event_type")
-                raw = event.get("data", "")
-                if not isinstance(raw, str) or len(raw) > 4000:
-                    raise ValueError("invalid_event_payload")
-                event_id = source_id + ":" + str(seq)
-                payload = {"sequence": seq, "data": raw, "source": source_id}
-                cur = self.db.execute("""INSERT OR IGNORE INTO world_event_journal
-                    (event_id,event_type,actor_id,payload_json,sim_minute) VALUES(?,?,?,?,?)""",
-                    (event_id, event_type, "player.main", json.dumps(payload, ensure_ascii=False),
-                     int(event.get("sim_minute", self.minute_provider()))))
-                if cur.rowcount == 0:
-                    duplicates += 1
+                self.db.execute("SAVEPOINT legacy_event")
+                try:
+                    imported = self._import_legacy_event_locked(source_id, event)
+                except (ValueError, TypeError, KeyError, OverflowError, sqlite3.IntegrityError) as exc:
+                    # One malformed event is reported back instead of blocking every event behind it.
+                    self.db.execute("ROLLBACK TO legacy_event")
+                    self.db.execute("RELEASE legacy_event")
+                    sequence = event.get("sequence") if isinstance(event, dict) else None
+                    rejected.append({"sequence": sequence, "error": str(exc).strip("'")})
                     continue
-                accepted += 1
-                if event_type in ("ledger.income", "ledger.expense"):
-                    fields = {}
-                    for item in raw.split(";"):
-                        if "=" in item:
-                            key, value = item.split("=", 1)
-                            fields[key.strip()] = value.strip()
-                    try:
-                        amount = int(fields.get("amount", "0"))
-                    except ValueError:
-                        amount = 0
-                    if amount > 0:
-                        sign = amount if event_type == "ledger.income" else -amount
-                        tx_id = "legacy-ledger:" + source_id + ":" + str(seq)
-                        account_id = "legacy:player_bank" if fields.get("acct", "cash") == "bank" else "legacy:player_cash"
-                        self._post_transaction_locked(tx_id, fields.get("cat", "legacy"),
-                            fields.get("note", event_type), [
-                                {"account_id": account_id, "amount": sign},
-                                {"account_id": "system:legacy_counterparty", "amount": -sign}])
-        return {"accepted": accepted, "duplicates": duplicates, "source": source_id}
+                self.db.execute("RELEASE legacy_event")
+                if imported:
+                    accepted += 1
+                else:
+                    duplicates += 1
+        return {"accepted": accepted, "duplicates": duplicates, "rejected": rejected, "source": source_id}
+
+    def _import_legacy_event_locked(self, source_id: str, event: dict) -> bool:
+        """Journal one legacy event and its ledger effect; False means it was already imported."""
+        if not isinstance(event, dict):
+            raise ValueError("invalid_legacy_event")
+        seq = event.get("sequence")
+        if isinstance(seq, bool) or not isinstance(seq, int) or seq < 0:
+            raise ValueError("invalid_event_sequence")
+        event_type = event.get("event_type")
+        if not isinstance(event_type, str) or not event_type or len(event_type) > 96:
+            raise ValueError("invalid_event_type")
+        raw = event.get("data", "")
+        if not isinstance(raw, str) or len(raw) > 4000:
+            raise ValueError("invalid_event_payload")
+        event_id = source_id + ":" + str(seq)
+        payload = {"sequence": seq, "data": raw, "source": source_id}
+        cur = self.db.execute("""INSERT OR IGNORE INTO world_event_journal
+            (event_id,event_type,actor_id,payload_json,sim_minute) VALUES(?,?,?,?,?)""",
+            (event_id, event_type, "player.main", json.dumps(payload, ensure_ascii=False),
+             int(event.get("sim_minute", self.minute_provider()))))
+        if cur.rowcount == 0:
+            return False
+        if event_type in ("ledger.income", "ledger.expense"):
+            fields = {}
+            for item in raw.split(";"):
+                if "=" in item:
+                    key, value = item.split("=", 1)
+                    fields[key.strip()] = value.strip()
+            try:
+                amount = int(fields.get("amount", "0"))
+            except ValueError:
+                amount = 0
+            if amount > 0:
+                sign = amount if event_type == "ledger.income" else -amount
+                tx_id = "legacy-ledger:" + source_id + ":" + str(seq)
+                account_id = "legacy:player_bank" if fields.get("acct", "cash") == "bank" else "legacy:player_cash"
+                self._post_transaction_locked(tx_id, fields.get("cat", "legacy"),
+                    fields.get("note", event_type), [
+                        {"account_id": account_id, "amount": sign},
+                        {"account_id": "system:legacy_counterparty", "amount": -sign}])
+        return True
 
     def set_social_relationship(self, actor_id: str, target_id: str,
                                 relation_type: str, strength: float = 0.0,

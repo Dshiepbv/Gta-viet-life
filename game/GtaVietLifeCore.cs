@@ -35,7 +35,12 @@ public class GtaVietLifeCore : Script
     bool engineCommandPolling, worldCommandPolling;
     readonly object EngineCommandLock = new object();
     readonly object WorldPostQueueLock = new object();
-    readonly Queue<KeyValuePair<string, string>> worldPostQueue = new Queue<KeyValuePair<string, string>>();
+    readonly GvlPostQueue worldPostQueue = new GvlPostQueue();
+    volatile bool worldOutboxDirty;
+    // Event tien cua engine khong bao gio bi bo vi loi 5xx; bridge chi la ban sao nen co gioi han.
+    readonly GvlBatchIsolation engineBatch = new GvlBatchIsolation(false);
+    readonly GvlBatchIsolation bridgeBatch = new GvlBatchIsolation(true);
+    long worldPostNotBeforeTicks;
     bool worldPostWorker;
     readonly HashSet<string> queuedEngineCommandIds = new HashSet<string>();
     bool forward = true, logEvents = true, forwarding;
@@ -166,6 +171,7 @@ public class GtaVietLifeCore : Script
         }
         if (hostConnected && now > nextEngineEventForward) { nextEngineEventForward = now + 5000; ForwardEngineEvents(); }
         if (forward && now > nextForward) { nextForward = now + 3000; Forward(); }
+        if (worldOutboxDirty) { worldOutboxDirty = false; Save(); }
         if (now > nextSave) { nextSave = now + 120000; Save(); }
     }
 
@@ -219,12 +225,12 @@ public class GtaVietLifeCore : Script
         {
             if (forwarding || outbox.Count == 0) return;
             forwarding = true;
-            int n = Math.Min(100, outbox.Count);
+            int n = GvlSendRules.BatchCount(outbox, bridgeBatch.Limit, GvlSendRules.MaxBatchBytes);
             batch = outbox.GetRange(0, n).ToArray();
         }
         Task.Run(delegate
         {
-            bool ok = false;
+            bool remove = false;
             try
             {
                 NameValueCollection c = new NameValueCollection();
@@ -235,22 +241,22 @@ public class GtaVietLifeCore : Script
                     wc.Proxy = null; wc.Encoding = Encoding.UTF8;
                     wc.UploadValues(server + "/gvl_event", "POST", c);
                 }
-                ok = true;
+                remove = true;
+                lock (OutboxLock) bridgeBatch.Succeeded(batch.Length);
             }
-            catch (Exception ex) { Log("forward event loi: " + ex.Message); }
+            catch (Exception ex)
+            {
+                int status = HttpStatusOf(ex);
+                bool drop;
+                lock (OutboxLock) drop = bridgeBatch.Failed(status, batch.Length);
+                if (drop) { DeadLetter("bridge.gvl_event", status, ex.Message, string.Join("\n", batch)); remove = true; }
+                Log("forward event loi (HTTP " + status + "): " + ex.Message);
+            }
             finally
             {
-                if (ok)
+                if (remove)
                 {
-                    lock (OutboxLock)
-                    {
-                        int remove = Math.Min(batch.Length, outbox.Count);
-                        for (int i = 0; i < remove; i++)
-                        {
-                            if (outbox[0] != batch[i]) break;
-                            outbox.RemoveAt(0);
-                        }
-                    }
+                    lock (OutboxLock) RemoveSentHead(outbox, batch);
                     Save();
                 }
                 lock (OutboxLock) forwarding = false;
@@ -287,11 +293,12 @@ public class GtaVietLifeCore : Script
         {
             if (engineEventForwarding || engineOutbox.Count == 0 || !hostConnected || string.IsNullOrEmpty(hostToken)) return;
             engineEventForwarding = true;
-            batch = engineOutbox.GetRange(0, Math.Min(100, engineOutbox.Count)).ToArray();
+            batch = engineOutbox.GetRange(0, GvlSendRules.BatchCount(engineOutbox, engineBatch.Limit, GvlSendRules.MaxBatchBytes)).ToArray();
         }
         Task.Run(delegate
         {
             bool ok = false;
+            bool dropped = false;
             try
             {
                 List<Dictionary<string, object>> events = new List<Dictionary<string, object>>();
@@ -320,23 +327,24 @@ public class GtaVietLifeCore : Script
                         wc.Headers["X-GVL-Token"] = hostToken;
                         string response = wc.UploadString(hostServer + "/engine/v1/world/events", "POST", json.Serialize(request));
                         ok = response.IndexOf("\"accepted\"", StringComparison.OrdinalIgnoreCase) >= 0;
+                        if (ok && response.IndexOf("\"rejected\":[{", StringComparison.Ordinal) >= 0)
+                            DeadLetter("engine.world.events", 200, response, string.Join("\n", batch));
                     }
                 }
+                if (ok) lock (OutboxLock) engineBatch.Succeeded(batch.Length);
             }
-            catch (Exception ex) { Log("forward event vao life engine loi: " + ex.Message); }
+            catch (Exception ex)
+            {
+                int status = HttpStatusOf(ex);
+                lock (OutboxLock) dropped = engineBatch.Failed(status, batch.Length);
+                if (dropped) DeadLetter("engine.world.events", status, ex.Message, string.Join("\n", batch));
+                Log("forward event vao life engine loi (HTTP " + status + "): " + ex.Message);
+            }
             finally
             {
-                if (ok)
+                if (ok || dropped)
                 {
-                    lock (OutboxLock)
-                    {
-                        int remove = Math.Min(batch.Length, engineOutbox.Count);
-                        for (int i = 0; i < remove; i++)
-                        {
-                            if (engineOutbox[0] != batch[i]) break;
-                            engineOutbox.RemoveAt(0);
-                        }
-                    }
+                    lock (OutboxLock) RemoveSentHead(engineOutbox, batch);
                     Save();
                 }
                 lock (OutboxLock) engineEventForwarding = false;
@@ -353,11 +361,14 @@ public class GtaVietLifeCore : Script
             lock (OutboxLock) { snapshot = new List<string>(outbox); engineSnapshot = new List<string>(engineOutbox); }
             string encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(string.Join("\n", snapshot.ToArray())));
             string engineEncoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(string.Join("\n", engineSnapshot.ToArray())));
+            string worldEncoded;
+            lock (WorldPostQueueLock) worldEncoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(worldPostQueue.Serialize()));
             string[] lines = {
                 "day=" + gameDay.ToString(CultureInfo.InvariantCulture),
                 "seq=" + lastSeenSeq.ToString(CultureInfo.InvariantCulture),
                 "outbox=" + encoded,
-                "engine_outbox=" + engineEncoded
+                "engine_outbox=" + engineEncoded,
+                "world_outbox=" + worldEncoded
             };
             File.WriteAllLines(TempFile, lines, Encoding.UTF8);
             if (File.Exists(SaveFile))
@@ -386,6 +397,7 @@ public class GtaVietLifeCore : Script
             long loadedDay = 0, loadedSeq = 0;
             List<string> loadedOutbox = new List<string>();
             List<string> loadedEngineOutbox = new List<string>();
+            string loadedWorldOutbox = "";
             foreach (string line in File.ReadAllLines(path, Encoding.UTF8))
             {
                 int i = line.IndexOf('=');
@@ -393,6 +405,8 @@ public class GtaVietLifeCore : Script
                 string key = line.Substring(0, i), value = line.Substring(i + 1);
                 if (key == "day") long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out loadedDay);
                 else if (key == "seq") long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out loadedSeq);
+                else if (key == "world_outbox" && value.Length > 0)
+                    loadedWorldOutbox = Encoding.UTF8.GetString(Convert.FromBase64String(value));
                 else if ((key == "outbox" || key == "engine_outbox") && value.Length > 0)
                 {
                     string decoded = Encoding.UTF8.GetString(Convert.FromBase64String(value));
@@ -403,6 +417,7 @@ public class GtaVietLifeCore : Script
             gameDay = Math.Max(0, loadedDay);
             lastSeenSeq = Math.Max(0, loadedSeq);
             lock (OutboxLock) { outbox.AddRange(loadedOutbox); engineOutbox.AddRange(loadedEngineOutbox); }
+            lock (WorldPostQueueLock) worldPostQueue.Restore(loadedWorldOutbox);
             return true;
         }
         catch (Exception ex) { Log("load " + path + " loi: " + ex.Message); return false; }
@@ -535,7 +550,14 @@ public class GtaVietLifeCore : Script
                     wc.Proxy = null; wc.Encoding = Encoding.UTF8;
                     wc.Headers[HttpRequestHeader.ContentType] = "application/json; charset=utf-8";
                     wc.Headers["X-GVL-Token"] = hostToken;
-                    wc.UploadString(hostServer + "/engine/v1/simulation/actors", "POST", body);
+                    try { wc.UploadString(hostServer + "/engine/v1/simulation/actors", "POST", body); }
+                    catch (WebException ex)
+                    {
+                        // 4xx: ho so bi tu choi nhung host van song, van phai dong bo so du.
+                        int status = HttpStatusOf(ex);
+                        if (status < 400 || status >= 500) throw;
+                        Log("host tu choi ho so nguoi choi (HTTP " + status + "): " + ex.Message);
+                    }
                 }
                 SyncPlayerWalletBaseline();
             }
@@ -587,7 +609,13 @@ public class GtaVietLifeCore : Script
                         wc.Proxy = null; wc.Encoding = Encoding.UTF8;
                         wc.Headers[HttpRequestHeader.ContentType] = "application/json; charset=utf-8";
                         wc.Headers["X-GVL-Token"] = hostToken;
-                        wc.UploadString(hostServer + "/engine/v1/simulation/npcs", "POST", body);
+                        try { wc.UploadString(hostServer + "/engine/v1/simulation/npcs", "POST", body); }
+                        catch (WebException ex)
+                        {
+                            int status = HttpStatusOf(ex);
+                            if (status < 400 || status >= 500) throw;
+                            Log("host tu choi cu dan " + npcId + " (HTTP " + status + "): " + ex.Message);
+                        }
                     }
                 }
             }
@@ -643,9 +671,17 @@ public class GtaVietLifeCore : Script
 
     void PostWorldRequest(string path, string body)
     {
-        if (string.IsNullOrEmpty(path) || !path.StartsWith("/engine/v1/world/", StringComparison.Ordinal) ||
-            string.IsNullOrEmpty(body) || !hostConnected || string.IsNullOrEmpty(hostToken)) return;
-        lock (WorldPostQueueLock) worldPostQueue.Enqueue(new KeyValuePair<string, string>(path, body));
+        if (!GvlSendRules.IsEnginePostPath(path))
+        {
+            Log("tu choi gui toi duong dan engine khong duoc phep: " + path);
+            return;
+        }
+        if (string.IsNullOrEmpty(body)) return;
+        // Ngoai tuyen van nhan vao hang; worker chi gui khi da ket noi.
+        GvlPost evicted;
+        lock (WorldPostQueueLock) evicted = worldPostQueue.Add(path, body);
+        if (evicted != null) DeadLetter(evicted.Path, 0, "hang doi day", evicted.Body);
+        if (GvlPostQueue.IsDurable(path)) worldOutboxDirty = true;
         StartWorldPostWorker();
     }
 
@@ -654,17 +690,18 @@ public class GtaVietLifeCore : Script
         lock (WorldPostQueueLock)
         {
             if (worldPostWorker || worldPostQueue.Count == 0 || !hostConnected || string.IsNullOrEmpty(hostToken)) return;
+            if (Stopwatch.GetTimestamp() < worldPostNotBeforeTicks) return;   // gian cach giua cac lan thu lai
             worldPostWorker = true;
         }
         Task.Run(delegate
         {
             while (true)
             {
-                KeyValuePair<string, string> item;
+                GvlPost item;
                 lock (WorldPostQueueLock)
                 {
-                    if (worldPostQueue.Count == 0) { worldPostWorker = false; return; }
-                    item = worldPostQueue.Dequeue();
+                    item = worldPostQueue.Head();
+                    if (item == null || !hostConnected) { worldPostWorker = false; return; }
                 }
                 try
                 {
@@ -673,24 +710,65 @@ public class GtaVietLifeCore : Script
                         wc.Proxy = null; wc.Encoding = Encoding.UTF8;
                         wc.Headers[HttpRequestHeader.ContentType] = "application/json; charset=utf-8";
                         wc.Headers["X-GVL-Token"] = hostToken;
-                        wc.UploadString(hostServer + item.Key, "POST", item.Value);
+                        wc.UploadString(hostServer + item.Path, "POST", item.Body);
                     }
+                    lock (WorldPostQueueLock) worldPostQueue.Remove(item);
+                    if (GvlPostQueue.IsDurable(item.Path)) worldOutboxDirty = true;
                 }
                 catch (Exception ex)
                 {
+                    int status = HttpStatusOf(ex);
+                    bool drop;
                     lock (WorldPostQueueLock)
                     {
-                        KeyValuePair<string, string>[] rest = worldPostQueue.ToArray();
-                        worldPostQueue.Clear();
-                        worldPostQueue.Enqueue(item);
-                        foreach (KeyValuePair<string, string> queued in rest) worldPostQueue.Enqueue(queued);
-                        worldPostWorker = false;
+                        drop = worldPostQueue.Failed(item, status);
+                        if (!drop)
+                        {
+                            worldPostWorker = false;
+                            worldPostNotBeforeTicks = Stopwatch.GetTimestamp() + Stopwatch.Frequency * 4L;
+                        }
                     }
-                    Log("gui tuong tac the gioi toi engine loi; se thu lai: " + ex.Message);
+                    if (GvlPostQueue.IsDurable(item.Path)) worldOutboxDirty = true;
+                    if (drop)
+                    {
+                        DeadLetter(item.Path, status, ex.Message, item.Body);
+                        continue;
+                    }
+                    Log("gui toi engine loi (HTTP " + status + "); se thu lai: " + item.Path + " " + ex.Message);
                     return;
                 }
             }
         });
+    }
+
+    static int HttpStatusOf(Exception ex)
+    {
+        WebException web = ex as WebException;
+        HttpWebResponse response = web == null ? null : web.Response as HttpWebResponse;
+        return response == null ? 0 : (int)response.StatusCode;
+    }
+
+    static void RemoveSentHead(List<string> queue, string[] sent)
+    {
+        for (int i = 0; i < sent.Length && queue.Count > 0; i++)
+        {
+            if (queue[0] != sent[i]) break;
+            queue.RemoveAt(0);
+        }
+    }
+
+    // Yeu cau bi tu choi vinh vien duoc giu lai de kiem tra, khong chan hang doi.
+    static void DeadLetter(string channel, int status, string error, string content)
+    {
+        try
+        {
+            File.AppendAllText("GtaVietLifeCore.deadletter.log",
+                DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) + "\t" + channel +
+                "\tHTTP " + status + "\t" + (error ?? "").Replace('\r', ' ').Replace('\n', ' ') + "\t" +
+                (content ?? "").Replace('\r', ' ').Replace('\n', '|') + Environment.NewLine);
+        }
+        catch { }
+        Log("bo qua yeu cau bi tu choi (HTTP " + status + "): " + channel);
     }
 
     void PollEngineWorldCommands()
@@ -893,3 +971,167 @@ public class GtaVietLifeCore : Script
         catch { }
     }
 }
+
+// <gvl-testable:outbox>
+// Logic gui lai thuan C#, khong goi API GTA; tests/test_csharp_logic.py bien dich doan nay va chay that.
+public static class GvlSendRules
+{
+    public const int MaxBatchEvents = 100;
+    public const int MaxBatchBytes = 40000;   // host gioi han than yeu cau 65536 byte
+    public const int MaxNotFoundAttempts = 12;
+    public const int MaxServerErrorAttempts = 20;
+
+    public static bool IsEnginePostPath(string path)
+    {
+        if (string.IsNullOrEmpty(path)) return false;
+        return path.StartsWith("/engine/v1/world/", StringComparison.Ordinal) ||
+            path == "/engine/v1/simulation/actors/observe" ||
+            path == "/engine/v1/simulation/actors/work-completed";
+    }
+
+    // status = 0 khi khong co phan hoi HTTP. attempts tinh ca lan vua that bai.
+    public static bool ShouldDrop(int status, int attempts)
+    {
+        if (status == 401 || status == 403 || status == 408 || status == 429) return false;
+        if (status == 502 || status == 503 || status == 504) return false;
+        if (status == 404) return attempts >= MaxNotFoundAttempts;   // co the chua dang ky xong
+        if (status >= 400 && status < 500) return true;
+        if (status >= 500) return attempts >= MaxServerErrorAttempts;
+        return false;
+    }
+
+    public static int BatchCount(List<string> lines, int limit, int maxBytes)
+    {
+        int count = 0, bytes = 0;
+        while (count < lines.Count && count < limit)
+        {
+            bytes += Encoding.UTF8.GetByteCount(lines[count] ?? "") + 96;
+            if (count > 0 && bytes > maxBytes) break;
+            count++;
+        }
+        return count;
+    }
+}
+
+// Khi ca lo bi tu choi vinh vien: gui lai tung event de chi loai dung event loi.
+public sealed class GvlBatchIsolation
+{
+    readonly bool dropServerErrors;
+    int singles;
+    int attempts;
+
+    public GvlBatchIsolation(bool dropServerErrors) { this.dropServerErrors = dropServerErrors; }
+
+    public int Limit { get { return singles > 0 ? 1 : GvlSendRules.MaxBatchEvents; } }
+
+    public void Succeeded(int sent)
+    {
+        attempts = 0;
+        if (singles > 0) singles = Math.Max(0, singles - sent);
+    }
+
+    // true: nguoi goi phai loai dung lo vua gui (chi xay ra khi lo co 1 event).
+    public bool Failed(int status, int sent)
+    {
+        if (status >= 500 && !dropServerErrors) return false;
+        if (status == 404 || status >= 500) attempts++;
+        if (!GvlSendRules.ShouldDrop(status, attempts)) return false;
+        attempts = 0;
+        if (sent > 1) { singles = sent; return false; }
+        if (singles > 0) singles--;
+        return true;
+    }
+}
+
+public sealed class GvlPost
+{
+    public string Path;
+    public string Body;
+    public string Key;
+    public int Attempts;
+}
+
+// Khong tu khoa: nguoi goi giu khoa khi truy cap tu nhieu luong.
+public sealed class GvlPostQueue
+{
+    public const int Capacity = 2000;
+    const string WorkPath = "/engine/v1/simulation/actors/work-completed";
+    readonly List<GvlPost> items = new List<GvlPost>();
+
+    public int Count { get { return items.Count; } }
+
+    // Chi bao cao ca lam khong tai tao duoc; danh muc va so lieu duoc script gui lai khi nap.
+    public static bool IsDurable(string path) { return path == WorkPath; }
+
+    public static string CoalesceKey(string path, string body)
+    {
+        if (path == "/engine/v1/simulation/actors/observe") return path + "|" + Field(body, "actor_id");
+        if (path == "/engine/v1/world/businesses/sync") return path + "|" + Field(body, "business_id");
+        if (path == "/engine/v1/world/accounts/ensure") return path + "|" + Field(body, "account_id");
+        return null;
+    }
+
+    static string Field(string body, string name)
+    {
+        string marker = "\"" + name + "\":\"";
+        int start = (body ?? "").IndexOf(marker, StringComparison.Ordinal);
+        if (start < 0) return "";
+        start += marker.Length;
+        int end = body.IndexOf('"', start);
+        return end < 0 ? "" : body.Substring(start, end - start);
+    }
+
+    // Tra ve muc bi day ra khi hang day, nguoc lai null.
+    public GvlPost Add(string path, string body)
+    {
+        GvlPost post = new GvlPost();
+        post.Path = path; post.Body = body; post.Key = CoalesceKey(path, body);
+        if (post.Key != null)
+            for (int i = 0; i < items.Count; i++)
+                if (items[i].Key == post.Key) { items[i] = post; return null; }
+        items.Add(post);
+        if (items.Count <= Capacity) return null;
+        int victim = 0;
+        for (int i = 0; i < items.Count; i++)
+            if (!IsDurable(items[i].Path)) { victim = i; break; }
+        GvlPost evicted = items[victim];
+        items.RemoveAt(victim);
+        return evicted;
+    }
+
+    public GvlPost Head() { return items.Count > 0 ? items[0] : null; }
+
+    public void Remove(GvlPost post) { items.Remove(post); }
+
+    // true: muc bi loai vinh vien (da go khoi hang). false: giu lai de thu sau.
+    public bool Failed(GvlPost post, int status)
+    {
+        if (status == 404 || status >= 500) post.Attempts++;
+        if (!GvlSendRules.ShouldDrop(status, post.Attempts)) return false;
+        items.Remove(post);
+        return true;
+    }
+
+    public string Serialize()
+    {
+        StringBuilder b = new StringBuilder();
+        foreach (GvlPost post in items)
+            if (IsDurable(post.Path)) b.Append(post.Attempts).Append('\t').Append(post.Path).Append('\t').Append(post.Body).Append('\n');
+        return b.ToString();
+    }
+
+    public void Restore(string data)
+    {
+        foreach (string line in (data ?? "").Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            string[] parts = line.Split(new[] { '\t' }, 3);
+            int attempts;
+            if (parts.Length != 3 || !int.TryParse(parts[0], out attempts) || !GvlSendRules.IsEnginePostPath(parts[1])) continue;
+            GvlPost post = new GvlPost();
+            post.Attempts = attempts; post.Path = parts[1]; post.Body = parts[2];
+            post.Key = CoalesceKey(post.Path, post.Body);
+            items.Add(post);
+        }
+    }
+}
+// </gvl-testable:outbox>

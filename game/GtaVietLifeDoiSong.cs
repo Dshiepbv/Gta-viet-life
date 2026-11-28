@@ -170,11 +170,13 @@ public class GtaVietLifeDoiSong : Script
         Ped me = Game.Player.Character;
         if (me == null || !me.Exists()) return;
         int now = Game.GameTime;
-        while (pendingActs.Count > 0)
+        // Chi chay cac viec co san khi vao tick; viec them trong luc chay de sang tick sau.
+        for (int n = pendingActs.Count; n > 0; n--)
         {
             Action a = pendingActs.Dequeue();
             try { a(); } catch (Exception ex) { Log("viec cho loi: " + ex); Notify("Loi: " + ex.Message); }
         }
+        FinishFadeIfDue(Game.GameTime);
         if (!ModOn()) { if (menuOpen) CloseMenu(); return; }
         try
         {
@@ -197,6 +199,8 @@ public class GtaVietLifeDoiSong : Script
 
     void OnAborted(object sender, EventArgs e)
     {
+        // Dang tua gio thi da tru tien: ap dung ket qua truoc khi luu, khong de man hinh den.
+        try { FinishFadeIfDue(int.MaxValue); } catch (Exception ex) { Log("ket thuc tua gio loi: " + ex.Message); }
         Save();
         BusSet("GVL.LifeOn", false);
         ClearClip(Game.Player.Character);
@@ -524,6 +528,7 @@ public class GtaVietLifeDoiSong : Script
         }
         int cost = TreatCost();
         if (cost == 0) { Notify("Bac si kham: Sep khoe re, khong can dieu tri."); return; }
+        if (fade.Active) return;
         if (!Spend(cost, "medical", "vien phi")) return;
         Emit("life.hospital", "amount=" + cost + ";injury=" + (injured ? 1 : 0));
         CloseMenu();
@@ -687,6 +692,7 @@ public class GtaVietLifeDoiSong : Script
         }
         if (me.IsInVehicle()) { Notify("Xuong xe da."); return; }
         if (Game.Player.WantedLevel > 0) { Notify("Dang bi truy na, choi gi noi."); return; }
+        if (fade.Active) return;
         if (l.Price > 0 && !Spend(l.Price, "leisure", l.Name)) return;
         CloseMenu();
         Fade(l.Minutes, delegate
@@ -939,23 +945,26 @@ public class GtaVietLifeDoiSong : Script
     }
 
     // ------------------------------------------------------------ tua gio (man hinh den)
-    Action fadeDone; int fadeAt; int fadeMin;
+    readonly GvlFade fade = new GvlFade();
     void Fade(int minutes, Action done)
     {
-        fadeDone = done; fadeMin = minutes;
+        if (!fade.Start(Game.GameTime, 900, minutes, done)) return;
         GTA.UI.Screen.FadeOut(700);
-        fadeAt = Game.GameTime + 900;
-        pendingActs.Enqueue(FadeWait);
     }
 
-    void FadeWait()
+    void FinishFadeIfDue(int now)
     {
-        if (Game.GameTime < fadeAt) { pendingActs.Enqueue(FadeWait); return; }
-        TimeSpan t = World.CurrentTimeOfDay;
-        int m = (t.Hours * 60 + t.Minutes + fadeMin) % 1440;
-        World.CurrentTimeOfDay = new TimeSpan(m / 60, m % 60, 0);
-        Action d = fadeDone; fadeDone = null;
-        try { if (d != null) d(); } finally { GTA.UI.Screen.FadeIn(700); }
+        int minutes; Action done;
+        if (!fade.TryFinish(now, out minutes, out done)) return;
+        try
+        {
+            TimeSpan t = World.CurrentTimeOfDay;
+            int m = (t.Hours * 60 + t.Minutes + minutes) % 1440;
+            World.CurrentTimeOfDay = new TimeSpan(m / 60, m % 60, 0);
+            if (done != null) done();
+        }
+        catch (Exception ex) { Log("tua gio loi: " + ex); Notify("Loi: " + ex.Message); }
+        finally { GTA.UI.Screen.FadeIn(700); }
     }
 
     // ------------------------------------------------------------ menu
@@ -1183,3 +1192,29 @@ public class GtaVietLifeDoiSong : Script
         try { File.AppendAllText("GtaVietLifeDoiSong.log", DateTime.Now.ToString("HH:mm:ss") + " " + msg + Environment.NewLine); } catch { }
     }
 }
+
+// <gvl-testable:fade>
+// Hen gio tua thoi gian: kiem tra mot lan moi tick, khong tu xep lai vao hang viec.
+public sealed class GvlFade
+{
+    Action pending;
+    int dueAt;
+    int minutes;
+    public bool Active { get; private set; }
+
+    public bool Start(int now, int delayMs, int gameMinutes, Action done)
+    {
+        if (Active) return false;
+        Active = true; dueAt = now + delayMs; minutes = gameMinutes; pending = done;
+        return true;
+    }
+
+    public bool TryFinish(int now, out int gameMinutes, out Action done)
+    {
+        gameMinutes = 0; done = null;
+        if (!Active || now < dueAt) return false;
+        Active = false; gameMinutes = minutes; done = pending; pending = null;
+        return true;
+    }
+}
+// </gvl-testable:fade>
