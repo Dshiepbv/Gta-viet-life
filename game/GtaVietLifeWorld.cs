@@ -354,6 +354,26 @@ public class GtaVietLifeWorld : Script
             needsPub[0] = hunger; needsPub[1] = thirst; needsPub[2] = energy;
             d.SetData("GVL.Needs", needsPub);
             d.SetData("GVL.WorldMenu", menuOpen);
+            int now = Game.GameTime;
+            if (now > nextLifeStateSync)
+            {
+                nextLifeStateSync = now + 2000;
+                object connected = d.GetData("GVL.Engine.Connected");
+                Action<string, string> post = d.GetData("GVL.Engine.WorldPost") as Action<string, string>;
+                Ped playerPed = Game.Player.Character;
+                if (connected is bool && (bool)connected && post != null && playerPed != null && playerPed.Exists())
+                {
+                    float health = playerPed.MaxHealth > 0 ? 100f * playerPed.Health / playerPed.MaxHealth : 100f;
+                    string observed = "{\"hunger\":" + Clamp(100f - hunger).ToString("0.###", CultureInfo.InvariantCulture) +
+                        ",\"thirst\":" + Clamp(100f - thirst).ToString("0.###", CultureInfo.InvariantCulture) +
+                        ",\"energy\":" + Clamp(energy).ToString("0.###", CultureInfo.InvariantCulture) +
+                        ",\"hygiene\":" + Clamp(hygiene).ToString("0.###", CultureInfo.InvariantCulture) +
+                        ",\"health\":" + Clamp(health).ToString("0.###", CultureInfo.InvariantCulture) + "}";
+                    string body = "{\"request_id\":\"" + Guid.NewGuid().ToString("N") +
+                        "\",\"actor_id\":\"player.main\",\"observed\":" + observed + "}";
+                    post("/engine/v1/simulation/actors/observe", body);
+                }
+            }
         }
         catch { }
     }
@@ -966,7 +986,7 @@ public class GtaVietLifeWorld : Script
     }
 
     // cau noi voi file Kinh te (GtaVietLifeEconomy.cs): cong bo tong gia tri BDS de the chap, nhan lenh phat mai khi bi siet no
-    int nextEconBus, nextEngineBusinessSync;
+    int nextEconBus, nextEngineBusinessSync, nextLifeStateSync;
     void EconBus()
     {
         try
