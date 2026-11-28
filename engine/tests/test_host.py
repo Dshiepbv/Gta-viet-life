@@ -320,4 +320,17 @@ class HostTests(unittest.TestCase):
   self.assertEqual(player["needs"]["hygiene"],62.0)
   self.assertEqual(player["health"],95.0)
 
+ def test_player_activity_session_endpoint_is_time_bounded(self):
+  actor={"npc_id":"player.shift","display_name":"Player","home_location_id":"home.player",
+         "occupation":"citizen","actor_kind":"player"}
+  self.req("/engine/v1/simulation/actors",{"request_id":"shift-register","npc":actor})
+  code,result=self.req("/engine/v1/simulation/actors/activity",{"request_id":"shift-start",
+       "actor_id":"player.shift","activity":"work","location_id":"work.gta.workspot","duration_minutes":60})
+  self.assertEqual(code,200); self.assertTrue(result["accepted"])
+  self.assertEqual(result["until_minute"],60)
+  self.state.advance(60)
+  player=self.state.simulation.snapshot()["npcs"][0]
+  self.assertEqual(player["activity"],"work")
+  self.assertEqual(player["actor_kind"],"player")
+
 if __name__=="__main__":unittest.main()
