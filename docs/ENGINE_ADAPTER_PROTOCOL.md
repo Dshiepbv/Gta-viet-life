@@ -234,3 +234,8 @@ The GTA Core periodically registers `player.main` through the shared actor endpo
 ### Player body-state observation
 
 The GTA World adapter posts player body meters every two seconds through `POST /engine/v1/simulation/actors/observe`. The native GTA physiology remains authoritative for hunger/fullness, hydration, energy, hygiene and health; the adapter converts fullness and hydration bars into canonical unmet-need values before submission. The Engine does not independently decay those same player meters, avoiding double simulation. NPC physiology remains simulated by the portable Life Engine. The player's bladder pressure, social relationships, stress, mood, fitness and aging remain part of the shared simulation state.
+
+
+### Player-controlled work sessions
+
+GTA V work actions can register a bounded player activity through `POST /engine/v1/simulation/actors/activity`. The activity is time-boxed in simulation minutes, so work time and hourly work events accrue only during the actual game-clock interval. The GTA World adapter reports the player's mechanic shift as a 240-minute work session before the native time-skip action; the native game remains responsible for its existing cash reward and physical presentation.
