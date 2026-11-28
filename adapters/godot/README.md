@@ -22,7 +22,7 @@ This is a separate base-game adapter, not a second simulation implementation. It
 - Godot owns only presentation, input, native Node2D movement and semantic-location-to-scene-marker mapping.
 - The adapter contains no duplicate NPC schedule or relationship rules. It owns the native player-body meter presentation and reports observations; canonical actor state, relationships and physical interaction consequences remain in Engine Host.
 - The Host API is unchanged: handshake, NPC registration, heartbeat, command polling/acknowledgement, interaction and session close.
-- This is a portability reference adapter. It is not packaged into the GTA Windows installer and has no claimed Godot runtime pass until run with Godot 4 and a live Host.
+- This is a portability reference adapter. It is not packaged into the GTA Windows installer. The CI pipeline runs a live Godot 4 + Engine Host smoke test for player registration, physical toilet interaction and reciprocal social persistence.
 - It is a narrow M5 proof, not a complete Godot game or GTA replacement.
 
 ## Acceptance checklist

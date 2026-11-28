@@ -379,7 +379,7 @@ func _poll_commands() -> void:
 		elif activity == "shower" and location_id == "home.interior.godot":
 			destination = locations["shower.anchor.godot"]
 		await resident.move_to(destination, activity)
-		await _ack(command.get("command_id", ""), true, "completed", "physical_activity_anchor_reached")
+		await _ack(command.get("command_id", ""), true, "completed", "destination_reached")
 		busy = false
 
 func _ack(command_id: String, success: bool, result_status: String, reason: String) -> void:
