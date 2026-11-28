@@ -307,5 +307,25 @@ class LifeSimulationTests(unittest.TestCase):
         self.assertTrue(any(m["source"] == "voice_bridge_mirror" for m in player.memories))
 
 
+    def test_player_adapter_observations_update_canonical_body_needs(self):
+        engine = LifeSimulationEngine()
+        engine.register_npc(NPCProfile(
+            npc_id="player.observed", display_name="Player", home_location_id="home.player",
+            occupation="citizen", actor_kind="player",
+        ))
+        result = engine.observe_player_state("player.observed", {
+            "hunger": 12, "thirst": 8, "energy": 74, "hygiene": 45, "health": 90,
+        }, request_id="observation-1")
+        self.assertTrue(result["updated"])
+        snapshot = engine.snapshot()["npcs"][0]
+        self.assertEqual(snapshot["needs"]["hunger"], 12.0)
+        self.assertEqual(snapshot["needs"]["thirst"], 8.0)
+        self.assertEqual(snapshot["needs"]["energy"], 74.0)
+        self.assertEqual(snapshot["needs"]["hygiene"], 45.0)
+        self.assertEqual(snapshot["health"], 90.0)
+        with self.assertRaises(ValueError):
+            engine.observe_player_state("player.observed", {"hunger": 101})
+
+
 if __name__ == "__main__":
     unittest.main()
