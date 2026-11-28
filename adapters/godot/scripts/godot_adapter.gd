@@ -157,6 +157,7 @@ func _boot() -> void:
 	if player_profile.is_empty() or not player_profile.get("registered", false):
 		status_text = "Player actor registration failed."
 		return
+	await _restore_player_needs()
 	if not await _register_world_catalog():
 		status_text = "World catalog registration failed."
 		return
@@ -261,6 +262,19 @@ func _poll_world_commands() -> void:
 			"result": {"success": success, "status": "completed" if success else "unsupported",
 				"outcome": outcome, "adapter_id": ADAPTER_ID}
 		})
+
+func _restore_player_needs() -> void:
+	var snapshot := await _request("/engine/v1/simulation/snapshot")
+	for actor in snapshot.get("npcs", []):
+		if actor.get("npc_id", "") != PLAYER_ID:
+			continue
+		var needs: Dictionary = actor.get("needs", {})
+		for key in ["hunger", "thirst", "energy", "hygiene", "fitness"]:
+			if needs.has(key):
+				player_needs[key] = float(needs[key])
+		if actor.has("health"):
+			player_needs["health"] = float(actor["health"])
+		break
 
 func _observe_player_state() -> void:
 	await _request("/engine/v1/simulation/actors/observe", {
