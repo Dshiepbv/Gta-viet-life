@@ -66,3 +66,16 @@ Các bản phát hành trung gian vẫn lên GitHub để giữ nút Cập nhậ
 2. **Khóa ký APK:** tạo theo README mục "Cập nhật trong app" và đưa vào GitHub Secrets. Chưa có thì mỗi bản APK mới phải gỡ bản cũ.
 
 Hai việc này không chặn các bước A–E.
+
+## 5. Nội thất MLO và tương tác kiểu Big Ambitions (chốt 2026-11-28: phải làm MLO, dùng cách miễn phí)
+
+Mục tiêu: mọi đồ vật trong nhà và quán đều dùng được (ngồi, nằm, nấu, lấy hàng trên kệ, tính tiền, dọn), cả người chơi lẫn NPC.
+
+| Lớp | Cách làm miễn phí | Ai làm | Ghi chú |
+|---|---|---|---|
+| Khung tương tác | Danh mục loại đồ vật (giường, ghế, bàn, bếp, tủ lạnh, kệ hàng, quầy, máy tính tiền, bồn cầu, vòi sen, tivi, máy tính) gắn hành động, động tác và hệ quả; áp cho mọi nội thất | Tôi | Dùng chung cho người chơi và NPC |
+| Modular (ghép từ đồ vật gốc) | Bố cục lưu dạng JSON; script đặt tường, sàn, đồ đạc bằng đồ vật có sẵn của game tại bãi đất trống hoặc vỉa hè. Đi bộ thẳng vào, không dịch chuyển | Tôi | Không phân phối tài nguyên của ai. Thô hơn MLO thật |
+| MLO thật | Bố cục JSON → file XML của CodeWalker → gói DLC trong `mods`, Launcher cài và gỡ có sao lưu. Công cụ: CodeWalker, Blender + Sollumz (miễn phí) | Tôi làm đường ống và gói mẫu; mô hình đẹp cần người dựng | Bước chuyển XML sang file game tự động hay phải mở CodeWalker bằng tay: chưa thử |
+| MLO cộng đồng | Người dùng tự tải gói miễn phí từ trang tác giả; Launcher nhận ra gói đã cài và gắn Activity Anchor theo danh mục đi kèm | Người dùng tải; tôi viết danh mục | Phần lớn gói miễn phí không cho đăng lại, nên không đóng gói kèm |
+
+Thứ tự: khung tương tác → Modular → đường ống MLO thật và gói mẫu → danh mục cho gói cộng đồng. Theo brief, việc này thuộc đợt 3 (M3), làm sau bước A.

@@ -55,6 +55,7 @@ File này được Claude Code tự nạp mỗi phiên. Phần 0 riêng cho dự
 - Master Brief V4.0 (bản gốc duy nhất, thay V2; trích tại `docs/private/BRIEF_V4.txt`, không commit): 4 đợt, không nhảy đợt khi chưa nghiệm thu; cuối đợt báo cáo (a) % hoàn thành theo bằng chứng, (b) test mới và hồi quy, (c) file đã sửa và lệnh push. Nghiệm thu 85/100 có bằng chứng runtime rồi mới đóng một bản test cho người dùng. Không dùng menu chữ thay hành vi vật lý. · 2026-11-28
 - UIS (M3): bộ sinh danh mục tự động phủ toàn thành phố qua 4 lớp (Native IPL, Custom MLO, Template, Modular); NPC đi bộ qua cửa tới Activity Anchor. · 2026-11-28
 - Được push GitHub không cần hỏi (ngoại lệ cho mục 1). Được gắn tag phát hành Release không cần hỏi. Chủ dự án muốn nhận bản hoàn chỉnh cả dự án, không test từng phần. · 2026-11-28
+- MLO bắt buộc, dùng cách miễn phí: khung tương tác kiểu Big Ambitions + Modular từ đồ vật gốc + đường ống MLO qua CodeWalker + nhận diện gói cộng đồng do người dùng tự tải; không đóng gói tài nguyên của người khác (`docs/PLAN_V4.md` mục 5). · 2026-11-28
 
 ### Đã bác bỏ (lý do · từ khóa kích hoạt)
 - (phương án) · vì (lý do) · từ khóa: (...)
