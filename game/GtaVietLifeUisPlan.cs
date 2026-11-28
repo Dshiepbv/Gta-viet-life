@@ -317,9 +317,9 @@ public static class GvlStreet
 
     public static int MaxActive(int hour)
     {
-        if ((hour >= 7 && hour < 9) || (hour >= 17 && hour < 19)) return 6;
+        if ((hour >= 7 && hour < 9) || (hour >= 17 && hour < 19)) return 8;
         if (hour >= 1 && hour < 6) return 1;
-        return 4;
+        return 5;
     }
 
     public static bool UsesShop(int trip) { return trip == IntoShop || trip == OutOfShop; }

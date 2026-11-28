@@ -1,6 +1,7 @@
-# Bien dich moi script GTA thanh mot DLL cho ScriptHookVDotNet v3, kem ini va icon.
+# Bien dich moi script GTA thanh mot DLL cho ScriptHookVDotNet v3, kem ini, icon, du lieu hang hoa va LemonUI.
 param(
   [Parameter(Mandatory = $true)][string]$ShvdnApi3,
+  [Parameter(Mandatory = $true)][string]$LemonUi,
   [Parameter(Mandatory = $true)][string]$OutputDir,
   [string]$Dotnet = "dotnet"
 )
@@ -13,7 +14,7 @@ try {
   foreach ($project in $projects) {
     $name = ([xml](Get-Content $project.FullName)).Project.PropertyGroup.AssemblyName
     $out = Join-Path $work $name
-    & $Dotnet build $project.FullName -c Release "-p:ShvdnApi3=$ShvdnApi3" --artifacts-path (Join-Path $work "a-$name") -o $out -v quiet --nologo
+    & $Dotnet build $project.FullName -c Release "-p:ShvdnApi3=$ShvdnApi3" "-p:LemonUi=$LemonUi" --artifacts-path (Join-Path $work "a-$name") -o $out -v quiet --nologo
     if ($LASTEXITCODE -ne 0) { throw "Build failed: $($project.Name)" }
     Copy-Item (Join-Path $out "$name.dll") $OutputDir -Force
   }
@@ -23,6 +24,9 @@ try {
   $data = Join-Path $OutputDir "GtaVietLifeData\vi-VN"
   New-Item -ItemType Directory -Force $data | Out-Null
   Copy-Item (Join-Path $root "data\packs\vi-VN\food_drink_menu.json"), (Join-Path $root "data\packs\vi-VN\goods_prices.json") $data -Force
+  # Thu vien menu (MIT) di kem giay phep cua no.
+  Copy-Item $LemonUi $OutputDir -Force
+  Copy-Item (Join-Path $root "game\third_party\LemonUI.LICENSE.txt") (Join-Path $OutputDir "GtaVietLifeData") -Force
   Write-Host ("Built " + $projects.Count + " script assemblies into " + $OutputDir)
 } finally {
   Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue

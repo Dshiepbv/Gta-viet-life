@@ -131,3 +131,11 @@ Engine: 96 test pass; test mới `engine/tests/test_phase2_regressions.py` đã 
 - NPC chat: không có Groq/Gemini/Ollama thì đáp bằng mẫu thoại Data Pack theo ý định câu nói (Bridge đóng gói kèm Data Pack).
 - Engine: không gửi lối vào đã loại (tier -1) nữa, hết HTTP 400.
 - Yêu cầu mới chưa làm: cửa thật đẩy được, chủ nhà mở cửa, mua nhà rồi tự trang trí. Cần MLO thật ở đúng chỗ; đang chờ chủ dự án chọn hướng.
+
+## 0.4.8 (2026-11-28): bản thử khả thi, cửa hàng thật với menu kiểu game gốc
+- Chủ dự án chốt: làm theo thứ tự (1) cửa hàng thật kèm menu kiểu Rockstar, (2) làm chủ cửa hàng thật, (3) thành phố đông, (4) nhà có cửa thật. Nếu bản test này không khả thi thì xem lại cơ chế game gốc.
+- Mua bán chỉ ở cửa hàng thật của game (nhận ra bằng máy tính tiền có sẵn). Vỏ nhà kho do mod dựng không còn là quán; lối vào "quán" kiểu dịch chuyển bị ẩn (`ShopShells=false`).
+- Tại quầy: E mở menu LemonUI 2.2.0 (MIT, ghim SHA-256 trong Build-Package) có banner 24/7, danh mục theo nhóm, giá $; mua thì trừ tiền, âm thanh tính tiền; đồ ăn uống dùng ngay, tạp hóa vào tủ lạnh; có mục thanh toán giỏ hàng lấy từ kệ. Lời nhắc dùng hộp gợi ý góc trên trái như game gốc.
+- Launcher cài `LemonUI.SHVDN3.dll` (không hạ cấp bản mới hơn của mod khác) và thư mục `GtaVietLifeData`.
+- Người dân trên phố: tối đa 8 giờ cao điểm, 5 giờ thường; xe đi làm gồm cả xe Online có trong file game.
+- Chưa làm: bước 2 (mua và vận hành cửa hàng thật), bước 4 (cửa thật). Chưa chạy trong game.

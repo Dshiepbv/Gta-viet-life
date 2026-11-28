@@ -58,6 +58,8 @@ File này được Claude Code tự nạp mỗi phiên. Phần 0 riêng cho dự
 - MLO bắt buộc, dùng cách miễn phí: khung tương tác kiểu Big Ambitions + Modular từ đồ vật gốc + đường ống MLO qua CodeWalker + nhận diện gói cộng đồng do người dùng tự tải; không đóng gói tài nguyên của người khác (`docs/PLAN_V4.md` mục 5). · 2026-11-28
 - Data Pack `data/packs/vi-VN` (v1.0.0, VND) là dữ liệu tham chiếu chỉ đọc, kiểm schema `data/packs/schema`; danh tính NPC sinh một lần vào `npc_identities`, cập nhật pack không đổi người đã có; ứng viên MLO giữ cờ `candidate_*`, chỉ cài khi `verified` và game qua kiểm tra tương thích. · 2026-11-28
 
+- Không dùng điểm bấm H dịch chuyển làm "cửa"; không dùng vỏ nhà kho làm quán. Mua bán ở cửa hàng thật của game, menu kiểu Rockstar (LemonUI). Thứ tự: cửa hàng thật → làm chủ cửa hàng thật → thành phố đông → nhà có cửa thật (chủ nhà NPC mở cửa, người chơi mua nhà thì vào và trang trí kiểu Big Ambitions). Bản 0.4.8 là bản thử khả thi; không khả thi thì xem lại cơ chế game gốc. · 2026-11-28
+
 ### Đã bác bỏ (lý do · từ khóa kích hoạt)
 - (phương án) · vì (lý do) · từ khóa: (...)
 
@@ -118,8 +120,8 @@ Khi tôi chỉ ra lỗi: đề xuất 1 dòng rút kinh nghiệm; tôi duyệt m
 Văn phong con người: không mở bài "Không phải X mà là Y", không câu dài 4 mệnh đề, không kết bằng châm ngôn, không rải emoji và in đậm. Không để lộ trao đổi nội bộ giữa tôi và AI. Commit message và changelog viết rõ việc đã làm.
 
 ## 9. Trạng thái (giữ 5 mục gần nhất, mới nhất ở dưới)
-- [2026-11-28] Nhận Master Brief V4; quyền push không cần hỏi; thêm test 1.000 giao dịch. Điểm runtime 0/100. | Bước tiếp: hoàn tất đợt 2 (quan hệ và ký ức về M0, test giết tiến trình), rồi đợt 3 (catalog UIS, anchors); chờ log test 0.3.6.
 - [2026-11-28] Phát hành v0.3.6 (4ec36ff). Lập `docs/PLAN_V4.md`: làm trọn đợt 2→4, giao một bản tích hợp kèm bài tự kiểm trong game; ước tính ~45%, runtime 0/100. | Bước tiếp: bước A của plan (quan hệ và ký ức một nguồn).
 - [2026-11-28] 0.4.0: UIS đo mặt bằng và khóa 4 Tier, Modular ghép đồ trong vỏ kho cho quán, 13 loại đồ tương tác, hộ gia đình NPC, khách NPC trong quán, mua/bán đồ bày; quan hệ do Engine giữ; test giết tiến trình; Launcher 7 trạng thái và cài gói MLO theo manifest. Chưa chạy trong game. | Bước tiếp: chạy bài tự kiểm trong game; bài tự kiểm tự động (chưa viết).
 - [2026-11-28] 0.4.1: nạp Data Pack Việt Nam (tên, nghề, thực đơn, giá hàng, mẫu thoại, ứng viên MLO) vào M0/M2/M4/M6; 158 test pytest đạt. Chưa chạy trong game; script C# chưa dùng giá VND (game vẫn tính USD). | Bước tiếp: test trong game.
 - [2026-11-28] 0.4.5: GTA tự lưu khi tiền đổi + trả lại tiền kinh doanh chưa kịp lưu; bù offline không trả lương quán hết hàng; Updater hết cửa sổ cmd và hết thất bại do thư mục làm việc; chấm vào nhà dò mặt tiền, thấy từ 40 m. Chưa chạy trong game. | Bước tiếp: người dùng test, gửi log Core/World/updater.
+- [2026-11-28] 0.4.8: mua bán ở cửa hàng thật của game bằng menu kiểu Rockstar (LemonUI), bỏ quán vỏ nhà kho; người dân ra vào cửa, lên xe đi làm (0.4.7); NPC đáp bằng mẫu thoại khi không có AI. Chưa chạy trong game. | Bước tiếp: chờ chủ dự án test khả thi; rồi làm chủ cửa hàng thật, nhà có cửa thật.

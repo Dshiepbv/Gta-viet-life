@@ -135,6 +135,7 @@ public class GtaVietLifeInteriors : Script
         autoDiscover = Settings.GetValue("Interiors", "AutoDiscoverDoors", true);
         showMarkers = Settings.GetValue("Interiors", "ShowMarkers", true);
         streetLife = Settings.GetValue("Interiors", "StreetLife", true);
+        shopShells = Settings.GetValue("Interiors", "ShopShells", false);
         cycleKey = Settings.GetValue("Keys", "CycleFurniture", cycleKey);
         buyKey = Settings.GetValue("Keys", "BuyFurniture", buyKey);
         useKey = Settings.GetValue("Keys", "Interior", useKey);
@@ -357,7 +358,7 @@ public class GtaVietLifeInteriors : Script
             {
                 if (e.Shift) { MarkDoor(me); return; }
                 GvlEntrance door = registry.Nearest(me.Position.X, me.Position.Y, me.Position.Z, PromptRange);
-                if (door != null && door.Tier >= 0) BeginEnter(me, door);
+                if (door != null && Enterable(door)) BeginEnter(me, door);
             }
             else if (portal.Phase == GvlPortal.Inside && template >= 0)
             {
@@ -790,12 +791,14 @@ public class GtaVietLifeInteriors : Script
     // ------------------------------------------------------------ xa hoi tren pho
     static readonly string[] StreetPeds = { "a_m_y_business_01", "a_f_y_business_01", "a_m_m_eastsa_01", "a_f_m_eastsa_01", "a_m_y_hipster_01",
         "a_f_y_hipster_01", "a_m_m_bevhills_01", "a_f_y_tourist_01", "a_m_y_genstreet_01", "a_f_m_downtown_01", "a_m_m_skater_01", "a_f_y_eastsa_01" };
-    static readonly string[] StreetCars = { "asea", "premier", "stanier", "emperor", "ingot", "primo", "tailgater", "washington", "glendale", "regina" };
+    static readonly string[] StreetCars = { "asea", "premier", "stanier", "emperor", "ingot", "primo", "tailgater", "washington", "glendale", "regina",
+        // xe cua cac ban cap nhat Online co san trong file game; ten nao khong co thi bo qua khi sinh
+        "kuruma", "schafter3", "cog55", "baller3", "tailgater2", "jugular", "drafter", "komoda", "rebla", "novak", "sugoi", "vstr", "imorgon", "asbo", "club", "glendale2" };
     sealed class Walker { public Ped P; public Vehicle V; public GvlTrip Trip; public Vector3 Door, Curb; public int FadeAt; }
     readonly List<Walker> walkers = new List<Walker>();
     readonly Random street = new Random();
     int nextWalker;
-    bool streetLife = true;
+    bool streetLife = true, shopShells;
 
     void StepStreetLife(Ped me, int now)
     {
@@ -1148,6 +1151,9 @@ public class GtaVietLifeInteriors : Script
         }
     }
 
+    // Lo vao "quan" dich chuyen vao vo nha kho da bo: mua ban o cua hang that cua game.
+    bool Enterable(GvlEntrance d) { return d.Tier >= 0 && (shopShells || d.Purpose != GvlTier.Shop); }
+
     bool PlayerIsIn(string id) { return portal.Phase == GvlPortal.Inside && building == id && template >= 0; }
 
     // Stage: 0 di toi cua; 1 o trong khi nguoi choi khong co mat (an, dung yen); 2 di toi do vat; 3 dang sinh hoat; 4 di ra cua trong.
@@ -1278,9 +1284,9 @@ public class GtaVietLifeInteriors : Script
             Vector3 p = me.Position;
             if (showMarkers)
                 foreach (GvlEntrance marked in registry.Within(p.X, p.Y, p.Z, 40f))
-                    if (marked.Tier >= 0) DrawDoorMarker(new Vector3(marked.X, marked.Y, marked.Z), marked.Purpose == GvlTier.Shop);
+                    if (Enterable(marked)) DrawDoorMarker(new Vector3(marked.X, marked.Y, marked.Z), marked.Purpose == GvlTier.Shop);
             GvlEntrance door = registry.Nearest(p.X, p.Y, p.Z, PromptRange);
-            if (door != null && door.Tier >= 0)
+            if (door != null && Enterable(door))
                 GTA.UI.Screen.ShowSubtitle("~y~" + useKey + "~s~: vao " + (door.Purpose == GvlTier.Shop ? "quan" : "nha") +
                     (door.Tier > 0 ? " (cap " + door.Tier + ")" : ""), 100);
         }

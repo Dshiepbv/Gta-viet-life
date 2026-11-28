@@ -1,7 +1,7 @@
 ﻿# Dung toan bo bo cai: kiem thu, bien dich module game, Launcher, Updater, Engine Host, Bridge,
 # manifest.json, goi zip cap nhat va file cai dat duy nhat. Dung chung cho may local va CI.
 param(
-  [string]$Version = "0.4.7",
+  [string]$Version = "0.4.8",
   [string]$Dotnet = "dotnet",
   [string]$Python = "python",
   [Parameter(Mandatory = $true)][string]$InnoCompiler,
@@ -38,6 +38,17 @@ if ($hash -ne "b6b4b61bce0437e295ebab065ca437c95ed938e0169197726150047861478211"
 Expand-Archive $shvdnZip (Join-Path $WorkDir "shvdn") -Force
 $api = Join-Path $WorkDir "shvdn\ScriptHookVDotNet3.dll"
 
+# LemonUI 2.2.0 (MIT): menu mua hang giong menu goc cua game, ghim theo checksum.
+$lemonPkg = Join-Path $WorkDir "lemonui.shvdn3.2.2.0.nupkg"
+if (!(Test-Path $lemonPkg)) {
+  Invoke-WebRequest -UseBasicParsing "https://api.nuget.org/v3-flatcontainer/lemonui.shvdn3/2.2.0/lemonui.shvdn3.2.2.0.nupkg" -OutFile $lemonPkg
+}
+$hash = (Get-FileHash $lemonPkg -Algorithm SHA256).Hash.ToLower()
+if ($hash -ne "ab9488022c5e36b7d923c12c1adbc03ba2c7e95a2df96a90e1dc98340aa85c2b") { throw "LemonUI 2.2.0 checksum mismatch: $hash" }
+Copy-Item $lemonPkg (Join-Path $WorkDir "lemonui.zip") -Force
+Expand-Archive (Join-Path $WorkDir "lemonui.zip") (Join-Path $WorkDir "lemonui") -Force
+$lemon = Join-Path $WorkDir "lemonui\lib\net48\LemonUI.SHVDN3.dll"
+
 Invoke-Step "Engine tests" { & $Python -m unittest discover -s engine/tests }
 Invoke-Step "Wire contract and C# logic tests" { & $Python -m unittest discover -s tests }
 Invoke-Step "Bridge tests" { Push-Location bridge; & $Python -m unittest test_engine_context test_news_lock test_dashboard_access test_stt_fallback test_offline_reply; Pop-Location }
@@ -48,7 +59,7 @@ $control = & $Dotnet (Join-Path $logic "GtaVietLife.Launcher.Logic.Tests.dll") c
 if ($LASTEXITCODE -ne 1) { throw "Launcher logic control case did not fail: $control" }
 
 Invoke-Step "Game script assemblies" {
-  & (Join-Path $PSScriptRoot "Build-Scripts.ps1") -ShvdnApi3 $api -OutputDir (Join-Path $publish "game") -Dotnet $Dotnet
+  & (Join-Path $PSScriptRoot "Build-Scripts.ps1") -ShvdnApi3 $api -LemonUi $lemon -OutputDir (Join-Path $publish "game") -Dotnet $Dotnet
 }
 $numeric = $Version.Split("-")[0]
 Invoke-Step "Launcher" {

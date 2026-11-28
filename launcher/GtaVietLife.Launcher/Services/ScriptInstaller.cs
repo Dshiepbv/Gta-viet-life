@@ -39,11 +39,21 @@ public static class LegacyEnvironment {
 public static class ScriptInstaller {
  public sealed record Result(int Copied,int Retired,string? BackupDir);
 
+ static bool Newer(string candidate,string installed){
+  Version Of(string path){return Version.TryParse(System.Diagnostics.FileVersionInfo.GetVersionInfo(path).FileVersion,out var v)?v:new Version(0,0);}
+  return Of(candidate)>Of(installed);
+ }
+
  public static Result Install(string source,string scripts,string backupRoot,Action<string>? beforeEachWrite=null){
   var assemblies=Directory.Exists(source)?Directory.GetFiles(source,"GtaVietLife*.dll"):Array.Empty<string>();
   if(assemblies.Length==0)throw new FileNotFoundException("Bộ cài thiếu module game (GtaVietLife*.dll).",source);
   var plan=new List<(string From,string To)>();
   foreach(var file in assemblies)plan.Add((file,Path.Combine(scripts,Path.GetFileName(file))));
+  // Thu vien menu (MIT) ma module cua hang can.
+  var lemon=Path.Combine(source,"LemonUI.SHVDN3.dll");
+  var lemonTarget=Path.Combine(scripts,"LemonUI.SHVDN3.dll");
+  // Mod khac co the da dung ban LemonUI moi hon: khong ha cap.
+  if(File.Exists(lemon)&&(!File.Exists(lemonTarget)||Newer(lemon,lemonTarget)))plan.Add((lemon,lemonTarget));
   foreach(var file in Directory.GetFiles(source,"GtaVietLife*.ini")){
    var target=Path.Combine(scripts,Path.GetFileName(file));if(!File.Exists(target))plan.Add((file,target));
   }
