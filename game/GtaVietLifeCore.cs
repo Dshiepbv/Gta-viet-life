@@ -569,7 +569,7 @@ public class GtaVietLifeCore : Script
                     string home = npcId + ".home";
                     string work = npcId + ".work";
                     string lunch = npcId + ".lunch";
-                    string leisure = npcId + ".leisure";
+                    string leisure = "residents.leisure";
                     string body = "{\"request_id\":\"" + Guid.NewGuid().ToString("N") + "\",\"npc\":{" +
                         "\"npc_id\":\"" + JsonEscape(npcId) + "\",\"display_name\":\"" + JsonEscape(name) +
                         "\",\"home_location_id\":\"" + home + "\",\"occupation\":\"resident\",\"life_goal\":\"social\"," +
