@@ -5,7 +5,10 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Globalization;
 using System.IO;
+using System.Text;
+using System.Web.Script.Serialization;
 using System.Windows.Forms;
 using GTA;
 using GTA.Math;
@@ -13,22 +16,76 @@ using GTA.Native;
 
 public class GtaVietLifeShopFloor : Script
 {
-    sealed class Dish
+    // Hang hoa doc tu Data Pack (scripts\GtaVietLifeData\vi-VN); thieu file thi dung vai mon co san.
+    readonly List<GvlItem> catalog = new List<GvlItem>();
+    readonly List<GvlItem> counterMenu = new List<GvlItem>();
+    readonly GvlBasket basket = new GvlBasket();
+    int shelfAt = -1, shelfPick;
+    GvlItem serving;
+    float[] servingNeeds = new float[3];
+
+    void LoadCatalog()
     {
-        public readonly string Name, Prop, Scenario; public readonly int Price; public readonly float Hunger, Thirst, Energy;
-        public Dish(string name, int price, float hunger, float thirst, float energy, string prop, string scenario)
-        { Name = name; Price = price; Hunger = hunger; Thirst = thirst; Energy = energy; Prop = prop; Scenario = scenario; }
+        string[] folders = {
+            Path.Combine("scripts", "GtaVietLifeData", "vi-VN"),
+            Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "scripts", "GtaVietLifeData", "vi-VN") };
+        foreach (string folder in folders)
+        {
+            string menuFile = Path.Combine(folder, "food_drink_menu.json"), goodsFile = Path.Combine(folder, "goods_prices.json");
+            if (!File.Exists(menuFile) || !File.Exists(goodsFile)) continue;
+            try
+            {
+                JavaScriptSerializer json = new JavaScriptSerializer();
+                foreach (object o in (object[])json.DeserializeObject(File.ReadAllText(menuFile, Encoding.UTF8)))
+                {
+                    Dictionary<string, object> d = (Dictionary<string, object>)o;
+                    catalog.Add(GvlGoods.Make(Text(d, "id"), Text(d, "name"), Text(d, "category"), "", Number(d, "price_min"), Number(d, "price_max")));
+                }
+                foreach (object o in (object[])json.DeserializeObject(File.ReadAllText(goodsFile, Encoding.UTF8)))
+                {
+                    Dictionary<string, object> d = (Dictionary<string, object>)o;
+                    catalog.Add(GvlGoods.Make(Text(d, "id"), Text(d, "name"), "grocery", Text(d, "unit"), Number(d, "price_min"), Number(d, "price_max")));
+                }
+                Log("nap " + catalog.Count + " mat hang tu " + folder);
+                break;
+            }
+            catch (Exception ex) { catalog.Clear(); Log("doc Data Pack loi (" + folder + "): " + ex.Message); }
+        }
+        if (catalog.Count == 0)
+        {
+            catalog.Add(GvlGoods.Make("b1", "Bánh mì", "food", "", 20000, 30000));
+            catalog.Add(GvlGoods.Make("b2", "Phở bò", "food", "", 35000, 65000));
+            catalog.Add(GvlGoods.Make("b3", "Nước suối", "drink", "", 5000, 10000));
+            catalog.Add(GvlGoods.Make("b4", "Cà phê sữa đá", "drink", "", 15000, 30000));
+            catalog.Add(GvlGoods.Make("b5", "Gạo", "grocery", "kg", 15000, 30000));
+            Log("khong thay Data Pack, dung " + catalog.Count + " mon co san");
+        }
+        foreach (GvlItem item in catalog) if (item.ReadyToEat && item.Category != "snack") counterMenu.Add(item);
+        if (counterMenu.Count == 0) counterMenu.AddRange(catalog);
     }
 
-    static readonly Dish[] Dishes = {
-        new Dish("Banh mi", 5, 25f, 0f, 0f, "prop_sandwich_01", "WORLD_HUMAN_EATING"),
-        new Dish("Com hop", 8, 40f, 5f, 0f, "prop_food_bs_tray_01", "WORLD_HUMAN_EATING"),
-        new Dish("Pho", 10, 45f, 15f, 5f, "prop_food_bs_tray_01", "WORLD_HUMAN_EATING"),
-        new Dish("Nuoc suoi", 1, 0f, 30f, 0f, "prop_ld_flow_bottle", "WORLD_HUMAN_DRINKING"),
-        new Dish("Ca phe sua da", 3, 0f, 15f, 20f, "p_amb_coffeecup_01", "WORLD_HUMAN_AA_COFFEE") };
+    static string Text(Dictionary<string, object> d, string key) { object v; return d.TryGetValue(key, out v) && v != null ? v.ToString() : ""; }
+    static int Number(Dictionary<string, object> d, string key)
+    {
+        object v;
+        try { return d.TryGetValue(key, out v) && v != null ? Convert.ToInt32(v, CultureInfo.InvariantCulture) : 0; }
+        catch (Exception) { return 0; }
+    }
+
+    static string PropFor(GvlItem item)
+    {
+        if (item.Category == "drink") return item.Name.ToLowerInvariant().Contains("ca phe") ? "p_amb_coffeecup_01" : "prop_ld_flow_bottle";
+        return item.Category == "food" ? "prop_food_bs_tray_01" : "prop_sandwich_01";
+    }
+
+    static string ScenarioFor(GvlItem item)
+    {
+        if (item.Category == "drink") return item.Name.ToLowerInvariant().Contains("ca phe") ? "WORLD_HUMAN_AA_COFFEE" : "WORLD_HUMAN_DRINKING";
+        return "WORLD_HUMAN_EATING";
+    }
 
     static readonly string[] Registers = { "prop_till_01", "prop_till_02", "prop_till_03", "v_ret_gc_cashreg" };
-    const float CounterRange = 2.2f, SearchRange = 14f, LeaveRange = 30f;
+    const float CounterRange = 2.2f, SearchRange = 14f, LeaveRange = 30f, ShelfRange = 1.8f;
 
     readonly GvlOrder order = new GvlOrder();
     Keys useKey = Keys.E, previousKey = Keys.Oemcomma, nextKey = Keys.OemPeriod, cancelKey = Keys.Back;
@@ -54,6 +111,7 @@ public class GtaVietLifeShopFloor : Script
     {
         enabled = Settings.GetValue("ShopFloor", "Enabled", true);
         useKey = Settings.GetValue("Keys", "Order", useKey);
+        LoadCatalog();
         Tick += OnTick;
         KeyDown += OnKeyDown;
         Aborted += delegate { Close(); };
@@ -86,7 +144,9 @@ public class GtaVietLifeShopFloor : Script
             if (!haveShop) { BusSet("GVL.ShopCounter", false); return; }
 
             bool atCounter = !me.IsInVehicle() && me.Position.DistanceTo(register) < CounterRange;
-            BusSet("GVL.ShopCounter", atCounter || order.Busy);
+            int near = atCounter || order.Busy ? -1 : NearestShelf(me.Position);
+            if (near != shelfAt) { shelfAt = near; shelfPick = 0; }
+            BusSet("GVL.ShopCounter", atCounter || order.Busy || shelfAt >= 0);
             KeepStaff(me, now);
             StepCustomers(now);
             if (order.State == GvlOrder.Choosing && !atCounter) order.Cancel();
@@ -187,13 +247,29 @@ public class GtaVietLifeShopFloor : Script
             {
                 Function.Call(Hash.TASK_TURN_PED_TO_FACE_COORD, c.P, register.X, register.Y, register.Z, 1500);
                 sales++;
-                Log("khach mua hang (" + sales + " luot)");
-                Emit("shop.npc_sale", "x=" + ((int)register.X) + ";y=" + ((int)register.Y));
+                int shelf = shelves.IndexOf(c.Shelf);
+                List<GvlItem> onShelf = ShelfItems(shelf < 0 ? 0 : shelf);
+                GvlItem bought = onShelf[(int)((uint)(c.P.Handle + now) % (uint)onShelf.Count)];
+                Log("khach mua " + bought.Name + " $" + bought.Price + " (" + sales + " luot)");
+                Emit("shop.npc_sale", "x=" + ((int)register.X) + ";y=" + ((int)register.Y) + ";item=" + bought.Id + ";price=" + bought.Price);
             }
             else if (step == GvlShopper.Leave) { c.P.Task.ClearAll(); GoTo(c.P, entry); }
             else if (step == GvlShopper.Gone) { c.P.Delete(); customers.RemoveAt(i); }
         }
     }
+
+    int NearestShelf(Vector3 p)
+    {
+        int best = -1; float bestDistance = ShelfRange;
+        for (int i = 0; i < shelves.Count; i++)
+        {
+            float d = p.DistanceTo2D(shelves[i]);
+            if (d < bestDistance && Math.Abs(p.Z - shelves[i].Z) < 2.5f) { bestDistance = d; best = i; }
+        }
+        return best;
+    }
+
+    List<GvlItem> ShelfItems(int shelf) { return GvlGoods.OnShelf(catalog, GvlGoods.ShelfKind(shelf)); }
 
     Vector3 FrontOfRegister()
     {
@@ -294,13 +370,26 @@ public class GtaVietLifeShopFloor : Script
             if (me == null || !me.Exists() || me.IsDead) return;
             if (order.State == GvlOrder.Choosing)
             {
-                if (e.KeyCode == previousKey) order.Move(-1, Dishes.Length);
-                else if (e.KeyCode == nextKey) order.Move(1, Dishes.Length);
+                if (e.KeyCode == previousKey) order.Move(-1, counterMenu.Count);
+                else if (e.KeyCode == nextKey) order.Move(1, counterMenu.Count);
                 else if (e.KeyCode == cancelKey) order.Cancel();
                 else if (e.KeyCode == useKey) Buy(me);
                 return;
             }
-            if (e.KeyCode == useKey && !order.Busy && !me.IsInVehicle() && me.Position.DistanceTo(register) < CounterRange)
+            if (order.Busy || me.IsInVehicle()) return;
+            // Dung truoc ke: xem tung mon tren ke, E bo vao gio.
+            if (shelfAt >= 0)
+            {
+                List<GvlItem> onShelf = ShelfItems(shelfAt);
+                if (e.KeyCode == previousKey) shelfPick = (shelfPick - 1 + onShelf.Count) % onShelf.Count;
+                else if (e.KeyCode == nextKey) shelfPick = (shelfPick + 1) % onShelf.Count;
+                else if (e.KeyCode == useKey) TakeFromShelf(me, onShelf[shelfPick % onShelf.Count]);
+                return;
+            }
+            bool atCounter = me.Position.DistanceTo(register) < CounterRange;
+            if (e.KeyCode == useKey && atCounter && basket.Count > 0) { Checkout(me); return; }
+            if (e.KeyCode == cancelKey && basket.Count > 0) { basket.Clear(); Notify("Da tra hang ve ke."); return; }
+            if (e.KeyCode == useKey && atCounter)
             {
                 order.Open();
                 me.Heading = HeadingTo(me.Position, register);
@@ -310,18 +399,63 @@ public class GtaVietLifeShopFloor : Script
         catch (Exception ex) { Log("phim loi: " + ex.Message); }
     }
 
+    static bool PayCash(int amount, string category, string note)
+    {
+        Func<int, string, string, bool> pay = Bus("GVL.PayCash") as Func<int, string, string, bool>;
+        if (pay != null) return pay(amount, category, note);
+        if (Game.Player.Money < amount) return false;
+        Game.Player.Money = Game.Player.Money - amount;
+        return true;
+    }
+
+    void TakeFromShelf(Ped me, GvlItem item)
+    {
+        if (!basket.Add(item)) { Notify("Gio hang day (" + GvlBasket.Capacity + " mon). Ra quay tra tien."); return; }
+        me.Heading = HeadingTo(me.Position, shelves[shelfAt]);
+        Function.Call(Hash.REQUEST_ANIM_DICT, "mp_common");
+        Function.Call(Hash.TASK_PLAY_ANIM, me, "mp_common", "givetake1_a", 8f, -8f, 1200, 48, 0f, false, false, false);
+        Notify("Lay ~g~" + item.Name + "~s~ $" + item.Price + ". Gio: " + basket.Count + " mon, $" + basket.Total() + ".");
+        Log("lay tu ke " + item.Name + " $" + item.Price);
+    }
+
+    // Tra tien ca gio: do an/uong dung ngay tai quan, tap hoa mang ve tu lanh.
+    void Checkout(Ped me)
+    {
+        int total = basket.Total();
+        List<GvlItem> items = basket.Items;
+        if (!PayCash(total, "shopping", "mua " + items.Count + " mon")) { Notify("~r~Khong du tien~s~ (gio hang $" + total + ")."); return; }
+        basket.Clear();
+        me.Heading = HeadingTo(me.Position, register);
+        if (seller != null && seller.Exists()) Function.Call(Hash.TASK_TURN_PED_TO_FACE_ENTITY, seller, me, 2000);
+        List<string> fridgeLines = Bus("GVL.FridgeAdd") as List<string>;
+        if (fridgeLines == null) { fridgeLines = new List<string>(); BusSet("GVL.FridgeAdd", fridgeLines); }
+        GvlItem first = null; float h = 0f, t = 0f, en = 0f; int groceries = 0;
+        foreach (GvlItem item in items)
+        {
+            if (!item.ReadyToEat)
+            {
+                lock (fridgeLines)
+                    fridgeLines.Add(item.Name + "|" + item.Hunger.ToString(CultureInfo.InvariantCulture) + "|" + item.Thirst.ToString(CultureInfo.InvariantCulture) +
+                        "|" + item.Energy.ToString(CultureInfo.InvariantCulture) + "|" + item.Days);
+                groceries++;
+                continue;
+            }
+            if (first == null) first = item;
+            h += item.Hunger; t += item.Thirst; en += item.Energy;
+        }
+        Log("tra tien gio hang $" + total + ": " + items.Count + " mon, " + groceries + " mon vao tu lanh");
+        Emit("shop.purchase", "total=" + total + ";items=" + items.Count + ";x=" + ((int)register.X) + ";y=" + ((int)register.Y));
+        Notify("Da tra ~g~$" + total + "~s~." + (groceries > 0 ? " " + groceries + " mon tap hoa se cat vao tu lanh." : ""));
+        if (first == null) return;
+        serving = first; servingNeeds = new float[] { h, t, en };
+        order.Open(); order.Paid(Game.GameTime);
+    }
+
     void Buy(Ped me)
     {
-        Dish dish = Dishes[order.Choice];
-        Func<int, string, string, bool> pay = Bus("GVL.PayCash") as Func<int, string, string, bool>;
-        bool paid;
-        if (pay != null) paid = pay(dish.Price, "food", dish.Name);
-        else
-        {
-            paid = Game.Player.Money >= dish.Price;
-            if (paid) Game.Player.Money = Game.Player.Money - dish.Price;
-        }
-        if (!paid) { Notify("~r~Khong du tien~s~ (can $" + dish.Price + ")."); order.Cancel(); return; }
+        GvlItem dish = counterMenu[order.Choice % counterMenu.Count];
+        if (!PayCash(dish.Price, "food", dish.Name)) { Notify("~r~Khong du tien~s~ (can $" + dish.Price + ")."); order.Cancel(); return; }
+        serving = dish; servingNeeds = new float[] { dish.Hunger, dish.Thirst, dish.Energy };
         order.Paid(Game.GameTime);
         Log("goi mon " + dish.Name);
         if (sellerOwned && seller != null && seller.Exists())
@@ -330,15 +464,15 @@ public class GtaVietLifeShopFloor : Script
 
     void ServeDish(Ped me)
     {
-        Dish dish = Dishes[order.Choice];
+        GvlItem dish = serving ?? counterMenu[0];
         if (sellerOwned && seller != null && seller.Exists())
         {
             seller.Task.ClearAll();
             Function.Call(Hash.TASK_TURN_PED_TO_FACE_ENTITY, seller, me, 2000);
         }
         RemoveServed();
-        Function.Call(Hash.TASK_START_SCENARIO_IN_PLACE, me, dish.Scenario, 0, true);
-        Model model = new Model(dish.Prop);
+        Function.Call(Hash.TASK_START_SCENARIO_IN_PLACE, me, ScenarioFor(dish), 0, true);
+        Model model = new Model(PropFor(dish));
         if (model.IsInCdImage && model.Request(500))
         {
             served = World.CreateProp(model, register + new Vector3(0f, 0f, 0.1f), false, false);
@@ -350,16 +484,17 @@ public class GtaVietLifeShopFloor : Script
 
     void FinishDish(Ped me)
     {
-        Dish dish = Dishes[order.Choice];
+        GvlItem dish = serving ?? counterMenu[0];
         Log("hoan tat " + dish.Name);
         me.Task.ClearAll();
         RemoveServed();
         float[] pending = Bus("GVL.NeedsAdd") as float[];
-        float hunger = dish.Hunger, thirst = dish.Thirst, energy = dish.Energy;
+        float hunger = servingNeeds[0], thirst = servingNeeds[1], energy = servingNeeds[2];
         if (pending != null && pending.Length >= 3) { hunger += pending[0]; thirst += pending[1]; energy += pending[2]; }
         BusSet("GVL.NeedsAdd", new float[] { hunger, thirst, energy });
-        Notify("~g~Ngon!~s~" + (dish.Hunger > 0f ? " No +" + (int)dish.Hunger : "") + (dish.Thirst > 0f ? " Nuoc +" + (int)dish.Thirst : "")
-            + (dish.Energy > 0f ? " Nang luong +" + (int)dish.Energy : ""));
+        Notify("~g~Ngon!~s~" + (servingNeeds[0] > 0f ? " No +" + (int)servingNeeds[0] : "") + (servingNeeds[1] > 0f ? " Nuoc +" + (int)servingNeeds[1] : "")
+            + (servingNeeds[2] > 0f ? " Nang luong +" + (int)servingNeeds[2] : ""));
+        serving = null;
     }
 
     void RemoveServed()
@@ -373,14 +508,27 @@ public class GtaVietLifeShopFloor : Script
         Function.Call(Hash.DRAW_MARKER, 2, register.X, register.Y, register.Z + 0.55f, 0f, 0f, 0f, 180f, 0f, 0f, 0.16f, 0.16f, 0.16f,
             255, 205, 90, 160, false, true, 2, false, 0, 0, false);
         if (MenuOpen()) return;
+        for (int i = 0; i < shelves.Count; i++)   // cham nho tren moi ke de biet cho lay hang
+            Function.Call(Hash.DRAW_MARKER, 2, shelves[i].X, shelves[i].Y, shelves[i].Z + 1.9f, 0f, 0f, 0f, 180f, 0f, 0f, 0.14f, 0.14f, 0.14f,
+                60, 230, 90, 140, false, true, 2, false, 0, 0, false);
+        string cart = basket.Count > 0 ? "   ~b~Gio: " + basket.Count + " mon $" + basket.Total() + "~s~" : "";
         if (order.State == GvlOrder.Choosing)
         {
-            Dish d = Dishes[order.Choice];
+            GvlItem d = counterMenu[order.Choice % counterMenu.Count];
             GTA.UI.Screen.ShowSubtitle("~y~< ,~s~  " + d.Name + "  $" + d.Price + "  ~y~. >~s~    ~g~" + useKey + "~s~: mua    Backspace: thoi", 100);
         }
-        else if (order.State == GvlOrder.Preparing) GTA.UI.Screen.ShowSubtitle("Dang lam mon...", 100);
-        else if (order.State == GvlOrder.Eating) GTA.UI.Screen.ShowSubtitle("Dang dung " + Dishes[order.Choice].Name + "...", 100);
-        else if (atCounter) GTA.UI.Screen.ShowSubtitle("~y~" + useKey + "~s~: goi mon", 100);
+        else if (order.State == GvlOrder.Preparing) GTA.UI.Screen.ShowSubtitle("Dang chuan bi...", 100);
+        else if (order.State == GvlOrder.Eating) GTA.UI.Screen.ShowSubtitle("Dang dung " + (serving != null ? serving.Name : "") + "...", 100);
+        else if (shelfAt >= 0)
+        {
+            List<GvlItem> onShelf = ShelfItems(shelfAt);
+            GvlItem it = onShelf[shelfPick % onShelf.Count];
+            GTA.UI.Screen.ShowSubtitle("Ke ~y~" + GvlGoods.KindName(GvlGoods.ShelfKind(shelfAt)) + "~s~: " + it.Name + (it.Unit.Length > 0 ? " (" + it.Unit + ")" : "") +
+                " $" + it.Price + "  ~y~, .~s~ xem (" + (shelfPick % onShelf.Count + 1) + "/" + onShelf.Count + ")  ~g~" + useKey + "~s~: lay" + cart, 100);
+        }
+        else if (atCounter && basket.Count > 0) GTA.UI.Screen.ShowSubtitle("~g~" + useKey + "~s~: tra tien " + basket.Count + " mon ($" + basket.Total() + ")    Backspace: tra lai ke", 100);
+        else if (atCounter) GTA.UI.Screen.ShowSubtitle("~y~" + useKey + "~s~: goi mon tai quay    (lay hang o ke roi mang ra day)", 100);
+        else if (basket.Count > 0) GTA.UI.Screen.ShowSubtitle("Mang gio hang ra quay tra tien." + cart, 100);
     }
 
     // ------------------------------------------------------------ don dep
@@ -398,6 +546,8 @@ public class GtaVietLifeShopFloor : Script
             foreach (Customer c in customers) if (c.P != null && c.P.Exists()) c.P.Delete();
         }
         catch (Exception ex) { Log("don dep loi: " + ex.Message); }
+        if (basket.Count > 0) Log("roi quan, tra " + basket.Count + " mon chua tinh tien ve ke");
+        basket.Clear(); shelfAt = -1; serving = null;
         seller = null; cleaner = null; haveShop = false; cleaningSpots.Clear(); customers.Clear(); shelves.Clear();
         BusSet("GVL.ShopCounter", false);
     }
@@ -483,5 +633,93 @@ public sealed class GvlShopper
                 return Nothing;
         }
     }
+}
+
+// Mot mat hang tren ke. Gia VND trong Data Pack doi ra do-la cua game (1 USD = 5.000 VND).
+public sealed class GvlItem
+{
+    public string Id = "", Name = "", Category = "", Unit = "";
+    public int Price, Days;
+    public float Hunger, Thirst, Energy;
+    public bool ReadyToEat { get { return Category != "grocery"; } }
+}
+
+public static class GvlGoods
+{
+    public const int VndPerDollar = 5000;
+    public static readonly string[] ShelfKinds = { "drink", "snack", "grocery", "food", "dessert" };
+    static readonly string[] KindNames = { "Do uong", "Do an vat", "Tap hoa", "Do an san", "Trang mieng" };
+
+    public static int Dollars(int vndMin, int vndMax)
+    {
+        double mid = ((double)Math.Max(0, vndMin) + Math.Max(0, vndMax)) / 2.0;
+        return (int)Math.Max(1, Math.Round(mid / VndPerDollar));
+    }
+
+    // Chu GTA khong hien du dau tieng Viet: bo dau, giu chu.
+    public static string Ascii(string text)
+    {
+        string d = (text ?? "").Replace('đ', 'd').Replace('Đ', 'D').Normalize(NormalizationForm.FormD);
+        StringBuilder b = new StringBuilder(d.Length);
+        foreach (char c in d)
+            if (CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark) b.Append(c);
+        return b.ToString().Normalize(NormalizationForm.FormC);
+    }
+
+    public static GvlItem Make(string id, string name, string category, string unit, int vndMin, int vndMax)
+    {
+        GvlItem item = new GvlItem();
+        item.Id = id ?? ""; item.Name = Ascii(name); item.Unit = Ascii(unit);
+        item.Category = string.IsNullOrEmpty(category) ? "grocery" : category;
+        item.Price = Dollars(vndMin, vndMax);
+        string lower = item.Name.ToLowerInvariant();
+        switch (item.Category)
+        {
+            case "food": item.Hunger = 40f; item.Thirst = 5f; break;
+            case "drink": item.Thirst = 30f; item.Energy = lower.Contains("ca phe") || lower.Contains("tra") ? 15f : 0f; break;
+            case "snack": item.Hunger = 12f; break;
+            case "dessert": item.Hunger = 10f; item.Thirst = 8f; break;
+            default: item.Hunger = 20f; item.Days = lower.Contains("thit") || lower.Contains("ca ") || lower.Contains("rau") ? 3 : 10; break;
+        }
+        return item;
+    }
+
+    public static string ShelfKind(int shelfIndex) { return ShelfKinds[((shelfIndex % ShelfKinds.Length) + ShelfKinds.Length) % ShelfKinds.Length]; }
+
+    public static string KindName(string kind)
+    {
+        int i = Array.IndexOf(ShelfKinds, kind);
+        return i >= 0 ? KindNames[i] : "Hang hoa";
+    }
+
+    public static List<GvlItem> OnShelf(List<GvlItem> all, string kind)
+    {
+        List<GvlItem> found = all.FindAll(delegate(GvlItem x) { return x.Category == kind; });
+        return found.Count > 0 ? found : new List<GvlItem>(all);
+    }
+}
+
+// Gio hang: lay tu ke, tra tien mot lan o quay.
+public sealed class GvlBasket
+{
+    public const int Capacity = 10;
+    readonly List<GvlItem> items = new List<GvlItem>();
+    public int Count { get { return items.Count; } }
+    public List<GvlItem> Items { get { return new List<GvlItem>(items); } }
+
+    public bool Add(GvlItem item)
+    {
+        if (item == null || items.Count >= Capacity) return false;
+        items.Add(item); return true;
+    }
+
+    public int Total()
+    {
+        long sum = 0;
+        foreach (GvlItem i in items) sum += i.Price;
+        return (int)Math.Min(int.MaxValue, sum);
+    }
+
+    public void Clear() { items.Clear(); }
 }
 // </gvl-testable:order>

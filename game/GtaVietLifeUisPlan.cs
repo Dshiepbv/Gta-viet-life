@@ -298,4 +298,80 @@ public static class GvlInteriorChoice
         return fit[(int)(GvlTemplates.StableHash("interior/" + buildingId) % (uint)fit.Count)];
     }
 }
+
+// Xa hoi tren pho: nguoi dan ra khoi cua len xe di lam, di bo ve nha, vao/ra cua hang theo gio.
+public static class GvlStreet
+{
+    public const int None = -1, OutByCar = 0, OutOnFoot = 1, HomeByCar = 2, HomeOnFoot = 3, IntoShop = 4, OutOfShop = 5;
+
+    // roll: 0..99. Sang di lam, trua mua sam, chieu toi ve nha, khuya yen tinh.
+    public static int PickTrip(int hour, int roll)
+    {
+        roll = Math.Max(0, Math.Min(99, roll));
+        if (hour >= 6 && hour < 10) return roll < 55 ? OutByCar : roll < 85 ? OutOnFoot : IntoShop;
+        if (hour >= 10 && hour < 16) return roll < 40 ? IntoShop : roll < 75 ? OutOfShop : roll < 90 ? OutOnFoot : HomeOnFoot;
+        if (hour >= 16 && hour < 21) return roll < 45 ? HomeByCar : roll < 75 ? HomeOnFoot : roll < 90 ? IntoShop : OutOfShop;
+        if (hour >= 21 || hour < 1) return roll < 50 ? HomeOnFoot : roll < 80 ? HomeByCar : OutOfShop;
+        return roll < 15 ? HomeByCar : None;   // 1h-6h: thinh thoang co nguoi ve muon
+    }
+
+    public static int MaxActive(int hour)
+    {
+        if ((hour >= 7 && hour < 9) || (hour >= 17 && hour < 19)) return 6;
+        if (hour >= 1 && hour < 6) return 1;
+        return 4;
+    }
+
+    public static bool UsesShop(int trip) { return trip == IntoShop || trip == OutOfShop; }
+    public static bool StartsAtDoor(int trip) { return trip == OutByCar || trip == OutOnFoot || trip == OutOfShop; }
+    public static bool UsesCar(int trip) { return trip == OutByCar || trip == HomeByCar; }
+}
+
+// Mot chuyen di: tung chang co han gio, toi noi hoac qua gio thi sang chang sau. Khong bao gio ket mai.
+public sealed class GvlTrip
+{
+    public const int Emerge = 0, WalkToCar = 1, Drive = 2, Park = 3, WalkToDoor = 4, Vanish = 5, Walk = 6, Done = 7;
+    public const int EmergeMs = 1200, WalkMs = 25000, DriveMs = 60000, ParkMs = 6000, VanishMs = 900, AwayMs = 40000;
+    readonly int[] plan;
+    int index, until;
+    public int Kind { get; private set; }
+    public int Stage { get { return index < plan.Length ? plan[index] : Done; } }
+
+    public GvlTrip(int kind, int now)
+    {
+        Kind = kind;
+        switch (kind)
+        {
+            case GvlStreet.OutByCar: plan = new[] { Emerge, WalkToCar, Drive }; break;
+            case GvlStreet.HomeByCar: plan = new[] { Drive, Park, WalkToDoor, Vanish }; break;
+            case GvlStreet.HomeOnFoot: case GvlStreet.IntoShop: plan = new[] { WalkToDoor, Vanish }; break;
+            default: plan = new[] { Emerge, Walk }; break;
+        }
+        until = now + Limit(Stage);
+    }
+
+    static int Limit(int stage)
+    {
+        switch (stage)
+        {
+            case Emerge: return EmergeMs;
+            case Drive: return DriveMs;
+            case Park: return ParkMs;
+            case Vanish: return VanishMs;
+            case Walk: return AwayMs;
+            default: return WalkMs;
+        }
+    }
+
+    // reached: da toi dich cua chang nay. Tra ve true khi vua sang chang moi (ke ca Done).
+    public bool Step(int now, bool reached)
+    {
+        if (Stage == Done) return false;
+        bool timed = Stage == Emerge || Stage == Vanish ? now >= until : reached || now >= until;
+        if (!timed) return false;
+        index++;
+        until = now + Limit(Stage);
+        return true;
+    }
+}
 // </gvl-testable:uisplan>

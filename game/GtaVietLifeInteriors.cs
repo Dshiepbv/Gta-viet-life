@@ -134,6 +134,7 @@ public class GtaVietLifeInteriors : Script
         enabled = Settings.GetValue("Interiors", "Enabled", true);
         autoDiscover = Settings.GetValue("Interiors", "AutoDiscoverDoors", true);
         showMarkers = Settings.GetValue("Interiors", "ShowMarkers", true);
+        streetLife = Settings.GetValue("Interiors", "StreetLife", true);
         cycleKey = Settings.GetValue("Keys", "CycleFurniture", cycleKey);
         buyKey = Settings.GetValue("Keys", "BuyFurniture", buyKey);
         useKey = Settings.GetValue("Keys", "Interior", useKey);
@@ -177,6 +178,7 @@ public class GtaVietLifeInteriors : Script
             if (portal.Phase == GvlPortal.Outside && now > nextMeasure) { nextMeasure = now + 1000; MeasureNearby(me); }
             if (portal.Phase == GvlPortal.Inside && now > nextHousehold) { nextHousehold = now + 1500; StepHousehold(me, now); }
             StepActivity(me, now);
+            StepStreetLife(me, now);
             if (now > nextVisit) { nextVisit = now + 10000; StartVisit(now); }
             StepVisitors(me, now);
             DrawPrompts(me);
@@ -204,7 +206,7 @@ public class GtaVietLifeInteriors : Script
         {
             if (sent >= 5) break;
             GvlEntrance e = registry.Find(id);
-            if (e == null || e.Tier == 0 || !registeredWithEngine.Add(id)) continue;   // chi gui toa nha da do
+            if (e == null || e.Tier <= 0 || !registeredWithEngine.Add(id)) continue;   // chi gui toa nha da do (bo loi vao da loai)
             string body = "{\"request_id\":\"" + Guid.NewGuid().ToString("N") +
                 "\",\"building_id\":\"" + BuildingPath + id + "\",\"category\":\"residential\",\"name\":\"Nha " + id +
                 "\",\"adapter_maps\":{\"gta5.shvdn\":{\"entrance\":\"" + id + ".door\",\"interior\":\"" + id +
@@ -745,10 +747,20 @@ public class GtaVietLifeInteriors : Script
             if (m.P == null || !m.P.Exists() || m.P.IsDead) continue;
             if (m.Stage == 0)
             {
-                Anchor spot = FreeAnchor(GvlObjects.Wanted(hour), m);
-                if (spot == null) continue;
+                Anchor spot = FreeAnchor(GvlObjects.Wanted(hour), m) ?? FreeAnyAnchor(m);
+                if (spot == null)
+                {
+                    // Khong con do vat nao trong: lam viec vat tai cho (nghe dien thoai, uong nuoc...), khong dung do.
+                    Function.Call(Hash.TASK_START_SCENARIO_IN_PLACE, m.P, IdleScenarios[(int)(GvlTemplates.StableHash(m.P.Handle + "/" + (now / 30000)) % (uint)IdleScenarios.Length)], 0, true);
+                    m.Stage = 2; m.Until = now + 25000;
+                    continue;
+                }
                 m.Spot = spot; m.Stage = 1; m.Until = now + 9000;
-                WalkTo(m.P, StandPoint(spot, m.P.Position));
+                Vector3 stand = StandPoint(spot, m.P.Position);
+                // Noi that dich chuyen toi khong co luoi di bo: bi tuong chan thi dat thang toi cho, khong de di xuyen tuong.
+                if (World.Raycast(m.P.Position + new Vector3(0f, 0f, 0.3f), stand + new Vector3(0f, 0f, 0.3f), IntersectFlags.Map | IntersectFlags.Objects, m.P).DidHit)
+                    Function.Call(Hash.SET_ENTITY_COORDS_NO_OFFSET, m.P, stand.X, stand.Y, stand.Z, false, false, false);
+                else WalkTo(m.P, stand);
             }
             else if (m.Stage == 1)
             {
@@ -772,6 +784,241 @@ public class GtaVietLifeInteriors : Script
                 foreach (Member m in household) if (m != self && m.Spot == a) taken = true;
                 if (!taken) return a;
             }
+        return null;
+    }
+
+    // ------------------------------------------------------------ xa hoi tren pho
+    static readonly string[] StreetPeds = { "a_m_y_business_01", "a_f_y_business_01", "a_m_m_eastsa_01", "a_f_m_eastsa_01", "a_m_y_hipster_01",
+        "a_f_y_hipster_01", "a_m_m_bevhills_01", "a_f_y_tourist_01", "a_m_y_genstreet_01", "a_f_m_downtown_01", "a_m_m_skater_01", "a_f_y_eastsa_01" };
+    static readonly string[] StreetCars = { "asea", "premier", "stanier", "emperor", "ingot", "primo", "tailgater", "washington", "glendale", "regina" };
+    sealed class Walker { public Ped P; public Vehicle V; public GvlTrip Trip; public Vector3 Door, Curb; public int FadeAt; }
+    readonly List<Walker> walkers = new List<Walker>();
+    readonly Random street = new Random();
+    int nextWalker;
+    bool streetLife = true;
+
+    void StepStreetLife(Ped me, int now)
+    {
+        for (int i = walkers.Count - 1; i >= 0; i--)
+        {
+            Walker w = walkers[i];
+            bool gone = w.P == null || !w.P.Exists() || w.P.IsDead || w.P.Position.DistanceTo(me.Position) > 230f;
+            if (gone || StepWalker(w, me, now)) { ReleaseWalker(w, false); walkers.RemoveAt(i); }
+        }
+        if (!streetLife || portal.Phase != GvlPortal.Outside || InteriorOf(me) != 0) return;
+        int hour = World.CurrentTimeOfDay.Hours;
+        if (now < nextWalker || walkers.Count >= GvlStreet.MaxActive(hour)) return;
+        nextWalker = now + 5000 + street.Next(0, 6000);
+        int kind = GvlStreet.PickTrip(hour, street.Next(100));
+        if (kind != GvlStreet.None) StartTrip(me, kind, now);
+    }
+
+    GvlEntrance PickDoor(Vector3 around, int purpose, float minDistance, float maxDistance)
+    {
+        List<GvlEntrance> fit = new List<GvlEntrance>();
+        foreach (GvlEntrance e in registry.Within(around.X, around.Y, around.Z, maxDistance))
+        {
+            if (e.Tier <= 0 || e.Purpose != purpose || e.Source == "seed") continue;
+            if (GvlRegistry.Distance(around.X, around.Y, e.X, e.Y) < minDistance) continue;
+            bool busy = false;
+            foreach (Walker w in walkers) if (w.Door.DistanceTo2D(new Vector3(e.X, e.Y, e.Z)) < 3f) busy = true;
+            if (!busy) fit.Add(e);
+        }
+        return fit.Count == 0 ? null : fit[street.Next(fit.Count)];
+    }
+
+    // Lan duong gan cua; xe do sat le phia cua nha.
+    static bool CurbNear(Vector3 door, out Vector3 curb, out float heading)
+    {
+        OutputArgument pos = new OutputArgument(), head = new OutputArgument();
+        curb = Vector3.Zero; heading = 0f;
+        if (!Function.Call<bool>(Hash.GET_CLOSEST_VEHICLE_NODE_WITH_HEADING, door.X, door.Y, door.Z, pos, head, 1, 3f, 0)) return false;
+        Vector3 node = pos.GetResult<Vector3>();
+        heading = head.GetResult<float>();
+        Vector3 toDoor = door - node; toDoor.Z = 0f;
+        float distance = toDoor.Length();
+        if (distance > 30f) return false;
+        curb = distance < 0.5f ? node : node + toDoor.Normalized * Math.Min(3.5f, Math.Max(0f, distance - 2f));
+        return true;
+    }
+
+    static bool Visible(Vector3 p)
+    {
+        return Function.Call<bool>(Hash.IS_SPHERE_VISIBLE, p.X, p.Y, p.Z, 2f);
+    }
+
+    Vector3 SidewalkAway(Vector3 from, float distance)
+    {
+        for (int i = 0; i < 6; i++)
+        {
+            double angle = street.NextDouble() * Math.PI * 2.0;
+            Vector3 guess = from + new Vector3((float)Math.Cos(angle) * distance, (float)Math.Sin(angle) * distance, 0f);
+            OutputArgument safe = new OutputArgument();
+            if (!Function.Call<bool>(Hash.GET_SAFE_COORD_FOR_PED, guess.X, guess.Y, guess.Z + 2f, true, safe, 16)) continue;
+            Vector3 p = safe.GetResult<Vector3>();
+            if (p != Vector3.Zero && !Visible(p)) return p;
+        }
+        return Vector3.Zero;
+    }
+
+    void StartTrip(Ped me, int kind, int now)
+    {
+        GvlEntrance door = PickDoor(me.Position, GvlStreet.UsesShop(kind) ? GvlTier.Shop : GvlTier.Home, GvlStreet.StartsAtDoor(kind) ? 12f : 20f, 85f);
+        if (door == null) return;
+        Vector3 d = new Vector3(door.X, door.Y, door.Z);
+        Vector3 curb; float roadHeading;
+        bool road = CurbNear(d, out curb, out roadHeading);
+        if (GvlStreet.UsesCar(kind) && !road) kind = kind == GvlStreet.OutByCar ? GvlStreet.OutOnFoot : GvlStreet.HomeOnFoot;
+        Model pedModel = new Model(StreetPeds[street.Next(StreetPeds.Length)]);
+        if (!pedModel.IsInCdImage || !pedModel.Request(800)) return;
+        Walker w = new Walker(); w.Door = d; w.Curb = curb;
+        try
+        {
+            if (kind == GvlStreet.HomeByCar)
+            {
+                Vector3 from = World.GetNextPositionOnStreet(d + new Vector3((float)(street.NextDouble() - 0.5) * 300f, (float)(street.NextDouble() - 0.5) * 300f, 0f));
+                if (from == Vector3.Zero || from.DistanceTo(d) < 90f || Visible(from)) return;
+                Model carModel = new Model(StreetCars[street.Next(StreetCars.Length)]);
+                if (!carModel.IsInCdImage || !carModel.Request(1000)) return;
+                w.V = World.CreateVehicle(carModel, from);
+                carModel.MarkAsNoLongerNeeded();
+                if (w.V == null || !w.V.Exists()) return;
+                w.P = w.V.CreatePedOnSeat(VehicleSeat.Driver, pedModel);
+            }
+            else if (GvlStreet.StartsAtDoor(kind))
+            {
+                float face = (float)(Math.Atan2(-(curb.X - d.X), curb.Y - d.Y) * 180.0 / Math.PI);
+                w.P = World.CreatePed(pedModel, d, road ? face : 0f);
+                if (w.P != null && w.P.Exists()) { Function.Call(Hash.SET_ENTITY_ALPHA, w.P, 0, false); w.FadeAt = now; }   // buoc ra tu khung cua
+                if (kind == GvlStreet.OutByCar)
+                {
+                    Model carModel = new Model(StreetCars[street.Next(StreetCars.Length)]);
+                    if (carModel.IsInCdImage && carModel.Request(1000)) { w.V = World.CreateVehicle(carModel, curb, roadHeading); carModel.MarkAsNoLongerNeeded(); }
+                    if (w.V == null || !w.V.Exists()) kind = GvlStreet.OutOnFoot;
+                }
+            }
+            else
+            {
+                Vector3 from = SidewalkAway(d, 45f);
+                if (from == Vector3.Zero) return;
+                w.P = World.CreatePed(pedModel, from);
+            }
+        }
+        finally { pedModel.MarkAsNoLongerNeeded(); }
+        if (w.P == null || !w.P.Exists()) { ReleaseWalker(w, true); return; }
+        w.P.IsPersistent = true;
+        if (w.V != null && w.V.Exists()) w.V.IsPersistent = true;
+        Function.Call(Hash.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS, w.P, true);
+        w.Trip = new GvlTrip(kind, now);
+        walkers.Add(w);
+        BeginStage(w, now);
+        Log("pho: " + TripName(kind) + " o " + door.Id);
+    }
+
+    static string TripName(int kind)
+    {
+        switch (kind)
+        {
+            case GvlStreet.OutByCar: return "ra cua lay xe di lam";
+            case GvlStreet.OutOnFoot: return "ra cua di bo";
+            case GvlStreet.HomeByCar: return "lai xe ve nha";
+            case GvlStreet.HomeOnFoot: return "di bo ve nha";
+            case GvlStreet.IntoShop: return "vao cua hang";
+            default: return "ra khoi cua hang";
+        }
+    }
+
+    // true khi chuyen di ket thuc.
+    bool StepWalker(Walker w, Ped me, int now)
+    {
+        bool reached = false;
+        switch (w.Trip.Stage)
+        {
+            case GvlTrip.Emerge:
+                Function.Call(Hash.SET_ENTITY_ALPHA, w.P, Math.Min(255, Math.Max(0, (now - w.FadeAt) * 255 / GvlTrip.EmergeMs)), false);
+                break;
+            case GvlTrip.WalkToCar: reached = w.V != null && w.V.Exists() && w.P.IsInVehicle(w.V); break;
+            case GvlTrip.Drive:
+                reached = w.Trip.Kind == GvlStreet.OutByCar ? w.P.Position.DistanceTo(me.Position) > 170f
+                    : w.V != null && w.V.Exists() && w.V.Position.DistanceTo2D(w.Curb) < 9f && w.V.Speed < 2f;
+                break;
+            case GvlTrip.Park: reached = !w.P.IsInVehicle(); break;
+            case GvlTrip.WalkToDoor: reached = w.P.Position.DistanceTo2D(w.Door) < 1.4f; break;
+            case GvlTrip.Vanish:
+                Function.Call(Hash.SET_ENTITY_ALPHA, w.P, Math.Max(0, 255 - (now - w.FadeAt) * 255 / GvlTrip.VanishMs), false);
+                break;
+        }
+        bool wasVanish = w.Trip.Stage == GvlTrip.Vanish;
+        if (!w.Trip.Step(now, reached)) return false;
+        if (w.Trip.Stage == GvlTrip.Done)
+        {
+            if (wasVanish) { w.P.Delete(); w.P = null; }   // da vao trong nha / cua hang
+            return true;
+        }
+        BeginStage(w, now);
+        return false;
+    }
+
+    void BeginStage(Walker w, int now)
+    {
+        Ped p = w.P;
+        switch (w.Trip.Stage)
+        {
+            case GvlTrip.WalkToCar:
+                Function.Call(Hash.RESET_ENTITY_ALPHA, p);
+                Function.Call(Hash.TASK_ENTER_VEHICLE, p, w.V, 15000, -1, 1.0f, 1, 0);
+                break;
+            case GvlTrip.Drive:
+                if (w.Trip.Kind == GvlStreet.OutByCar) Function.Call(Hash.TASK_VEHICLE_DRIVE_WANDER, p, w.V, 13f, 786603);
+                else Function.Call(Hash.TASK_VEHICLE_DRIVE_TO_COORD_LONGRANGE, p, w.V, w.Curb.X, w.Curb.Y, w.Curb.Z, 12f, 786603, 4f);
+                break;
+            case GvlTrip.Park:
+                Function.Call(Hash.TASK_LEAVE_VEHICLE, p, w.V, 0);
+                break;
+            case GvlTrip.WalkToDoor:
+                Function.Call(Hash.TASK_FOLLOW_NAV_MESH_TO_COORD, p, w.Door.X, w.Door.Y, w.Door.Z, 1.0f, GvlTrip.WalkMs, 0.6f, false, 0f);
+                break;
+            case GvlTrip.Vanish:
+                w.FadeAt = now;
+                p.Task.ClearAll();
+                break;
+            case GvlTrip.Walk:
+                Function.Call(Hash.RESET_ENTITY_ALPHA, p);
+                Function.Call(Hash.TASK_WANDER_STANDARD, p, 10f, 10);
+                break;
+        }
+    }
+
+    // Het chuyen: tra nguoi va xe cho game tu quan (xe do lai ben duong), hoac xoa han khi dang don dep.
+    static void ReleaseWalker(Walker w, bool delete)
+    {
+        try
+        {
+            if (w.P != null && w.P.Exists())
+            {
+                if (delete) w.P.Delete();
+                else { Function.Call(Hash.RESET_ENTITY_ALPHA, w.P); Function.Call(Hash.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS, w.P, false); w.P.IsPersistent = false; w.P.MarkAsNoLongerNeeded(); }
+            }
+            if (w.V != null && w.V.Exists())
+            {
+                if (delete && (w.P == null || !w.P.Exists() || !w.P.IsInVehicle(w.V))) w.V.Delete();
+                else { w.V.IsPersistent = false; w.V.MarkAsNoLongerNeeded(); }
+            }
+        }
+        catch (Exception) { }
+    }
+
+    static readonly string[] IdleScenarios = { "WORLD_HUMAN_STAND_MOBILE", "WORLD_HUMAN_DRINKING", "WORLD_HUMAN_AA_COFFEE", "WORLD_HUMAN_STAND_IMPATIENT" };
+
+    Anchor FreeAnyAnchor(Member self)
+    {
+        foreach (Anchor a in anchors)
+        {
+            if (a == activity) continue;
+            bool taken = false;
+            foreach (Member m in household) if (m != self && m.Spot == a) taken = true;
+            if (!taken) return a;
+        }
         return null;
     }
 
@@ -1132,6 +1379,8 @@ public class GtaVietLifeInteriors : Script
     void OnAborted(object sender, EventArgs e)
     {
         try { LeaveEverything(true); } catch (Exception ex) { Log("thoat loi: " + ex.Message); }
+        foreach (Walker w in walkers) ReleaseWalker(w, true);
+        walkers.Clear();
     }
 
     static void Emit(string type, string data)

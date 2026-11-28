@@ -19,6 +19,10 @@ try {
   }
   Copy-Item (Join-Path $root "game\*.ini") $OutputDir -Force
   Copy-Item (Join-Path $root "game\GtaVietLifeIcons") $OutputDir -Recurse -Force
+  # Hang hoa va gia trong cua hang doc tu Data Pack (chi doc).
+  $data = Join-Path $OutputDir "GtaVietLifeData\vi-VN"
+  New-Item -ItemType Directory -Force $data | Out-Null
+  Copy-Item (Join-Path $root "data\packs\vi-VN\food_drink_menu.json"), (Join-Path $root "data\packs\vi-VN\goods_prices.json") $data -Force
   Write-Host ("Built " + $projects.Count + " script assemblies into " + $OutputDir)
 } finally {
   Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue

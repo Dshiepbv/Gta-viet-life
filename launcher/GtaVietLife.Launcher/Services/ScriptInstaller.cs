@@ -47,9 +47,11 @@ public static class ScriptInstaller {
   foreach(var file in Directory.GetFiles(source,"GtaVietLife*.ini")){
    var target=Path.Combine(scripts,Path.GetFileName(file));if(!File.Exists(target))plan.Add((file,target));
   }
-  var icons=Path.Combine(source,"GtaVietLifeIcons");
-  if(Directory.Exists(icons))foreach(var file in Directory.GetFiles(icons,"*",SearchOption.AllDirectories))
-   plan.Add((file,Path.Combine(scripts,"GtaVietLifeIcons",Path.GetRelativePath(icons,file))));
+  foreach(var folderName in new[]{"GtaVietLifeIcons","GtaVietLifeData"}){
+   var folder=Path.Combine(source,folderName);
+   if(Directory.Exists(folder))foreach(var file in Directory.GetFiles(folder,"*",SearchOption.AllDirectories))
+    plan.Add((file,Path.Combine(scripts,folderName,Path.GetRelativePath(folder,file))));
+  }
   plan=plan.Where(p=>!File.Exists(p.To)||PackageManifest.HashFile(p.From)!=PackageManifest.HashFile(p.To)).ToList();
   // Raw sources from earlier versions would load a second copy of every script.
   var retired=Directory.Exists(scripts)?Directory.GetFiles(scripts,"GtaVietLife*.cs"):Array.Empty<string>();

@@ -49,6 +49,30 @@ public class GtaVietLifeDoiSong : Script
     readonly List<Food> fridge = new List<Food>();
     int lastNewsSlot = -1;
 
+    // Hang mua o cua hang (ShopFloor) dua vao tu lanh: moi dong "ten|no|nuoc|nang luong|so ngay".
+    void TakeShopGroceries()
+    {
+        List<string> bought = Bus("GVL.FridgeAdd") as List<string>;
+        if (bought == null || bought.Count == 0) return;
+        List<string> items;
+        lock (bought) { items = new List<string>(bought); bought.Clear(); }
+        int added = 0;
+        foreach (string line in items)
+        {
+            string[] f = line.Split('|');
+            float h, t, e; int days;
+            if (f.Length != 5 || fridge.Count >= FridgeCap) continue;
+            if (!float.TryParse(f[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out h) ||
+                !float.TryParse(f[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out t) ||
+                !float.TryParse(f[3], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out e) ||
+                !int.TryParse(f[4], out days)) continue;
+            fridge.Add(new Food(f[0], h, t, e, gmin + days * 1440));
+            added++;
+        }
+        if (added > 0) { Notify("Da cat ~g~" + added + "~s~ mon vao tu lanh (" + fridge.Count + "/" + FridgeCap + ")."); Save(); }
+        if (added < items.Count) Notify("~y~Tu lanh day,~s~ " + (items.Count - added) + " mon khong cat duoc.");
+    }
+
     class Food
     {
         public string Name; public float H, T, E; public long Expire;
@@ -187,6 +211,7 @@ public class GtaVietLifeDoiSong : Script
             WatchEating();
             if (mInjury) WatchInjury(me);
             if (mFridge && Bus("GVL.FridgeReq") is bool && (bool)Bus("GVL.FridgeReq")) { BusSet("GVL.FridgeReq", false); EatFromFridge(-1); }
+            if (mFridge) TakeShopGroceries();
             ApplyEffects(me, now);
             if (mEvents) UpdateEvent(me, now);
             if (mNews) AutoNews();

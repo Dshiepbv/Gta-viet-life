@@ -99,6 +99,50 @@ FALLBACK = ["Ơ, nói gì cơ? Ồn quá chả nghe rõ.", "Từ từ, để tô
             "Ừm... chuyện đó để lúc khác nhé.", "Ờ ờ, tôi đang bận chút, lát nói tiếp."]
 
 
+_PACK = []   # [DataPack or None] sau lần nạp đầu
+
+
+def _pack():
+    """Data Pack Việt Nam: nạp từ bản đóng gói (_MEIPASS) hoặc từ repo, lỗi thì bỏ qua."""
+    if not _PACK:
+        try:
+            import sys
+            from pathlib import Path
+            engine_dir = Path(__file__).resolve().parents[1] / "engine"
+            if engine_dir.is_dir() and str(engine_dir) not in sys.path:
+                sys.path.append(str(engine_dir))
+            import datapack
+            _PACK.append(datapack.load_default())
+        except Exception as exc:   # gói hỏng hoặc thiếu: vẫn chạy với câu chờ
+            print(f"[llm] không nạp được Data Pack: {exc}")
+            _PACK.append(None)
+    return _PACK[0]
+
+
+def _words(text: str) -> set:
+    return {w for w in "".join(c if c.isalnum() else " " for c in (text or "").lower()).split() if len(w) > 1}
+
+
+def offline_reply(npc: dict, player_text: str, pack=None):
+    """Không có LLM: chọn câu đáp trong mẫu thoại có ý định giống lời người chơi, gần chữ nhất."""
+    pack = pack or _pack()
+    if pack is None or not (player_text or "").strip():
+        return None
+    try:
+        affinity = float(npc.get("affinity", 0))
+    except (TypeError, ValueError):
+        affinity = 0.0
+    intent = pack.detect_intent(player_text)
+    seed = str(npc.get("name", "")) + "/" + player_text
+    rows = pack.dialogue_for(intent, affinity=affinity, seed=seed, limit=8) or pack.dialogue_for("small_talk", seed=seed, limit=8)
+    if not rows:
+        return None
+    said = _words(player_text)
+    best = max(rows, key=lambda r: len(said & _words(r["utterance"])))
+    delta = 1 if intent in ("greeting", "small_talk", "weather", "neighbor", "family") and affinity > -30 else 0
+    return {"reply": best["response"], "action": "none", "affinity_delta": delta, "tone": "binh_thuong", "intent": intent}
+
+
 def _parse(text: str) -> dict:
     text = (text or "").strip()
     if text.startswith("```"):
@@ -228,6 +272,10 @@ class Brain:
                     last_err = e
                     print(f"[llm] ollama lỗi: {e}")
         print(f"[llm] không có bộ não nào trả lời được: {last_err}")
+        offline = offline_reply(npc, player_text)
+        if offline:
+            print("[llm] trả lời theo mẫu thoại Data Pack (chưa có Groq/Gemini/Ollama)")
+            return offline
         return {"reply": random.choice(FALLBACK), "action": "none", "affinity_delta": 0}
 
     AUDIO_NOTE = ("\n\nNgười chơi nói bằng giọng, bạn nhận được file âm thanh tiếng Việt. Hãy nghe, chép lại nguyên văn "

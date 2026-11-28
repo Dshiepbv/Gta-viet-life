@@ -1,7 +1,7 @@
 ﻿# Dung toan bo bo cai: kiem thu, bien dich module game, Launcher, Updater, Engine Host, Bridge,
 # manifest.json, goi zip cap nhat va file cai dat duy nhat. Dung chung cho may local va CI.
 param(
-  [string]$Version = "0.4.6",
+  [string]$Version = "0.4.7",
   [string]$Dotnet = "dotnet",
   [string]$Python = "python",
   [Parameter(Mandatory = $true)][string]$InnoCompiler,
@@ -40,7 +40,7 @@ $api = Join-Path $WorkDir "shvdn\ScriptHookVDotNet3.dll"
 
 Invoke-Step "Engine tests" { & $Python -m unittest discover -s engine/tests }
 Invoke-Step "Wire contract and C# logic tests" { & $Python -m unittest discover -s tests }
-Invoke-Step "Bridge tests" { Push-Location bridge; & $Python -m unittest test_engine_context test_news_lock test_dashboard_access test_stt_fallback; Pop-Location }
+Invoke-Step "Bridge tests" { Push-Location bridge; & $Python -m unittest test_engine_context test_news_lock test_dashboard_access test_stt_fallback test_offline_reply; Pop-Location }
 $logic = Join-Path $WorkDir "logic-bin"
 Invoke-Step "Launcher logic tests build" { & $Dotnet build launcher/tests/Logic/GtaVietLife.Launcher.Logic.Tests.csproj -c Release --artifacts-path (Join-Path $WorkDir "logic") -o $logic -v quiet --nologo }
 Invoke-Step "Launcher logic tests" { & $Dotnet (Join-Path $logic "GtaVietLife.Launcher.Logic.Tests.dll") }
@@ -68,7 +68,7 @@ Invoke-Step "Engine Host executable" {
 Invoke-Step "Voice bridge executable" {
   $hidden = foreach ($m in "llm", "memory", "stt", "tts", "overlay", "engine_context", "life", "social") { "--hidden-import"; $m }
   $collect = foreach ($m in "faster_whisper", "ctranslate2", "pygame", "sounddevice", "edge_tts", "numpy") { "--collect-all"; $m }
-  & $Python -m PyInstaller --noconfirm --clean --onedir --name GtaVietLifeBridge --paths (Join-Path $root "bridge") @hidden @collect --add-data "$(Join-Path $root 'bridge\config.example.json');." --workpath $pyiWork --specpath $pyiWork --distpath (Join-Path $WorkDir "bridge-dist") (Join-Path $root "bridge\main.py")
+  & $Python -m PyInstaller --noconfirm --clean --onedir --name GtaVietLifeBridge --paths (Join-Path $root "bridge") --paths (Join-Path $root "engine") --hidden-import datapack @hidden @collect --add-data "$(Join-Path $root 'bridge\config.example.json');." --add-data "$(Join-Path $root 'data\packs');data\packs" --workpath $pyiWork --specpath $pyiWork --distpath (Join-Path $WorkDir "bridge-dist") (Join-Path $root "bridge\main.py")
 }
 New-Item -ItemType Directory -Force (Join-Path $publish "runtime\bridge") | Out-Null
 Copy-Item (Join-Path $WorkDir "bridge-dist\GtaVietLifeBridge\*") (Join-Path $publish "runtime\bridge") -Recurse -Force

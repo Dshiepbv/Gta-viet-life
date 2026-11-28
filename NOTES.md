@@ -123,3 +123,11 @@ Engine: 96 test pass; test mới `engine/tests/test_phase2_regressions.py` đã 
 - Updater: WinExe (hết cửa sổ cmd đen), log ở `%LOCALAPPDATA%\GtaVietLife\updater.log`, rời thư mục cài trước khi đổi tên (nguyên nhân cập nhật thất bại: thư mục làm việc nằm trong thư mục cài), thử lại khi file còn khóa, kiểm exe PE. Test `cwd-inside` fail trên Updater cũ, pass trên bản mới.
 - Chấm vào nhà: dò mặt tiền bằng tia quét (tường có mái, gần đường, cách nhau 18 m), vòng tròn xanh lá (quán: vàng) thấy từ 40 m.
 - Chưa chạy trong game. Bước tiếp: người dùng test 0.4.5, gửi `GtaVietLifeCore.log`, `GtaVietLifeWorld.log`, `updater.log`.
+
+## 0.4.7 (2026-11-28): cửa hàng mua bán trực tiếp, người dân ra vào cửa, NPC trả lời không cần AI
+- Cửa hàng (ShopFloor): mỗi kệ một loại hàng (đồ uống, ăn vặt, tạp hóa, đồ ăn sẵn, tráng miệng), 55 mặt hàng từ Data Pack (giá VND đổi 5.000 VND = $1). Đứng trước kệ: `,` `.` xem, E lấy vào giỏ; ra quầy E trả tiền cả giỏ; đồ ăn uống dùng tại chỗ, tạp hóa vào tủ lạnh (bus `GVL.FridgeAdd`). Rời quán thì giỏ trả lại kệ.
+- Xã hội trên phố (Interiors): theo giờ người dân bước ra từ cửa (hiện dần), lên xe đi làm; chiều lái xe về đỗ, đi vào cửa (mờ dần); trưa vào/ra cửa hàng. Tối đa 6 người cùng lúc giờ cao điểm. Tắt: `StreetLife=false`.
+- Người trong nhà không đứng đơ khi thiếu chỗ sinh hoạt; bị tường chặn thì đặt thẳng tới chỗ, không đi xuyên tường.
+- NPC chat: không có Groq/Gemini/Ollama thì đáp bằng mẫu thoại Data Pack theo ý định câu nói (Bridge đóng gói kèm Data Pack).
+- Engine: không gửi lối vào đã loại (tier -1) nữa, hết HTTP 400.
+- Yêu cầu mới chưa làm: cửa thật đẩy được, chủ nhà mở cửa, mua nhà rồi tự trang trí. Cần MLO thật ở đúng chỗ; đang chờ chủ dự án chọn hướng.

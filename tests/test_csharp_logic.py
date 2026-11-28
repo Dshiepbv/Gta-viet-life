@@ -499,6 +499,54 @@ static class Harness
         Check(o.Tick(end - 1) == GvlOrder.Nothing && o.Tick(end) == GvlOrder.Finish && o.Tick(end + 1) == GvlOrder.Nothing, "finished once");
     }
 
+    static void Goods()
+    {
+        Check(GvlGoods.Ascii("Phở bò Đà Lạt") == "Pho bo Da Lat", "Vietnamese text shown without accents");
+        Check(GvlGoods.Dollars(35000, 65000) == 10 && GvlGoods.Dollars(2500, 4500) == 1 && GvlGoods.Dollars(0, 0) == 1, "VND to game dollars, never free");
+        GvlItem pho = GvlGoods.Make("food_001", "Phở bò", "food", "", 35000, 65000);
+        GvlItem coffee = GvlGoods.Make("food_020", "Cà phê sữa đá", "drink", "", 15000, 30000);
+        GvlItem rice = GvlGoods.Make("goods_001", "Gạo", "grocery", "kg", 15000, 30000);
+        GvlItem pork = GvlGoods.Make("goods_003", "Thịt heo", "grocery", "kg", 90000, 160000);
+        Check(pho.ReadyToEat && pho.Hunger > 0 && coffee.Thirst > 0 && coffee.Energy > 0, "food fills, coffee wakes up");
+        Check(!rice.ReadyToEat && rice.Days == 10 && pork.Days == 3 && rice.Unit == "kg", "groceries go to the fridge, meat spoils sooner");
+        List<GvlItem> all = new List<GvlItem> { pho, coffee, rice, pork };
+        Check(GvlGoods.OnShelf(all, "grocery").Count == 2 && GvlGoods.OnShelf(all, "drink")[0] == coffee, "each shelf holds its own kind");
+        Check(GvlGoods.OnShelf(all, "dessert").Count == 4, "an empty kind falls back to everything");
+        Check(GvlGoods.ShelfKind(0) == "drink" && GvlGoods.ShelfKind(5) == "drink" && GvlGoods.ShelfKind(-1) == "dessert", "shelf kinds cycle");
+        GvlBasket b = new GvlBasket();
+        Check(b.Add(pho) && b.Add(rice) && b.Total() == pho.Price + rice.Price, "basket total");
+        for (int i = 0; i < 20; i++) b.Add(coffee);
+        Check(b.Count == GvlBasket.Capacity && !b.Add(pho) && !b.Add(null), "basket is bounded");
+        b.Clear(); Check(b.Count == 0 && b.Total() == 0, "cleared");
+    }
+
+    static void StreetLife()
+    {
+        Check(GvlStreet.PickTrip(7, 10) == GvlStreet.OutByCar && GvlStreet.PickTrip(18, 10) == GvlStreet.HomeByCar, "morning out to work, evening home");
+        Check(GvlStreet.PickTrip(12, 10) == GvlStreet.IntoShop && GvlStreet.PickTrip(3, 50) == GvlStreet.None, "midday shopping, quiet night");
+        Check(GvlStreet.MaxActive(8) > GvlStreet.MaxActive(13) && GvlStreet.MaxActive(13) > GvlStreet.MaxActive(3), "rush hour is busiest");
+        for (int h = 0; h < 24; h++) for (int r = -5; r < 110; r += 7) { int t = GvlStreet.PickTrip(h, r); Check(t >= GvlStreet.None && t <= GvlStreet.OutOfShop, "trip in range"); }
+
+        GvlTrip car = new GvlTrip(GvlStreet.OutByCar, 0);
+        Check(car.Stage == GvlTrip.Emerge && !car.Step(500, true), "steps out of the doorway first, even if 'reached'");
+        Check(car.Step(GvlTrip.EmergeMs, false) && car.Stage == GvlTrip.WalkToCar, "then walks to the car");
+        Check(car.Step(2000, true) && car.Stage == GvlTrip.Drive, "gets in and drives");
+        Check(car.Step(2000 + GvlTrip.DriveMs, false) && car.Stage == GvlTrip.Done && !car.Step(999999, true), "never stuck, ends once");
+
+        GvlTrip home = new GvlTrip(GvlStreet.HomeByCar, 0);
+        Check(home.Stage == GvlTrip.Drive && home.Step(100, true) && home.Stage == GvlTrip.Park, "drives home and parks");
+        Check(home.Step(200, true) && home.Stage == GvlTrip.WalkToDoor, "walks to the door");
+        Check(home.Step(300, true) && home.Stage == GvlTrip.Vanish && !home.Step(400, true), "fades through the door, not instantly");
+        Check(home.Step(300 + GvlTrip.VanishMs, false) && home.Stage == GvlTrip.Done, "inside");
+
+        GvlTrip shop = new GvlTrip(GvlStreet.IntoShop, 0);
+        Check(shop.Stage == GvlTrip.WalkToDoor && shop.Step(GvlTrip.WalkMs, false) && shop.Stage == GvlTrip.Vanish, "a blocked walk still ends");
+        GvlTrip stroll = new GvlTrip(GvlStreet.OutOfShop, 0);
+        stroll.Step(GvlTrip.EmergeMs, false);
+        Check(stroll.Stage == GvlTrip.Walk && !stroll.Step(1000, true) || stroll.Stage == GvlTrip.Done, "walk away lasts a while");
+        Check(GvlStreet.UsesCar(GvlStreet.HomeByCar) && !GvlStreet.UsesCar(GvlStreet.IntoShop) && GvlStreet.UsesShop(GvlStreet.OutOfShop), "trip kinds");
+    }
+
     static void Shoppers()
     {
         GvlShopper s = new GvlShopper(0);
@@ -580,7 +628,7 @@ static class Harness
         else { Paths(); PermanentErrorDoesNotBlock(); BoundedRetry(404, GvlSendRules.MaxNotFoundAttempts);
                BoundedRetry(500, GvlSendRules.MaxServerErrorAttempts); TransientErrorKeepsEverything();
                CoalescingAndPersistence(); Capacity(); Batches(); Fade();
-               Streaming(); Templates(); Portal(); Crowd(); Wallet(); SaveFiles(); Business(); Days(); Bank(); AutoSaves(); CashGuards(); Orders(); Shoppers(); Tiers(); }
+               Streaming(); Templates(); Portal(); Crowd(); Wallet(); SaveFiles(); Business(); Days(); Bank(); AutoSaves(); CashGuards(); Orders(); Goods(); StreetLife(); Shoppers(); Tiers(); }
         Console.WriteLine("failures=" + failures);
         return failures == 0 ? 0 : 1;
     }
