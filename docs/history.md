@@ -7,3 +7,4 @@
 - [2026-11-28] Bản 0.3.1 trên máy, chưa commit: E9 E11 E14 G4 G7–G13, một phần M6. Chi tiết audit mục 9. | Bước tiếp: test trong GTA V Legacy; chốt sổ cái khi Engine tắt, khóa ký, tên exe; hỏi trước khi push (đổi `bridge/dashboard.html` sẽ phát hành APK công khai).
 - [2026-11-28] Bản 0.3.2 trên máy, chưa commit: thêm M1 (đếm ngày theo Core), M3 (hạn lệnh, giữ state vật thể), M5 (token, protocol). | Bước tiếp: chốt M4; làm M2; test trong game; hỏi trước khi push.
 - [2026-11-28] Bản 0.3.3 (đã push, 9be2a43, CI #276 xanh): sổ cái làm chủ số dư ngân hàng (chơi khi Engine tắt, gửi bù); nợ được ghi vào sổ cái. Quán, tồn kho, lương chưa chuyển. | Bước tiếp: chuyển quán và lương; M2; test trong game; hỏi trước khi push.
+- [2026-11-28] Test 0.3.3 trong game: World sập khi vẽ chữ, F7 rơi, đồ sinh thêm chồng nhau, STT chết vì thiếu cublas. Sửa trong 0.3.4 (trên máy, chưa commit). | Bước tiếp: test lại 0.3.4; tương tác nội thất cần thiết kế lại.

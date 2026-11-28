@@ -41,6 +41,14 @@ public class GtaVietLifeShopFloor : Script
     readonly List<Vector3> cleaningSpots = new List<Vector3>();
     int cleaningSpot, cleaningUntil, nextSearch;
     bool cleanerWorking;
+    // Khach NPC: vao cua, xem ke, ra quay tra tien, ve.
+    static readonly string[] Shelves = { "v_ret_247shelves01", "v_ret_247shelves02", "prop_ff_shelves_01", "v_ret_ml_shelfrk", "prop_shelves_01" };
+    static readonly string[] CustomerModels = { "a_m_y_hipster_01", "a_f_y_tourist_01", "a_m_m_eastsa_01", "a_f_y_business_01", "a_m_y_skater_01" };
+    sealed class Customer { public Ped P; public GvlShopper Plan; public Vector3 Shelf; }
+    readonly List<Customer> customers = new List<Customer>();
+    readonly List<Vector3> shelves = new List<Vector3>();
+    Vector3 entry;
+    int nextCustomer, sales;
 
     public GtaVietLifeShopFloor()
     {
@@ -80,6 +88,7 @@ public class GtaVietLifeShopFloor : Script
             bool atCounter = !me.IsInVehicle() && me.Position.DistanceTo(register) < CounterRange;
             BusSet("GVL.ShopCounter", atCounter || order.Busy);
             KeepStaff(me, now);
+            StepCustomers(now);
             if (order.State == GvlOrder.Choosing && !atCounter) order.Cancel();
             int step = order.Tick(now);
             if (step == GvlOrder.Serve) ServeDish(me);
@@ -112,7 +121,9 @@ public class GtaVietLifeShopFloor : Script
         away = away.Length() < 0.1f ? new Vector3(0f, 1f, 0f) : away.Normalized;
         behind = new Vector3(register.X + away.X * 0.75f, register.Y + away.Y * 0.75f, p.Z);
         haveShop = true;
+        entry = p;
         FindCleaningSpots(me, p);
+        FindShelves(me);
         Log("quan tai " + register.X.ToString("0") + "," + register.Y.ToString("0") + "; cho don dep: " + cleaningSpots.Count);
     }
 
@@ -130,6 +141,83 @@ public class GtaVietLifeShopFloor : Script
             if (spot.DistanceTo2D(register) < 1.8f) continue;
             if (World.Raycast(chest, spot + new Vector3(0f, 0f, 0.3f), IntersectFlags.Map | IntersectFlags.Objects, me).DidHit) continue;
             cleaningSpots.Add(spot);
+        }
+    }
+
+    void FindShelves(Ped me)
+    {
+        shelves.Clear();
+        int interior = Function.Call<int>(Hash.GET_INTERIOR_FROM_ENTITY, me);
+        HashSet<int> wanted = new HashSet<int>();
+        foreach (string name in Shelves) wanted.Add(Game.GenerateHash(name));
+        foreach (Prop prop in World.GetNearbyProps(register, SearchRange))
+        {
+            if (prop == null || !prop.Exists() || !wanted.Contains(prop.Model.Hash)) continue;
+            Vector3 at = prop.Position;
+            if (Function.Call<int>(Hash.GET_INTERIOR_AT_COORDS, at.X, at.Y, at.Z) == interior) shelves.Add(at);
+        }
+        if (shelves.Count == 0) shelves.AddRange(cleaningSpots);   // cua hang goc khong co ke nhan ra duoc
+    }
+
+    // ------------------------------------------------------------ khach
+    void StepCustomers(int now)
+    {
+        if (now > nextCustomer && customers.Count < 2)
+        {
+            nextCustomer = now + 20000;
+            Ped ped = SpawnWorker(CustomerModels[(int)((uint)now % (uint)CustomerModels.Length)], entry, HeadingTo(entry, register));
+            if (ped != null)
+            {
+                Customer c = new Customer(); c.P = ped; c.Plan = new GvlShopper(now);
+                c.Shelf = shelves.Count > 0 ? shelves[(int)((uint)ped.Handle % (uint)shelves.Count)] : register;
+                customers.Add(c);
+                GoTo(ped, c.Shelf);
+            }
+        }
+        for (int i = customers.Count - 1; i >= 0; i--)
+        {
+            Customer c = customers[i];
+            if (c.P == null || !c.P.Exists() || c.P.IsDead) { customers.RemoveAt(i); continue; }
+            Vector3 target = c.Plan.Stage == GvlShopper.ToShelf ? c.Shelf : c.Plan.Stage == GvlShopper.ToRegister ? FrontOfRegister() : entry;
+            bool arrived = c.P.Position.DistanceTo2D(target) < 1.5f;
+            int step = c.Plan.Tick(now, arrived);
+            if (step == GvlShopper.Browse) Function.Call(Hash.TASK_START_SCENARIO_IN_PLACE, c.P, "WORLD_HUMAN_WINDOW_SHOP_BROWSE", 0, true);
+            else if (step == GvlShopper.GoPay) { c.P.Task.ClearAll(); GoTo(c.P, FrontOfRegister()); }
+            else if (step == GvlShopper.Pay)
+            {
+                Function.Call(Hash.TASK_TURN_PED_TO_FACE_COORD, c.P, register.X, register.Y, register.Z, 1500);
+                sales++;
+                Log("khach mua hang (" + sales + " luot)");
+                Emit("shop.npc_sale", "x=" + ((int)register.X) + ";y=" + ((int)register.Y));
+            }
+            else if (step == GvlShopper.Leave) { c.P.Task.ClearAll(); GoTo(c.P, entry); }
+            else if (step == GvlShopper.Gone) { c.P.Delete(); customers.RemoveAt(i); }
+        }
+    }
+
+    Vector3 FrontOfRegister()
+    {
+        Vector3 toward = entry - register; toward.Z = 0f;
+        toward = toward.Length() < 0.1f ? new Vector3(0f, -1f, 0f) : toward.Normalized;
+        return new Vector3(register.X + toward.X * 1.1f, register.Y + toward.Y * 1.1f, entry.Z);
+    }
+
+    static void GoTo(Ped ped, Vector3 p)
+    {
+        Function.Call(Hash.TASK_FOLLOW_NAV_MESH_TO_COORD, ped, p.X, p.Y, p.Z, 1.0f, 12000, 0.8f, false, 0f);
+    }
+
+    static void Emit(string type, string data)
+    {
+        AppDomain d = AppDomain.CurrentDomain;
+        List<string> list = d.GetData("GVL.Events") as List<string>;
+        if (list == null) { list = new List<string>(); d.SetData("GVL.Events", list); }
+        lock (list)
+        {
+            object o = d.GetData("GVL.EventSeq");
+            long seq = (o is long ? (long)o : 0) + 1;
+            d.SetData("GVL.EventSeq", seq);
+            list.Add(seq + "\t" + type + "\t" + (data ?? ""));
         }
     }
 
@@ -307,9 +395,10 @@ public class GtaVietLifeShopFloor : Script
             if (eating && me != null && me.Exists()) me.Task.ClearAll();
             if (seller != null && seller.Exists()) { if (sellerOwned) seller.Delete(); else seller.Task.ClearAll(); }
             if (cleaner != null && cleaner.Exists()) cleaner.Delete();
+            foreach (Customer c in customers) if (c.P != null && c.P.Exists()) c.P.Delete();
         }
         catch (Exception ex) { Log("don dep loi: " + ex.Message); }
-        seller = null; cleaner = null; haveShop = false; cleaningSpots.Clear();
+        seller = null; cleaner = null; haveShop = false; cleaningSpots.Clear(); customers.Clear(); shelves.Clear();
         BusSet("GVL.ShopCounter", false);
     }
 
@@ -357,6 +446,42 @@ public sealed class GvlOrder
         if (State == Preparing) { State = Eating; until = now + EatMs; return Serve; }
         State = Closed;
         return Finish;
+    }
+}
+
+// Mot khach: toi ke -> xem hang -> ra quay -> tra tien -> ve cua -> bien mat. Ket o buoc nao qua lau thi sang buoc sau.
+public sealed class GvlShopper
+{
+    public const int ToShelf = 0, Browsing = 1, ToRegister = 2, Paying = 3, Leaving = 4, Done = 5;
+    public const int Nothing = 0, Browse = 1, GoPay = 2, Pay = 3, Leave = 4, Gone = 5;
+    public const int WalkLimitMs = 15000, BrowseMs = 7000, PayMs = 4000;
+    int until;
+    public int Stage { get; private set; }
+
+    public GvlShopper(int now) { until = now + WalkLimitMs; }
+
+    public int Tick(int now, bool arrived)
+    {
+        switch (Stage)
+        {
+            case ToShelf:
+                if (!arrived && now < until) return Nothing;
+                Stage = Browsing; until = now + BrowseMs; return Browse;
+            case Browsing:
+                if (now < until) return Nothing;
+                Stage = ToRegister; until = now + WalkLimitMs; return GoPay;
+            case ToRegister:
+                if (!arrived && now < until) return Nothing;
+                Stage = Paying; until = now + PayMs; return Pay;
+            case Paying:
+                if (now < until) return Nothing;
+                Stage = Leaving; until = now + WalkLimitMs; return Leave;
+            case Leaving:
+                if (!arrived && now < until) return Nothing;
+                Stage = Done; return Gone;
+            default:
+                return Nothing;
+        }
     }
 }
 // </gvl-testable:order>

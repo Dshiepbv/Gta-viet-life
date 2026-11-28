@@ -13,5 +13,7 @@
     <Compile Include="../../GtaVietLife.Launcher/Services/DiagnosticsBundle.cs" />
     <Compile Include="../../GtaVietLife.Launcher/Services/GameLocator.cs" />
     <Compile Include="../../GtaVietLife.Launcher/Services/ReleaseFeed.cs" />
+    <Compile Include="../../GtaVietLife.Launcher/Services/MloPacks.cs" />
+    <Compile Include="../../GtaVietLife.Launcher/Services/LauncherStates.cs" />
   </ItemGroup>
 </Project>

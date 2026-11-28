@@ -7,6 +7,21 @@ MAX_RAW = 200_000
 MAX_PROMPT = 6000
 
 
+def canonical_affinity(raw: str):
+    """Affinity the Life Engine holds for this NPC, or None when the NPC is not an engine actor."""
+    if not raw or not isinstance(raw, str) or len(raw) > MAX_RAW:
+        return None
+    try:
+        data = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    relation = data.get("relationship") if isinstance(data, dict) else None
+    value = relation.get("affinity") if isinstance(relation, dict) else None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return max(-100.0, min(100.0, float(value)))
+
+
 def engine_context_prompt(raw: str) -> str:
     """Format canonical Host facts for the existing cognition prompt; never invent facts."""
     if not raw or not isinstance(raw, str) or len(raw) > MAX_RAW:

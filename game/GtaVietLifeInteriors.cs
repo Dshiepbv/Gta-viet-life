@@ -22,43 +22,45 @@ public class GtaVietLifeInteriors : Script
 
     sealed class Template
     {
-        public readonly string Name; public readonly Vector3 Spawn; public readonly string Ipl;
-        public Template(string name, float x, float y, float z, string ipl) { Name = name; Spawn = new Vector3(x, y, z); Ipl = ipl; }
+        public readonly string Name, Ipl; public readonly Vector3 Spawn; public readonly int Tier; public readonly bool Shell;
+        public Template(string name, float x, float y, float z, string ipl, int tier, bool shell)
+        { Name = name; Spawn = new Vector3(x, y, z); Ipl = ipl; Tier = tier; Shell = shell; }
     }
 
     // Toa do va ten IPL lay tu du an bob74_ipl (giay phep MIT, (c) 2024 Bob74). Chua kiem trong game:
-    // mau nao khong nap duoc hai lan thi tu bi loai.
+    // mau nao khong nap duoc hai lan thi tu bi loai. Tier: 1 < 35 m2, 2 35-90, 3 90-180, 4 > 180.
+    // Shell = vo rong (kho), dung de ghep do (Modular) cho quan; nha o dung noi that co san.
     static readonly Template[] Templates = {
-        new Template("Nha binh dan", 261.4586f, -998.8196f, -99.0086f, ""),
-        new Template("Nha trung luu", 347.2686f, -999.2955f, -99.1962f, ""),
-        new Template("Can ho cao cap 1", -35.3128f, -580.4199f, 88.7122f, ""),
-        new Template("Can ho cao cap 2", -1477.14f, -538.7499f, 55.5264f, ""),
-        new Template("Biet thu 1", -169.286f, 486.4938f, 137.4436f, ""),
-        new Template("Biet thu 2", 340.9412f, 437.1798f, 149.3925f, ""),
-        new Template("Biet thu 3", 373.023f, 416.105f, 145.7006f, ""),
-        new Template("Biet thu 4", -676.127f, 588.612f, 145.1698f, ""),
-        new Template("Biet thu 5", -763.107f, 615.906f, 144.1401f, ""),
-        new Template("Biet thu 6", -857.798f, 682.563f, 152.6529f, ""),
-        new Template("Biet thu 7", 120.5f, 549.952f, 184.097f, ""),
-        new Template("Biet thu 8", -1288f, 440.748f, 97.6946f, ""),
-        new Template("Chung cu A", -1462.281f, -539.6276f, 72.4443f, "mpbusiness_int_placement_interior_v_mp_apt_h_01_milo_"),
-        new Template("Chung cu B", -914.9026f, -374.8731f, 112.6748f, "mpbusiness_int_placement_interior_v_mp_apt_h_01_milo__1"),
-        new Template("Chung cu C", -609.5669f, 51.2821f, 96.6002f, "mpbusiness_int_placement_interior_v_mp_apt_h_01_milo__2"),
-        new Template("Chung cu D", -778.5061f, 331.316f, 210.3972f, "mpbusiness_int_placement_interior_v_mp_apt_h_01_milo__3"),
-        new Template("Chung cu E", -22.6135f, -590.1432f, 78.4309f, "mpbusiness_int_placement_interior_v_mp_apt_h_01_milo__4"),
-        new Template("Chung cu F", -609.5669f, 51.2821f, -183.9808f, "mpbusiness_int_placement_interior_v_mp_apt_h_01_milo__5"),
-        new Template("Penthouse hien dai", -787.7805f, 334.9232f, 215.8384f, "apa_v_mp_h_01_a"),
-        new Template("Penthouse sang trong", -773.2258f, 322.8252f, 194.8862f, "apa_v_mp_h_01_b"),
-        new Template("Penthouse co dien", -787.7805f, 334.9232f, 186.1134f, "apa_v_mp_h_01_c"),
-        new Template("Nha sinh hoat chung 1", 1107.04f, -3157.399f, -37.5186f, "bkr_biker_interior_placement_interior_0_biker_dlc_int_01_milo"),
-        new Template("Nha sinh hoat chung 2", 998.4809f, -3164.711f, -38.9073f, "bkr_biker_interior_placement_interior_1_biker_dlc_int_02_milo"),
-        // Ba noi that cot truyen (toa do dang dung trong module Doi song): luon co san trong che do Story.
-        new Template("Nha Trevor", 1973.0f, 3815.0f, 33.43f, ""),
-        new Template("Nha Michael", -802.3f, 175.0f, 72.8f, ""),
-        new Template("Nha Franklin", 7.1197f, 536.6153f, 176.028f, "") };
+        new Template("Phong tro binh dan", 261.4586f, -998.8196f, -99.0086f, "", 1, false),
+        new Template("Nha xe moc Sandy", 1973.0f, 3815.0f, 33.43f, "", 1, false),
+        new Template("Can ho trung binh", 347.2686f, -999.2955f, -99.1962f, "", 2, false),
+        new Template("Can ho cao cap 1", -35.3128f, -580.4199f, 88.7122f, "", 3, false),
+        new Template("Can ho cao cap 2", -1477.14f, -538.7499f, 55.5264f, "", 3, false),
+        new Template("Chung cu A", -1462.281f, -539.6276f, 72.4443f, "mpbusiness_int_placement_interior_v_mp_apt_h_01_milo_", 3, false),
+        new Template("Chung cu B", -914.9026f, -374.8731f, 112.6748f, "mpbusiness_int_placement_interior_v_mp_apt_h_01_milo__1", 3, false),
+        new Template("Chung cu C", -609.5669f, 51.2821f, 96.6002f, "mpbusiness_int_placement_interior_v_mp_apt_h_01_milo__2", 3, false),
+        new Template("Chung cu D", -778.5061f, 331.316f, 210.3972f, "mpbusiness_int_placement_interior_v_mp_apt_h_01_milo__3", 3, false),
+        new Template("Chung cu E", -22.6135f, -590.1432f, 78.4309f, "mpbusiness_int_placement_interior_v_mp_apt_h_01_milo__4", 3, false),
+        new Template("Biet thu 1", -169.286f, 486.4938f, 137.4436f, "", 4, false),
+        new Template("Biet thu 2", 340.9412f, 437.1798f, 149.3925f, "", 4, false),
+        new Template("Biet thu 3", 373.023f, 416.105f, 145.7006f, "", 4, false),
+        new Template("Biet thu 4", -676.127f, 588.612f, 145.1698f, "", 4, false),
+        new Template("Biet thu 5", -763.107f, 615.906f, 144.1401f, "", 4, false),
+        new Template("Biet thu 6", -857.798f, 682.563f, 152.6529f, "", 4, false),
+        new Template("Biet thu 7", 120.5f, 549.952f, 184.097f, "", 4, false),
+        new Template("Biet thu 8", -1288f, 440.748f, 97.6946f, "", 4, false),
+        new Template("Penthouse hien dai", -787.7805f, 334.9232f, 215.8384f, "apa_v_mp_h_01_a", 4, false),
+        new Template("Penthouse sang trong", -773.2258f, 322.8252f, 194.8862f, "apa_v_mp_h_01_b", 4, false),
+        new Template("Penthouse co dien", -787.7805f, 334.9232f, 186.1134f, "apa_v_mp_h_01_c", 4, false),
+        new Template("Nha Michael", -802.3f, 175.0f, 72.8f, "", 4, false),
+        new Template("Nha Franklin", 7.1197f, 536.6153f, 176.028f, "", 4, false),
+        new Template("Ki-ot (kho nho)", 1094.988f, -3101.776f, -39.0f, "ex_exec_warehouse_placement_interior_1_int_warehouse_s_dlc_milo", 1, true),
+        new Template("Cua hang vua (kho nho)", 1094.988f, -3101.776f, -39.0f, "ex_exec_warehouse_placement_interior_1_int_warehouse_s_dlc_milo", 2, true),
+        new Template("Quan lon (kho vua)", 1056.486f, -3105.724f, -39.0f, "ex_exec_warehouse_placement_interior_0_int_warehouse_m_dlc_milo", 3, true),
+        new Template("Sieu thi (kho lon)", 1006.967f, -3102.079f, -39.0f, "ex_exec_warehouse_placement_interior_2_int_warehouse_l_dlc_milo", 4, true) };
 
-    const int StoryTemplates = 3;      // nam cuoi danh sach
-    const int RandomTries = 3;         // sau chung nay lan hong thi dung noi that cot truyen
+    static int[] TemplateTiers() { int[] t = new int[Templates.Length]; for (int i = 0; i < t.Length; i++) t[i] = Templates[i].Tier; return t; }
+    static bool[] TemplateShells() { bool[] s = new bool[Templates.Length]; for (int i = 0; i < s.Length; i++) s[i] = Templates[i].Shell; return s; }
 
     // Cua da co san trong du an (nha thue cua module Doi song).
     static readonly float[][] SeedDoors = {
@@ -79,21 +81,19 @@ public class GtaVietLifeInteriors : Script
         new TestPoint("Nha Vinewood Hills (cua portal)", 7.5139f, 539.5268f, 176.2028f),
         new TestPoint("Trailer Sandy Shores (cua portal)", 1972.7f, 3817.0f, 33.4f) };
 
-    sealed class AnchorKind
+    sealed class Anchor { public GvlObjectKind Kind; public Vector3 Pos; public float Heading; public Prop Spawned; public bool Bought; }
+
+    static Dictionary<int, GvlObjectKind> kindByHash;
+    static Dictionary<int, GvlObjectKind> KindByHash()
     {
-        public string Id, Label, Scenario; public string[] Models; public int Seconds; public float Hunger, Thirst, Energy, Hygiene;
-        public AnchorKind(string id, string label, string scenario, int seconds, float hunger, float thirst, float energy, float hygiene, params string[] models)
-        { Id = id; Label = label; Scenario = scenario; Seconds = seconds; Hunger = hunger; Thirst = thirst; Energy = energy; Hygiene = hygiene; Models = models; }
+        if (kindByHash != null) return kindByHash;
+        kindByHash = new Dictionary<int, GvlObjectKind>();
+        foreach (GvlObjectKind kind in GvlObjects.Kinds)
+            foreach (string model in kind.Models) kindByHash[Game.GenerateHash(model)] = kind;
+        return kindByHash;
     }
 
-    static readonly AnchorKind[] Kinds = {
-        new AnchorKind("bed", "ngu", "WORLD_HUMAN_BUM_SLEEP", 12, 0f, 0f, 35f, 0f, "v_res_msonbed", "v_res_mbbed", "v_res_mdbed", "v_res_d_bed", "v_res_tre_bed1"),
-        new AnchorKind("table", "an com", "WORLD_HUMAN_EATING", 8, 20f, 5f, 0f, 0f, "prop_table_03", "prop_table_01", "prop_table_02"),
-        new AnchorKind("fridge", "lay do uong", "WORLD_HUMAN_DRINKING", 6, 8f, 25f, 0f, 0f, "prop_fridge_01", "prop_fridge_03", "v_res_fridgemoda", "v_res_fridgemodsml"),
-        new AnchorKind("toilet", "ve sinh", "WORLD_HUMAN_STAND_IMPATIENT", 6, 0f, 0f, 0f, 8f, "prop_toilet_01", "prop_toilet_02"),
-        new AnchorKind("desk", "lam viec", "WORLD_HUMAN_CLIPBOARD", 10, 0f, 0f, 0f, 0f, "prop_off_desk_01", "v_corp_offdesk", "prop_table_04") };
-
-    sealed class Anchor { public AnchorKind Kind; public Vector3 Pos; public Prop Spawned; }
+    sealed class Member { public Ped P; public Anchor Spot; public int Stage, Until; }
 
     sealed class Visitor
     {
@@ -112,7 +112,11 @@ public class GtaVietLifeInteriors : Script
     readonly HashSet<string> registeredWithEngine = new HashSet<string>();
     readonly Dictionary<int, bool> doorModel = new Dictionary<int, bool>();
 
-    bool enabled = true, autoDiscover = true, showMarkers = true, dirty, furnishPending, spawnFurniture;
+    bool enabled = true, autoDiscover = true, showMarkers = true, dirty, furnishPending;
+    readonly Dictionary<string, List<GvlPlacement>> owned = new Dictionary<string, List<GvlPlacement>>();
+    readonly List<Member> household = new List<Member>();
+    Keys cycleKey = Keys.F5, buyKey = Keys.F6;
+    int buyIndex, nextMeasure, nextHousehold;
     readonly GvlPrepare prepare = new GvlPrepare();
     int movedAt;                 // luc man hinh toi; 0 khi khong dang chuyen cho
     Keys useKey = Keys.H, teleportKey = Keys.F7;
@@ -130,7 +134,8 @@ public class GtaVietLifeInteriors : Script
         enabled = Settings.GetValue("Interiors", "Enabled", true);
         autoDiscover = Settings.GetValue("Interiors", "AutoDiscoverDoors", true);
         showMarkers = Settings.GetValue("Interiors", "ShowMarkers", true);
-        spawnFurniture = Settings.GetValue("Interiors", "SpawnFurniture", false);
+        cycleKey = Settings.GetValue("Keys", "CycleFurniture", cycleKey);
+        buyKey = Settings.GetValue("Keys", "BuyFurniture", buyKey);
         useKey = Settings.GetValue("Keys", "Interior", useKey);
         teleportKey = Settings.GetValue("Keys", "TestTeleport", teleportKey);
         Load();
@@ -163,6 +168,8 @@ public class GtaVietLifeInteriors : Script
             }
             if (now > nextBubble) { nextBubble = now + 500; UpdateBubble(me); }
             if (autoDiscover && portal.Phase == GvlPortal.Outside && now > nextScan) { nextScan = now + 1500; DiscoverDoors(me); }
+            if (portal.Phase == GvlPortal.Outside && now > nextMeasure) { nextMeasure = now + 1000; MeasureNearby(me); }
+            if (portal.Phase == GvlPortal.Inside && now > nextHousehold) { nextHousehold = now + 1500; StepHousehold(me, now); }
             StepActivity(me, now);
             if (now > nextVisit) { nextVisit = now + 10000; StartVisit(now); }
             StepVisitors(me, now);
@@ -190,11 +197,14 @@ public class GtaVietLifeInteriors : Script
         foreach (string id in bubble.Active)
         {
             if (sent >= 5) break;
-            if (!registeredWithEngine.Add(id)) continue;
+            GvlEntrance e = registry.Find(id);
+            if (e == null || e.Tier == 0 || !registeredWithEngine.Add(id)) continue;   // chi gui toa nha da do
             string body = "{\"request_id\":\"" + Guid.NewGuid().ToString("N") +
                 "\",\"building_id\":\"" + BuildingPath + id + "\",\"category\":\"residential\",\"name\":\"Nha " + id +
                 "\",\"adapter_maps\":{\"gta5.shvdn\":{\"entrance\":\"" + id + ".door\",\"interior\":\"" + id +
-                ".interior\"}},\"interactions\":[\"enter\",\"exit\",\"inspect\"]}";
+                ".interior\"}},\"interactions\":[\"enter\",\"exit\",\"inspect\"],\"attributes\":{\"tier\":" + e.Tier +
+                ",\"purpose\":\"" + (e.Purpose == GvlTier.Shop ? "shop" : "home") + "\",\"area_m2\":" +
+                ((int)e.Area).ToString(CultureInfo.InvariantCulture) + ",\"zone\":\"" + (e.Zone ?? "") + "\"}}";
             post("/engine/v1/world/buildings", body);
             sent++;
         }
@@ -224,8 +234,65 @@ public class GtaVietLifeInteriors : Script
             if (prop == null || !prop.Exists() || !IsDoorModel(prop)) continue;
             Vector3 p = prop.Position;
             if (Function.Call<int>(Hash.GET_INTERIOR_AT_COORDS, p.X, p.Y, p.Z) != 0) continue;
+            if (!FacesStreet(p)) continue;   // chi cua mat pho hai ben duong
             if (registry.Add(p.X, p.Y, p.Z, "scan")) { added++; dirty = true; }
         }
+    }
+
+    static bool FacesStreet(Vector3 p)
+    {
+        OutputArgument node = new OutputArgument();
+        if (!Function.Call<bool>(Hash.GET_CLOSEST_VEHICLE_NODE, p.X, p.Y, p.Z, node, 1, 3f, 0f)) return false;
+        return node.GetResult<Vector3>().DistanceTo2D(p) < 30f;
+    }
+
+    void MeasureNearby(Ped me)
+    {
+        foreach (GvlEntrance e in registry.Within(me.Position.X, me.Position.Y, me.Position.Z, 40f))
+            if (e.Tier == 0) { Measure(e, me); return; }   // moi giay mot toa nha
+    }
+
+    // Do mat bang bang tia tu tren xuong: o nao co mai cao hon cua 2,4 m la thuoc toa nha.
+    void Measure(GvlEntrance e, Ped me)
+    {
+        Vector3 door = new Vector3(e.X, e.Y, e.Z);
+        Vector3 start = Vector3.Zero;
+        bool found = false;
+        float height;
+        for (int i = 0; i < 8 && !found; i++)
+        {
+            double angle = i * Math.PI / 4.0;
+            Vector3 c = door + new Vector3((float)Math.Cos(angle) * 2.5f, (float)Math.Sin(angle) * 2.5f, 0f);
+            if (RoofAbove(c, door.Z, me, out height)) { start = c; found = true; }
+        }
+        float area = 20f, top = 0f;   // khong do duoc: coi nhu ki-ot, khong bao gio mo noi that lon
+        if (found)
+        {
+            int cells = GvlFootprint.Cells(delegate(int ix, int iy)
+            {
+                float h;
+                bool covered = RoofAbove(start + new Vector3(ix * GvlFootprint.Cell, iy * GvlFootprint.Cell, 0f), door.Z, me, out h);
+                if (covered && h > top) top = h;
+                return covered;
+            });
+            area = GvlFootprint.Area(cells);
+        }
+        string zone = Function.Call<string>(Hash.GET_NAME_OF_ZONE, e.X, e.Y, e.Z) ?? "";
+        e.Area = area; e.Zone = zone;
+        e.Tier = GvlTier.Classify(area, top, zone);
+        e.Purpose = e.Source == "seed" ? GvlTier.Home : GvlTier.Purpose(e.Id, zone, e.Tier);
+        dirty = true;
+        registeredWithEngine.Remove(e.Id);
+        Log("do toa nha " + e.Id + ": " + area.ToString("0", CultureInfo.InvariantCulture) + " m2, cao " +
+            top.ToString("0", CultureInfo.InvariantCulture) + " m, vung " + zone + ", tier " + e.Tier + ", " +
+            (e.Purpose == GvlTier.Shop ? "quan" : "nha"));
+    }
+
+    static bool RoofAbove(Vector3 c, float doorZ, Ped me, out float height)
+    {
+        RaycastResult hit = World.Raycast(new Vector3(c.X, c.Y, doorZ + 60f), new Vector3(c.X, c.Y, doorZ - 1f), IntersectFlags.Map, me);
+        height = hit.DidHit ? hit.HitPosition.Z - doorZ : 0f;
+        return hit.DidHit && height > 2.4f;
     }
 
     // ------------------------------------------------------------ cua vao / cua ra
@@ -233,13 +300,15 @@ public class GtaVietLifeInteriors : Script
 
     void OnKeyDown(object sender, KeyEventArgs e)
     {
-        if (!enabled || (e.KeyCode != useKey && e.KeyCode != teleportKey) || Game.GameTime < keyCooldown) return;
+        if (!enabled || (e.KeyCode != useKey && e.KeyCode != teleportKey && e.KeyCode != cycleKey && e.KeyCode != buyKey) ||
+            Game.GameTime < keyCooldown) return;
         keyCooldown = Game.GameTime + 600;
         try
         {
             Ped me = Game.Player.Character;
             if (me == null || !me.Exists() || me.IsDead || me.IsInVehicle() || OtherMenuOpen() || prepare.Active) return;
             if (e.KeyCode == teleportKey) { MarkTestPoint(); return; }
+            if (portal.Phase == GvlPortal.Outside && e.KeyCode != useKey) return;
             if (portal.Phase == GvlPortal.Outside)
             {
                 if (e.Shift) { MarkDoor(me); return; }
@@ -248,6 +317,9 @@ public class GtaVietLifeInteriors : Script
             }
             else if (portal.Phase == GvlPortal.Inside && template >= 0)
             {
+                if (e.KeyCode == cycleKey) { buyIndex = (buyIndex + 1) % GvlObjects.Buyable.Length; ShowBuyChoice(); return; }
+                if (e.KeyCode == buyKey) { BuyOrSell(me); return; }
+                if (e.KeyCode != useKey) return;
                 if (activity != null) { StopActivity(me); return; }
                 if (me.Position.DistanceTo(Templates[template].Spawn) < PromptRange) { BeginExit(me); return; }
                 Anchor near = NearestAnchor(me.Position, 2.2f);
@@ -287,10 +359,11 @@ public class GtaVietLifeInteriors : Script
     void BeginEnter(Ped me, GvlEntrance door)
     {
         if (Game.Player.WantedLevel > 0) { Notify("Dang bi truy na, chua vao nha duoc."); return; }
-        int pick = GvlTemplates.Assign(door.Id, Templates.Length, health);
-        if (pick < 0) { Notify("Khong co mau noi that nao nap duoc tren may nay."); return; }
-        building = door.Id; template = pick;
+        if (door.Tier == 0) Measure(door, me);
         tried.Clear();
+        int pick = ChooseTemplate(door, tried);
+        if (pick < 0) { Notify("Khong co mau noi that nao hop voi toa nha nay."); return; }
+        building = door.Id; template = pick;
         returnPos = me.Position; returnHeading = me.Heading;
         StartPrepare(Game.GameTime);
         Notify("Dang mo cua...");
@@ -355,16 +428,29 @@ public class GtaVietLifeInteriors : Script
         Notify("~y~Khong chuyen duoc cho,~s~ da dua ve cua.");
     }
 
+    // Cung Tier hoac nho hon, khong bao gio lon hon: nha nho khong mo ra biet thu.
+    int ChooseTemplate(GvlEntrance door, HashSet<int> skip)
+    {
+        int[] tiers = TemplateTiers(); bool[] shells = TemplateShells();
+        int top = door.Tier > 0 ? door.Tier : 1;
+        foreach (int purpose in door.Purpose == GvlTier.Shop ? new[] { GvlTier.Shop, GvlTier.Home } : new[] { GvlTier.Home })
+            for (int tier = top; tier >= 1; tier--)
+            {
+                int pick = GvlInteriorChoice.Choose(door.Id, tier, purpose, tiers, shells, health, skip);
+                if (pick >= 0) return pick;
+            }
+        return -1;
+    }
+
     int NextTemplate()
     {
-        if (tried.Count < RandomTries) return GvlTemplates.Assign(building, Templates.Length, health, tried);
-        for (int i = Templates.Length - StoryTemplates; i < Templates.Length; i++)
-            if (!tried.Contains(i)) return i;
-        return -1;
+        GvlEntrance door = registry.Find(building);
+        return door == null ? -1 : ChooseTemplate(door, tried);
     }
 
     void BeginExit(Ped me)
     {
+        EndHousehold();
         MoveVisitorsOutside();
         ClearAnchors();
         Travel(me, returnPos);
@@ -405,7 +491,10 @@ public class GtaVietLifeInteriors : Script
             health.Worked(template);
             furnishPending = true;
             Emit("building.entered", "id=" + building + ";template=" + template);
-            Notify("Da vao ~g~" + Templates[template].Name + "~s~. Ve cho cua va bam ~y~" + useKey + "~s~ de ra.");
+            GvlEntrance entered = registry.Find(building);
+            string kind = entered != null && entered.Purpose == GvlTier.Shop ? "quan" : "nha";
+            Notify("Da vao ~g~" + Templates[template].Name + "~s~ (" + kind + " cap " + Templates[template].Tier + "). Ve cho cua va bam ~y~" +
+                useKey + "~s~ de ra. ~y~" + cycleKey + "/" + buyKey + "~s~: mua do bay.");
         }
         else
         {
@@ -429,6 +518,7 @@ public class GtaVietLifeInteriors : Script
     {
         Ped me = Game.Player.Character;
         ReleaseAllVisitors();
+        EndHousehold();
         ClearAnchors();
         prepare.Cancel();
         if (me != null && me.Exists())
@@ -444,64 +534,221 @@ public class GtaVietLifeInteriors : Script
     }
 
     // ------------------------------------------------------------ do dac (ActivityAnchor)
+    int BuildingTier() { GvlEntrance e = registry.Find(building); return e != null && e.Tier > 0 ? e.Tier : Templates[template].Tier; }
+    int BuildingPurpose() { GvlEntrance e = registry.Find(building); return e != null ? e.Purpose : GvlTier.Home; }
+
+    List<GvlPlacement> Owned(string id)
+    {
+        List<GvlPlacement> list;
+        if (!owned.TryGetValue(id, out list)) { list = new List<GvlPlacement>(); owned[id] = list; }
+        return list;
+    }
+
     void Furnish(Ped me)
     {
         furnishPending = false;
         ClearAnchors();
-        Vector3 spawn = Templates[template].Spawn;
+        Template t = Templates[template];
+        Vector3 spawn = t.Spawn;
         int interior = InteriorOf(me);
         if (interior == 0) return;
-        foreach (AnchorKind kind in Kinds)
+        // 1. Do co san trong noi that goc hoac MLO: nhan theo mo hinh.
+        int existing = 0;
+        foreach (Prop prop in World.GetNearbyProps(spawn, 25f))
         {
-            // Mac dinh chi dung do co san trong noi that; do sinh them de chong len nhau.
-            Anchor anchor = FindExisting(kind, spawn, interior);
-            if (anchor == null && spawnFurniture) anchor = SpawnFurniture(me, kind, spawn, interior);
-            if (anchor != null) anchors.Add(anchor);
+            if (anchors.Count >= 60) break;
+            GvlObjectKind kind;
+            if (prop == null || !prop.Exists() || !KindByHash().TryGetValue(prop.Model.Hash, out kind)) continue;
+            Vector3 p = prop.Position;
+            if (Function.Call<int>(Hash.GET_INTERIOR_AT_COORDS, p.X, p.Y, p.Z) != interior || NearestAnchor(p, 0.6f) != null) continue;
+            Anchor a = new Anchor(); a.Kind = kind; a.Pos = p; a.Heading = prop.Heading;
+            anchors.Add(a); existing++;
         }
-        Log("noi that " + building + ": " + anchors.Count + "/" + Kinds.Length + " diem sinh hoat");
+        // 2. Vo rong: ghep do theo hat giong cua toa nha. 3. Do nguoi choi da mua.
+        List<GvlPlacement> plan = new List<GvlPlacement>();
+        if (t.Shell) plan.AddRange(GvlLayout.Generate(building, BuildingTier(), BuildingPurpose()));
+        plan.AddRange(Owned(building));
+        int placed = 0;
+        foreach (GvlPlacement p in plan) if (SpawnPlacement(me, p, spawn, interior)) placed++;
+        Log("noi that " + building + ": " + anchors.Count + "/" + (existing + plan.Count) + " diem sinh hoat (" + existing +
+            " co san, ghep " + placed + "/" + plan.Count + ")");
+        StartHousehold(me, interior);
     }
 
-    static Anchor FindExisting(AnchorKind kind, Vector3 spawn, int interior)
+    bool SpawnPlacement(Ped me, GvlPlacement p, Vector3 spawn, int interior)
     {
+        GvlObjectKind kind = GvlObjects.Find(p.Kind);
+        if (kind == null) return false;
+        Model model = null;
         foreach (string name in kind.Models)
         {
-            int handle = Function.Call<int>(Hash.GET_CLOSEST_OBJECT_OF_TYPE, spawn.X, spawn.Y, spawn.Z, 15f,
-                Game.GenerateHash(name), false, false, false);
-            if (handle == 0) continue;
-            Vector3 p = Function.Call<Vector3>(Hash.GET_ENTITY_COORDS, handle, true);
-            if (Function.Call<int>(Hash.GET_INTERIOR_AT_COORDS, p.X, p.Y, p.Z) != interior) continue;
-            Anchor a = new Anchor(); a.Kind = kind; a.Pos = p; return a;
+            Model candidate = new Model(name);
+            if (candidate.IsInCdImage && candidate.Request(500)) { model = candidate; break; }
         }
-        return null;
-    }
-
-    // Vi tri sinh theo hat giong co dinh cua toa nha; chi nhan cho cung noi that va nhin thay tu cua.
-    Anchor SpawnFurniture(Ped me, AnchorKind kind, Vector3 spawn, int interior)
-    {
-        foreach (string name in kind.Models)
+        if (model == null) { Log("khong co mo hinh cho " + p.Kind); return false; }
+        foreach (float scale in new[] { 1f, 0.8f, 0.6f, 0.4f })
         {
-            Model model = new Model(name);
-            if (!model.IsInCdImage) continue;
-            if (!model.Request(500)) continue;
-            for (int attempt = 0; attempt < 24; attempt++)
-            {
-                float dx, dy;
-                GvlTemplates.Offset(building, kind.Id, attempt, out dx, out dy);
-                Vector3 p = new Vector3(spawn.X + dx, spawn.Y + dy, spawn.Z);
-                if (Function.Call<int>(Hash.GET_INTERIOR_AT_COORDS, p.X, p.Y, p.Z) != interior) continue;
-                if (NearestAnchor(p, 1.4f) != null) continue;
-                Vector3 beyond = p + (p - spawn).Normalized * 0.7f;
-                if (World.Raycast(spawn, beyond, IntersectFlags.Map | IntersectFlags.Objects, me).DidHit) continue;
-                Prop prop = World.CreateProp(model, new Vector3(p.X, p.Y, spawn.Z - 0.95f), false, false);
-                if (prop == null || !prop.Exists()) continue;
-                prop.IsPositionFrozen = true;
-                model.MarkAsNoLongerNeeded();
-                Anchor a = new Anchor(); a.Kind = kind; a.Pos = prop.Position; a.Spawned = prop; return a;
-            }
+            Vector3 at = new Vector3(spawn.X + p.X * scale, spawn.Y + p.Y * scale, spawn.Z);
+            if (Function.Call<int>(Hash.GET_INTERIOR_AT_COORDS, at.X, at.Y, at.Z) != interior) continue;
+            if (NearestAnchor(at, 1.0f) != null) continue;
+            Vector3 eye = spawn + new Vector3(0f, 0f, 0.5f);
+            if (World.Raycast(eye, at + new Vector3(0f, 0f, 0.5f), IntersectFlags.Map, me).DidHit) continue;
+            RaycastResult floor = World.Raycast(at + new Vector3(0f, 0f, 1f), at - new Vector3(0f, 0f, 3f), IntersectFlags.Map, me);
+            float z = floor.DidHit ? floor.HitPosition.Z : spawn.Z - 0.95f;
+            Prop prop = World.CreateProp(model, new Vector3(at.X, at.Y, z), false, false);
+            if (prop == null || !prop.Exists()) continue;
+            prop.Heading = p.Heading;
+            prop.IsPositionFrozen = true;
             model.MarkAsNoLongerNeeded();
-            return null;
+            Anchor a = new Anchor(); a.Kind = kind; a.Pos = prop.Position; a.Heading = p.Heading; a.Spawned = prop; a.Bought = p.Bought;
+            anchors.Add(a);
+            return true;
         }
+        model.MarkAsNoLongerNeeded();
+        return false;
+    }
+
+    // ------------------------------------------------------------ mua, ban do bay (kieu Big Ambitions)
+    void ShowBuyChoice()
+    {
+        string kind = GvlObjects.Buyable[buyIndex];
+        GvlObjectKind info = GvlObjects.Find(kind);
+        Notify("Do de mua: ~y~" + kind + "~s~ (" + info.Label + ") $" + GvlObjects.Price(kind) + ". Bam ~y~" + buyKey + "~s~ de mua va dat truoc mat.");
+    }
+
+    void BuyOrSell(Ped me)
+    {
+        Vector3 spawn = Templates[template].Spawn;
+        Anchor near = NearestAnchor(me.Position, 1.3f);
+        List<GvlPlacement> mine = Owned(building);
+        if (near != null && near.Bought && near.Spawned != null)
+        {
+            int refund = GvlObjects.Price(near.Kind.Id) / 2;
+            mine.RemoveAll(delegate(GvlPlacement p) { return Math.Abs(spawn.X + p.X - near.Pos.X) < 0.6f && Math.Abs(spawn.Y + p.Y - near.Pos.Y) < 0.6f; });
+            if (near.Spawned.Exists()) near.Spawned.Delete();
+            anchors.Remove(near);
+            Earn(refund, "ban lai " + near.Kind.Id);
+            Notify("Da ban lai " + near.Kind.Id + " +$" + refund + ".");
+            dirty = true; Save();
+            return;
+        }
+        string kind = GvlObjects.Buyable[buyIndex];
+        Vector3 at = me.Position + me.ForwardVector * 1.3f;
+        GvlPlacement placement = new GvlPlacement();
+        placement.Kind = kind; placement.X = at.X - spawn.X; placement.Y = at.Y - spawn.Y; placement.Heading = me.Heading + 180f; placement.Bought = true;
+        List<GvlPlacement> all = new List<GvlPlacement>(mine);
+        foreach (Anchor a in anchors) { GvlPlacement taken = new GvlPlacement(); taken.X = a.Pos.X - spawn.X; taken.Y = a.Pos.Y - spawn.Y; all.Add(taken); }
+        if (!GvlLayout.CanPlace(all, Math.Max(BuildingTier(), Templates[template].Tier), placement.X, placement.Y))
+        { Notify("Cho nay chat hoac ngoai phong. Dung cho khac."); return; }
+        int price = GvlObjects.Price(kind);
+        if (!Pay(price, "mua " + kind)) { Notify("~r~Khong du tien~s~ ($" + price + ")."); return; }
+        if (!SpawnPlacement(me, placement, spawn, InteriorOf(me))) { Earn(price, "hoan tien " + kind); Notify("Khong dat duoc o day, da hoan tien."); return; }
+        mine.Add(placement);
+        Emit("building.furniture_bought", "id=" + building + ";kind=" + kind + ";price=" + price);
+        Notify("~g~Da mua " + kind + "~s~ -$" + price + ".");
+        dirty = true; Save();
+    }
+
+    static bool Pay(int amount, string note)
+    {
+        Func<int, string, string, bool> pay = AppDomain.CurrentDomain.GetData("GVL.PayCash") as Func<int, string, string, bool>;
+        if (pay != null) return pay(amount, "furniture", note);
+        if (Game.Player.Money < amount) return false;
+        Game.Player.Money = Game.Player.Money - amount;
+        return true;
+    }
+
+    static void Earn(int amount, string note)
+    {
+        Action<int, string, string> earn = AppDomain.CurrentDomain.GetData("GVL.EarnCash") as Action<int, string, string>;
+        if (earn != null) earn(amount, "furniture", note);
+        else Game.Player.Money = Game.Player.Money + amount;
+    }
+
+    // ------------------------------------------------------------ ho gia dinh song trong nha
+    static readonly string[][] HouseholdModels = {
+        new[] { "a_m_m_eastsa_01", "a_f_y_eastsa_01", "a_m_m_salton_01", "a_f_m_eastsa_02" },
+        new[] { "a_m_y_business_01", "a_f_y_business_01", "a_m_m_skater_01", "a_f_y_hipster_01" },
+        new[] { "a_m_m_bevhills_02", "a_f_y_bevhills_01", "a_m_y_bevhills_01", "a_f_m_bevhills_01" } };
+
+    void StartHousehold(Ped me, int interior)
+    {
+        EndHousehold();
+        GvlEntrance e = registry.Find(building);
+        if (e == null || e.Purpose != GvlTier.Home || e.Source == "seed") return;   // nha cua nguoi choi khong co nguoi la
+        string[] models = HouseholdModels[GvlTier.ZoneWealth(e.Zone)];
+        int size = GvlTier.HouseholdSize(e.Id, BuildingTier());
+        Vector3 spawn = Templates[template].Spawn;
+        for (int i = 0; i < size; i++)
+        {
+            Model model = new Model(models[(int)((GvlTemplates.StableHash(e.Id + "/m" + i)) % (uint)models.Length)]);
+            if (!model.IsInCdImage || !model.Request(1000)) continue;
+            Vector3 at = spawn + new Vector3(1.2f * (i + 1), 0.8f, 0f);
+            if (Function.Call<int>(Hash.GET_INTERIOR_AT_COORDS, at.X, at.Y, at.Z) != interior) at = spawn;
+            Ped ped = World.CreatePed(model, at);
+            model.MarkAsNoLongerNeeded();
+            if (ped == null || !ped.Exists()) continue;
+            ped.IsPersistent = true;
+            Function.Call(Hash.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS, ped, true);
+            Member m = new Member(); m.P = ped; household.Add(m);
+        }
+        if (household.Count > 0) Log("ho gia dinh " + building + ": " + household.Count + " nguoi");
+    }
+
+    void StepHousehold(Ped me, int now)
+    {
+        int hour = World.CurrentTimeOfDay.Hours;
+        foreach (Member m in household)
+        {
+            if (m.P == null || !m.P.Exists() || m.P.IsDead) continue;
+            if (m.Stage == 0)
+            {
+                Anchor spot = FreeAnchor(GvlObjects.Wanted(hour), m);
+                if (spot == null) continue;
+                m.Spot = spot; m.Stage = 1; m.Until = now + 9000;
+                WalkTo(m.P, StandPoint(spot, m.P.Position));
+            }
+            else if (m.Stage == 1)
+            {
+                if (m.P.Position.DistanceTo2D(m.Spot.Pos) < 1.4f || now > m.Until)
+                {
+                    StartScenario(m.P, m.Spot);
+                    m.Stage = 2; m.Until = now + 30000 + (int)(GvlTemplates.StableHash(m.P.Handle + "/" + now) % 30000u);
+                }
+            }
+            else if (now > m.Until) { m.P.Task.ClearAll(); m.Stage = 0; m.Spot = null; }
+        }
+    }
+
+    Anchor FreeAnchor(string[] wanted, Member self)
+    {
+        foreach (string kind in wanted)
+            foreach (Anchor a in anchors)
+            {
+                if (a.Kind.Id != kind || a == activity) continue;
+                bool taken = false;
+                foreach (Member m in household) if (m != self && m.Spot == a) taken = true;
+                if (!taken) return a;
+            }
         return null;
+    }
+
+    void EndHousehold()
+    {
+        foreach (Member m in household) if (m.P != null && m.P.Exists()) m.P.Delete();
+        household.Clear();
+    }
+
+    static void StartScenario(Ped ped, Anchor a)
+    {
+        if (a.Kind.Sit)
+            Function.Call(Hash.TASK_START_SCENARIO_AT_POSITION, ped, a.Kind.Scenario, a.Pos.X, a.Pos.Y, a.Pos.Z + 0.5f, a.Heading + 180f, 0, true, false);
+        else
+        {
+            Vector3 toward = a.Pos - ped.Position;
+            ped.Heading = (float)(Math.Atan2(-toward.X, toward.Y) * 180.0 / Math.PI);
+            Function.Call(Hash.TASK_START_SCENARIO_IN_PLACE, ped, a.Kind.Scenario, 0, true);
+        }
     }
 
     void ClearAnchors()
@@ -537,6 +784,8 @@ public class GtaVietLifeInteriors : Script
     // ------------------------------------------------------------ sinh hoat cua nguoi choi: di toi do vat roi moi lam
     void BeginActivity(Ped me, Anchor a)
     {
+        foreach (Member m in household)
+            if (m.Spot == a && m.P != null && m.P.Exists()) { m.P.Task.ClearAll(); m.Stage = 0; m.Spot = null; }   // nhuong cho
         activity = a; activityStage = 0; activityUntil = Game.GameTime + 6000;
         WalkTo(me, StandPoint(a, me.Position));
     }
@@ -549,14 +798,12 @@ public class GtaVietLifeInteriors : Script
             bool arrived = me.Position.DistanceTo2D(activity.Pos) < 1.2f;
             if (!arrived && now < activityUntil) return;
             if (!arrived && me.Position.DistanceTo2D(activity.Pos) > 2.5f) { StopActivity(me); Notify("Khong toi duoc cho do."); return; }
-            Vector3 toward = activity.Pos - me.Position;
-            me.Heading = (float)(Math.Atan2(-toward.X, toward.Y) * 180.0 / Math.PI);   // quay mat vao do vat
-            Function.Call(Hash.TASK_START_SCENARIO_IN_PLACE, me, activity.Kind.Scenario, 0, true);
+            StartScenario(me, activity);   // ngoi dung ghe, quay mat vao do vat
             activityStage = 1; activityUntil = now + activity.Kind.Seconds * 1000;
             return;
         }
         if (now < activityUntil) return;
-        AnchorKind kind = activity.Kind;
+        GvlObjectKind kind = activity.Kind;
         AddNeeds(kind.Hunger, kind.Thirst, kind.Energy);
         if (kind.Hygiene > 0f) AppDomain.CurrentDomain.SetData("GVL.HygAdd", kind.Hygiene);
         Emit("building.activity", "id=" + building + ";kind=" + kind.Id);
@@ -564,7 +811,7 @@ public class GtaVietLifeInteriors : Script
         StopActivity(me);
     }
 
-    static string Gains(AnchorKind kind)
+    static string Gains(GvlObjectKind kind)
     {
         string text = "";
         if (kind.Hunger > 0f) text += " No +" + (int)kind.Hunger;
@@ -741,10 +988,12 @@ public class GtaVietLifeInteriors : Script
         {
             Vector3 p = me.Position;
             if (showMarkers)
-                foreach (GvlEntrance door in registry.Within(p.X, p.Y, p.Z, 15f))
-                    DrawMarker(new Vector3(door.X, door.Y, door.Z));
-            if (registry.Nearest(p.X, p.Y, p.Z, PromptRange) != null)
-                GTA.UI.Screen.ShowSubtitle("~y~" + useKey + "~s~: mo cua vao nha", 100);
+                foreach (GvlEntrance marked in registry.Within(p.X, p.Y, p.Z, 15f))
+                    DrawMarker(new Vector3(marked.X, marked.Y, marked.Z));
+            GvlEntrance door = registry.Nearest(p.X, p.Y, p.Z, PromptRange);
+            if (door != null)
+                GTA.UI.Screen.ShowSubtitle("~y~" + useKey + "~s~: vao " + (door.Purpose == GvlTier.Shop ? "quan" : "nha") +
+                    (door.Tier > 0 ? " (cap " + door.Tier + ")" : ""), 100);
         }
         else if (portal.Phase == GvlPortal.Inside && template >= 0)
         {
@@ -756,7 +1005,8 @@ public class GtaVietLifeInteriors : Script
                 GTA.UI.Screen.ShowSubtitle("Dang " + activity.Kind.Label + left + "... ~y~" + useKey + "~s~: dung", 100);
             }
             else if (me.Position.DistanceTo(Templates[template].Spawn) < PromptRange) GTA.UI.Screen.ShowSubtitle("~y~" + useKey + "~s~: ra ngoai", 100);
-            else if (near != null) GTA.UI.Screen.ShowSubtitle("~y~" + useKey + "~s~: " + near.Kind.Label, 100);
+            else if (near != null) GTA.UI.Screen.ShowSubtitle("~y~" + useKey + "~s~: " + near.Kind.Label +
+                (near.Bought ? "   ~y~" + buyKey + "~s~: ban lai" : ""), 100);
         }
     }
 
@@ -778,7 +1028,12 @@ public class GtaVietLifeInteriors : Script
         if (i < 0) return;
         string key = line.Substring(0, i), value = line.Substring(i + 1);
         if (key == "door") registry.Load(value);
-        else if (key == "bad") health.Load(value);
+        else if (key == "bad2") health.Load(value);   // chi so mau cu khac thu tu moi, bo "bad"
+        else if (key == "own")
+        {
+            int bar = value.IndexOf('|');
+            if (bar > 0) owned[value.Substring(0, bar)] = GvlLayout.Parse(value.Substring(bar + 1));
+        }
         else if (key == "inside") Restore(value);
     }
 
@@ -810,7 +1065,9 @@ public class GtaVietLifeInteriors : Script
             List<string> lines = new List<string>();
             lines.Add("version=1");
             foreach (string door in registry.Serialize()) lines.Add("door=" + door);
-            foreach (string bad in health.Serialize()) lines.Add("bad=" + bad);
+            foreach (string bad in health.Serialize()) lines.Add("bad2=" + bad);
+            foreach (KeyValuePair<string, List<GvlPlacement>> o in owned)
+                if (o.Value.Count > 0) lines.Add("own=" + o.Key + "|" + GvlLayout.Serialize(o.Value));
             if (building.Length > 0 && template >= 0)
                 lines.Add("inside=" + building + "|" + template + "|" + returnPos.X.ToString(ci) + "|" +
                     returnPos.Y.ToString(ci) + "|" + returnPos.Z.ToString(ci) + "|" + returnHeading.ToString(ci));
@@ -852,8 +1109,9 @@ public class GtaVietLifeInteriors : Script
 // Logic UIS thuan C#, khong goi API GTA; tests/test_csharp_logic.py bien dich doan nay va chay that.
 public sealed class GvlEntrance
 {
-    public string Id, Source;
-    public float X, Y, Z;
+    public string Id, Source, Zone = "";
+    public float X, Y, Z, Area;
+    public int Tier, Purpose;   // Tier 0: chua do
 }
 
 // Danh ba cua: luoi o vuong de tra cuu nhanh, khong trung trong pham vi MergeDistance.
@@ -939,7 +1197,8 @@ public sealed class GvlRegistry
         List<string> lines = new List<string>();
         CultureInfo ci = CultureInfo.InvariantCulture;
         foreach (GvlEntrance e in all)
-            lines.Add(e.X.ToString("R", ci) + "|" + e.Y.ToString("R", ci) + "|" + e.Z.ToString("R", ci) + "|" + e.Source);
+            lines.Add(e.X.ToString("R", ci) + "|" + e.Y.ToString("R", ci) + "|" + e.Z.ToString("R", ci) + "|" + e.Source + "|" +
+                e.Tier + "|" + e.Purpose + "|" + e.Area.ToString("0.#", ci) + "|" + (e.Zone ?? ""));
         return lines;
     }
 
@@ -949,9 +1208,17 @@ public sealed class GvlRegistry
         string[] f = (line ?? "").Split('|');
         float x, y, z;
         CultureInfo ci = CultureInfo.InvariantCulture;
-        if (f.Length != 4 || !float.TryParse(f[0], NumberStyles.Float, ci, out x) ||
+        if ((f.Length != 4 && f.Length != 8) || !float.TryParse(f[0], NumberStyles.Float, ci, out x) ||
             !float.TryParse(f[1], NumberStyles.Float, ci, out y) || !float.TryParse(f[2], NumberStyles.Float, ci, out z)) return false;
-        return Add(x, y, z, f[3]);
+        if (!Add(x, y, z, f[3])) return false;
+        int tier, purpose; float area;
+        if (f.Length == 8 && int.TryParse(f[4], out tier) && tier >= 0 && tier <= 4 && int.TryParse(f[5], out purpose) &&
+            float.TryParse(f[6], NumberStyles.Float, ci, out area))
+        {
+            GvlEntrance e = Find(MakeId(x, y, z));
+            e.Tier = tier; e.Purpose = purpose == 1 ? 1 : 0; e.Area = area; e.Zone = f[7];
+        }
+        return true;
     }
 }
 

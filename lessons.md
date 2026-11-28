@@ -23,6 +23,11 @@ Sổ phình to thì tách theo mảng (`lessons-build.md`, `lessons-ui.md`, `les
 - L013 · Logic nằm trong môi trường khó chạy thử thì tách thành lớp thuần để biên dịch và chạy thật. (2026-11-28)
 - L014 · Chính sách bỏ yêu cầu tùy giá trị dữ liệu: dữ liệu tiền không bị bỏ vì lỗi máy chủ; nhịp thử lại không được tăng theo số yêu cầu mới. (2026-11-28)
 - L015 · Sửa cho một luồng đang bị chặn chạy lại thì kiểm tác dụng phụ về tải và dung lượng của luồng đó. (2026-11-28)
+- L016 · Không đưa nhân vật tới nơi chưa nạp xong: nạp trước, chuyển sau, kèm hạn giờ đưa về chỗ cũ. (2026-11-28)
+- L017 · Bằng chứng phải là dòng log chứng minh thành công; không có dòng nào là "chưa đo", không phải "đạt". (2026-11-28)
+- L018 · Đối tượng vẽ tạo trong một khung hình phải được giữ sống tới khi vẽ xong; script bị hủy phải trả lại mọi cờ dùng chung. (2026-11-28)
+- L019 · Thư viện GPU nạp được chưa chắc chạy được; thử ở bước dùng thật và có đường lui CPU. (2026-11-28)
+- L020 · Nội thất chọn theo kích thước đo được của công trình, chỉ được nhỏ đi, không lớn lên. (2026-11-28)
 
 ## DỰ ÁN
 - L004 · `4819d89` có cây file trùng đỉnh `codex/gta-viet-life-architecture-hardening` (d5ab107); merge 12 file xung đột giải bằng bản main. (2026-11-28)
@@ -37,3 +42,8 @@ Sổ phình to thì tách theo mảng (`lessons-build.md`, `lessons-ui.md`, `les
 - L013 · `GvlPostQueue`, `GvlSendRules`, `GvlBatchIsolation`, `GvlFade` được test bằng `csc.exe`; phần gọi HTTP và API GTA vẫn phải thử trong game. (2026-11-28)
 - L014 · Bản sửa E5 đầu tiên cho phép loại event ledger khi host trả 500 và để mỗi quan sát mới kích hoạt thử lại; đã sửa trước khi bàn giao. (2026-11-28)
 - L015 · Mở lại `actors/observe` khiến `request_dedup` ghi định kỳ. (2026-11-28)
+- L016 · UIS 0.3.4–0.3.5 dịch chuyển trước khi IPL sẵn sàng: màn đen ở cửa và rơi tự do khi F7. (2026-11-28)
+- L017 · `tools/evaluate_logs.py`; ShopFloor 0.3.5 thiếu dòng log gọi món nên không chấm được. (2026-11-28)
+- L018 · World sập 19:42 trong `TextElement.InternalDraw`; cờ `GVL.WorldMenu` kẹt làm H và F7 không ăn. (2026-11-28)
+- L019 · Bridge thiếu `cublas64_12.dll`: Whisper nạp lên GPU nhưng lỗi khi nhận dạng. (2026-11-28)
+- L020 · Người chơi chê nhà nhỏ mở ra biệt thự; 0.4.0 đo mặt bằng và khóa 4 Tier. (2026-11-28)

@@ -280,7 +280,7 @@ def handler_for(state, log):
                 if self.path=="/engine/v1/world/buildings":
                     return self.sendj(201,state.society.register_building(
                         p.get("building_id",""),p.get("category",""),p.get("name",""),
-                        p.get("adapter_maps",{}),p.get("interactions",[])))
+                        p.get("adapter_maps",{}),p.get("interactions",[]),p.get("attributes")))
                 if self.path=="/engine/v1/world/objects":
                     return self.sendj(201,state.society.register_object(
                         p.get("object_id",""),p.get("building_id",""),p.get("kind",""),

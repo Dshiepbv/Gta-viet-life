@@ -1,7 +1,7 @@
 # Dung toan bo bo cai: kiem thu, bien dich module game, Launcher, Updater, Engine Host, Bridge,
 # manifest.json, goi zip cap nhat va file cai dat duy nhat. Dung chung cho may local va CI.
 param(
-  [string]$Version = "0.3.6",
+  [string]$Version = "0.4.0",
   [string]$Dotnet = "dotnet",
   [string]$Python = "python",
   [Parameter(Mandatory = $true)][string]$InnoCompiler,
@@ -86,7 +86,8 @@ Get-ChildItem $layout -Recurse -File | Sort-Object FullName | ForEach-Object {
   $relative = $_.FullName.Substring($layout.Length + 1).Replace("\", "/")
   $files[$relative] = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
 }
-$manifest = [ordered]@{ version = $Version; target = "gta5-legacy"; files = $files }
+$mloPacks = @(Get-Content (Join-Path $PSScriptRoot "mlo-packs.json") -Raw | ConvertFrom-Json)
+$manifest = [ordered]@{ version = $Version; target = "gta5-legacy"; files = $files; mlo_packs = $mloPacks }
 $json = $manifest | ConvertTo-Json -Depth 4
 [IO.File]::WriteAllText((Join-Path $layout "manifest.json"), $json, (New-Object Text.UTF8Encoding($false)))
 Copy-Item (Join-Path $layout "manifest.json") (Join-Path $publish "manifest.json")

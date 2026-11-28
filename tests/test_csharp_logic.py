@@ -23,7 +23,7 @@ def find_compiler():
     return None
 
 
-def testable_block(script, name):
+def extract_block(script, name):
     source = (GAME / script).read_text(encoding="utf-8-sig")
     match = re.search(r"// <gvl-testable:%s>(.*?)// </gvl-testable:%s>" % (name, name), source, re.S)
     if not match:
@@ -242,6 +242,11 @@ static class Harness
         GvlRegistry copy = new GvlRegistry();
         foreach (string line in reg.Serialize()) copy.Load(line);
         Check(copy.Count == reg.Count && copy.Find(id) != null, "round trip keeps ids");
+        reg.Find(id).Tier = 3; reg.Find(id).Purpose = 1; reg.Find(id).Area = 120f; reg.Find(id).Zone = "DOWNT";
+        GvlRegistry measured = new GvlRegistry();
+        foreach (string line in reg.Serialize()) measured.Load(line);
+        GvlEntrance back = measured.Find(id);
+        Check(back.Tier == 3 && back.Purpose == 1 && back.Area == 120f && back.Zone == "DOWNT", "measurement survives a save");
         Check(!copy.Load("garbage") && !copy.Load("1|2|x|scan") && !copy.Load(null), "bad lines ignored");
         Check(GvlRegistry.LooksLikeDoor(1.1f, 0.12f, 2.4f), "door size");
         Check(!GvlRegistry.LooksLikeDoor(4f, 0.1f, 2.4f) && !GvlRegistry.LooksLikeDoor(1.1f, 1.1f, 2.4f), "gate and box rejected");
@@ -443,13 +448,88 @@ static class Harness
         Check(o.Tick(end - 1) == GvlOrder.Nothing && o.Tick(end) == GvlOrder.Finish && o.Tick(end + 1) == GvlOrder.Nothing, "finished once");
     }
 
+    static void Shoppers()
+    {
+        GvlShopper s = new GvlShopper(0);
+        Check(s.Tick(100, false) == GvlShopper.Nothing, "walking to the shelf");
+        Check(s.Tick(200, true) == GvlShopper.Browse, "browses on arrival");
+        Check(s.Tick(200 + GvlShopper.BrowseMs, false) == GvlShopper.GoPay, "goes to pay");
+        Check(s.Tick(99999, false) == GvlShopper.Pay, "a stuck walk still reaches the counter");
+        Check(s.Tick(99999 + GvlShopper.PayMs, false) == GvlShopper.Leave && s.Tick(99999 + GvlShopper.PayMs, true) == GvlShopper.Gone, "pays once, leaves");
+        Check(s.Tick(999999, true) == GvlShopper.Nothing, "done");
+    }
+
+    static void Tiers()
+    {
+        Check(GvlTier.BySize(20f) == 1 && GvlTier.BySize(35f) == 2 && GvlTier.BySize(89f) == 2 && GvlTier.BySize(90f) == 3 &&
+              GvlTier.BySize(180f) == 3 && GvlTier.BySize(181f) == 4, "size bands 35/90/180");
+        Check(GvlTier.Classify(400f, 5f, "STRAW") == 3, "no mansion in a poor zone");
+        Check(GvlTier.Classify(400f, 5f, "RICHM") == 4, "mansion only where the rich live");
+        Check(GvlTier.Classify(400f, 30f, "DOWNT") == 2, "a tower outside rich zones is flats");
+        Check(GvlTier.Classify(400f, 30f, "ROCKF") == 4, "rich tower may be a penthouse");
+        Check(GvlTier.Classify(20f, 3f, "RICHM") == 1, "a shack stays a shack even in a rich zone");
+        Check(GvlTier.ZoneWealth("richm") == GvlTier.Rich && GvlTier.ZoneWealth("NOPE") == GvlTier.Middle, "zone lookup");
+        int shops = 0, homes = 0;
+        for (int i = 0; i < 400; i++) { if (GvlTier.Purpose("b" + i, "DOWNT", 2) == GvlTier.Shop) shops++; if (GvlTier.Purpose("b" + i, "RICHM", 2) == GvlTier.Shop) homes++; }
+        Check(shops > 150 && shops < 290 && homes < 100, "commercial streets have more shops");
+        Check(GvlTier.Purpose("x", "DOWNT", 2) == GvlTier.Purpose("x", "DOWNT", 2), "purpose is stable");
+        Check(GvlTier.HouseholdSize("a", 1) == 1, "one person per small room");
+        for (int i = 0; i < 50; i++) { int n = GvlTier.HouseholdSize("h" + i, 4); Check(n >= 1 && n <= 3, "household size"); }
+
+        Check(GvlFootprint.Cells(delegate(int x, int y) { return false; }) == 0, "door not under a roof");
+        Check(GvlFootprint.Cells(delegate(int x, int y) { return x >= -1 && x <= 1 && y >= 0 && y <= 2; }) == 9, "3x3 block");
+        Check(GvlFootprint.Cells(delegate(int x, int y) { return x >= 0 && x <= 2 && y == 0 || x == 5 && y == 0; }) == 3, "separate roof not joined");
+        Check(GvlFootprint.Cells(delegate(int x, int y) { return true; }) == 25 * 25, "bounded search");
+        Check(GvlTier.BySize(GvlFootprint.Area(8)) == 1 && GvlTier.BySize(GvlFootprint.Area(9)) == 2, "cells to tier");
+
+        for (int tier = 1; tier <= 4; tier++)
+            foreach (int purpose in new[] { GvlTier.Home, GvlTier.Shop })
+            {
+                List<GvlPlacement> plan = GvlLayout.Generate("b/" + tier + "/" + purpose, tier, purpose);
+                Check(plan.Count >= GvlLayout.Required(tier, purpose).Length - 1, "layout fills tier " + tier + " purpose " + purpose);
+                for (int i = 0; i < plan.Count; i++)
+                {
+                    double r = Math.Sqrt(plan[i].X * plan[i].X + plan[i].Y * plan[i].Y);
+                    Check(r >= 1.59 && r <= GvlLayout.Radius(tier) + 0.01, "inside the room, clear of the door");
+                    for (int j = i + 1; j < plan.Count; j++)
+                    {
+                        double dx = plan[i].X - plan[j].X, dy = plan[i].Y - plan[j].Y;
+                        Check(Math.Sqrt(dx * dx + dy * dy) >= GvlLayout.MinGap - 0.001, "furniture never overlaps");
+                    }
+                }
+                Check(GvlLayout.Serialize(plan) == GvlLayout.Serialize(GvlLayout.Generate("b/" + tier + "/" + purpose, tier, purpose)), "same seed, same layout");
+            }
+        Check(new List<string>(GvlLayout.Required(1, GvlTier.Shop)).Contains("register"), "every shop has a register");
+        Check(GvlLayout.Required(1, GvlTier.Home).Length < GvlLayout.Required(4, GvlTier.Home).Length, "bigger homes have more");
+        List<GvlPlacement> round = GvlLayout.Parse(GvlLayout.Serialize(GvlLayout.Generate("r", 2, GvlTier.Home)) + ";garbage;bed:x:1:0:0");
+        Check(round.Count == GvlLayout.Generate("r", 2, GvlTier.Home).Count, "layout round trip skips bad parts");
+        List<GvlPlacement> placed = new List<GvlPlacement>(); GvlPlacement one = new GvlPlacement(); one.X = 2f; one.Y = 0f; placed.Add(one);
+        Check(!GvlLayout.CanPlace(placed, 2, 2.5f, 0f) && GvlLayout.CanPlace(placed, 2, -2f, 0f) && !GvlLayout.CanPlace(placed, 1, 0f, 9f), "placement rules");
+
+        int[] tiers = { 1, 2, 4, 1, 2, 3, 4 };
+        bool[] shells = { false, false, false, true, true, true, true };
+        GvlTemplateHealth health = new GvlTemplateHealth();
+        for (int i = 0; i < 100; i++)
+        {
+            int home = GvlInteriorChoice.Choose("h" + i, 1, GvlTier.Home, tiers, shells, health, null);
+            int shop = GvlInteriorChoice.Choose("h" + i, 3, GvlTier.Shop, tiers, shells, health, null);
+            Check(home == 0 && shop == 5, "tier and purpose decide the interior");
+        }
+        Check(GvlInteriorChoice.Choose("x", 3, GvlTier.Home, tiers, shells, health, null) == -1, "no tier-3 home: caller steps down, never up");
+        health.Failed(0); health.Failed(0);
+        Check(GvlInteriorChoice.Choose("x", 1, GvlTier.Home, tiers, shells, health, null) == -1, "broken template not used");
+        foreach (GvlObjectKind k in GvlObjects.Kinds) Check(k.Models.Length > 0 && GvlObjects.Find(k.Id) == k, "kind " + k.Id);
+        foreach (string k in GvlObjects.Buyable) Check(GvlObjects.Find(k) != null && GvlObjects.Price(k) > 0, "buyable " + k);
+        for (int h = 0; h < 24; h++) Check(GvlObjects.Wanted(h).Length > 0, "schedule hour " + h);
+    }
+
     static int Main(string[] args)
     {
         if (args.Length > 0 && args[0] == "control") Check(false, "control case");
         else { Paths(); PermanentErrorDoesNotBlock(); BoundedRetry(404, GvlSendRules.MaxNotFoundAttempts);
                BoundedRetry(500, GvlSendRules.MaxServerErrorAttempts); TransientErrorKeepsEverything();
                CoalescingAndPersistence(); Capacity(); Batches(); Fade();
-               Streaming(); Templates(); Portal(); Crowd(); Wallet(); SaveFiles(); Business(); Days(); Bank(); Orders(); }
+               Streaming(); Templates(); Portal(); Crowd(); Wallet(); SaveFiles(); Business(); Days(); Bank(); Orders(); Shoppers(); Tiers(); }
         Console.WriteLine("failures=" + failures);
         return failures == 0 ? 0 : 1;
     }
@@ -468,15 +548,16 @@ class CSharpLogicTests(unittest.TestCase):
         cls.folder = tempfile.TemporaryDirectory()
         cls.addClassCleanup(cls.folder.cleanup)
         folder = Path(cls.folder.name)
-        files = {"Outbox.cs": testable_block("GtaVietLifeCore.cs", "outbox"),
-                 "Fade.cs": testable_block("GtaVietLifeDoiSong.cs", "fade"),
-                 "Uis.cs": testable_block("GtaVietLifeInteriors.cs", "uis"),
-                 "Wallet.cs": testable_block("GtaVietLifePersonal.cs", "wallet"),
-                 "SaveFile.cs": testable_block("GtaVietLifeSaveFile.cs", "savefile"),
-                 "Business.cs": testable_block("GtaVietLifeWorld.cs", "business"),
-                 "DayWatch.cs": testable_block("GtaVietLifeSaveFile.cs", "daywatch"),
-                 "BankSync.cs": testable_block("GtaVietLifeSaveFile.cs", "banksync"),
-                 "Order.cs": testable_block("GtaVietLifeShopFloor.cs", "order"),
+        files = {"Outbox.cs": extract_block("GtaVietLifeCore.cs", "outbox"),
+                 "Fade.cs": extract_block("GtaVietLifeDoiSong.cs", "fade"),
+                 "Uis.cs": extract_block("GtaVietLifeInteriors.cs", "uis"),
+                 "Wallet.cs": extract_block("GtaVietLifePersonal.cs", "wallet"),
+                 "SaveFile.cs": extract_block("GtaVietLifeSaveFile.cs", "savefile"),
+                 "Business.cs": extract_block("GtaVietLifeWorld.cs", "business"),
+                 "DayWatch.cs": extract_block("GtaVietLifeSaveFile.cs", "daywatch"),
+                 "BankSync.cs": extract_block("GtaVietLifeSaveFile.cs", "banksync"),
+                 "Order.cs": extract_block("GtaVietLifeShopFloor.cs", "order"),
+                 "UisPlan.cs": extract_block("GtaVietLifeUisPlan.cs", "uisplan"),
                  "Harness.cs": HARNESS}
         for name, text in files.items():
             (folder / name).write_text(text, encoding="utf-8-sig")

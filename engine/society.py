@@ -154,7 +154,8 @@ class SocietySimulation:
                     WHEN typeof(NEW.balance)<>'integer' OR NEW.balance>%d OR NEW.balance<%d
                     BEGIN SELECT RAISE(ABORT,'balance_out_of_range'); END"""
                     % (name, action, MAX_AMOUNT, -MAX_AMOUNT))
-            for table, column, kind in (("world_request_dedup", "kind", "TEXT NOT NULL DEFAULT ''"),
+            for table, column, kind in (("world_buildings", "attributes_json", "TEXT NOT NULL DEFAULT '{}'"),
+                                        ("world_request_dedup", "kind", "TEXT NOT NULL DEFAULT ''"),
                                         ("world_request_dedup", "created_at", "INTEGER NOT NULL DEFAULT 0"),
                                         ("world_event_journal", "recorded_at", "INTEGER NOT NULL DEFAULT 0")):
                 if column not in {row["name"] for row in self.db.execute("PRAGMA table_info(%s)" % table)}:
@@ -174,8 +175,26 @@ class SocietySimulation:
         """For changes touching NPC state too: lock order is life engine, then database."""
         return self.life_engine.transaction() if self.life_engine is not None else self._write()
 
+    @staticmethod
+    def _building_attributes(attributes) -> dict:
+        if attributes is None:
+            return {}
+        if not isinstance(attributes, dict) or len(attributes) > 12:
+            raise ValueError("invalid_building_attributes")
+        for key, value in attributes.items():
+            if not isinstance(key, str) or not key or len(key) > 32:
+                raise ValueError("invalid_building_attributes")
+            if isinstance(value, bool) or not isinstance(value, (str, int, float)) or (isinstance(value, str) and len(value) > 64):
+                raise ValueError("invalid_building_attributes")
+        tier = attributes.get("tier")
+        if tier is not None and (isinstance(tier, bool) or tier not in (1, 2, 3, 4)):
+            raise ValueError("invalid_building_tier")
+        if attributes.get("purpose") not in (None, "home", "shop"):
+            raise ValueError("invalid_building_purpose")
+        return dict(attributes)
+
     def register_building(self, building_id: str, category: str, name: str,
-                          adapter_maps: dict, interactions: list) -> dict:
+                          adapter_maps: dict, interactions: list, attributes: Optional[dict] = None) -> dict:
         building_id = _valid_id(building_id, "building_id")
         if not isinstance(category, str) or not category or len(category) > 64:
             raise ValueError("invalid_building_category")
@@ -189,16 +208,19 @@ class SocietySimulation:
                 raise ValueError("invalid_adapter_mapping")
         if not isinstance(interactions, list) or len(interactions) > 32 or any(x not in ("enter", "exit", "inspect", "open", "close") for x in interactions):
             raise ValueError("invalid_building_interactions")
+        attributes = self._building_attributes(attributes)
         with self._write():
             old = self.db.execute("SELECT category,name FROM world_buildings WHERE building_id=?", (building_id,)).fetchone()
             if old and (old["category"] != category or old["name"] != name):
                 raise ValueError("building_identity_conflict")
-            self.db.execute("""INSERT INTO world_buildings(building_id,category,name,adapter_maps_json,interactions_json)
-                VALUES(?,?,?,?,?) ON CONFLICT(building_id) DO UPDATE SET
+            self.db.execute("""INSERT INTO world_buildings(building_id,category,name,adapter_maps_json,interactions_json,attributes_json)
+                VALUES(?,?,?,?,?,?) ON CONFLICT(building_id) DO UPDATE SET
                 adapter_maps_json=excluded.adapter_maps_json,interactions_json=excluded.interactions_json,
+                attributes_json=CASE WHEN excluded.attributes_json='{}' THEN world_buildings.attributes_json
+                                     ELSE excluded.attributes_json END,
                 revision=world_buildings.revision+1""",
                 (building_id, category, name, json.dumps(adapter_maps, ensure_ascii=False),
-                 json.dumps(sorted(set(interactions)))))
+                 json.dumps(sorted(set(interactions))), json.dumps(attributes, ensure_ascii=False, sort_keys=True)))
         return {"building_id": building_id, "registered": True}
 
     def register_object(self, object_id: str, building_id: str, kind: str,
@@ -1128,7 +1150,11 @@ class SocietySimulation:
 
     def snapshot(self) -> dict:
         with self.lock:
-            buildings = [dict(r) for r in self.db.execute("SELECT building_id,category,name,revision FROM world_buildings ORDER BY building_id")]
+            buildings = []
+            for r in self.db.execute("SELECT building_id,category,name,revision,attributes_json FROM world_buildings ORDER BY building_id"):
+                item = dict(r)
+                item["attributes"] = json.loads(item.pop("attributes_json") or "{}")
+                buildings.append(item)
             properties = [dict(r) for r in self.db.execute("SELECT property_id,building_id,owner_account_id,value,rent,tenant_account_id,lease_until,condition FROM world_properties ORDER BY property_id")]
             businesses = []
             for r in self.db.execute("SELECT * FROM world_businesses ORDER BY business_id"):
@@ -1145,6 +1171,12 @@ class SocietySimulation:
             traffic = [dict(r) for r in self.db.execute("SELECT * FROM world_traffic_segments ORDER BY segment_id")]
             employment = [dict(r) for r in self.db.execute("SELECT * FROM world_employment_contracts ORDER BY contract_id")]
             relationships = [dict(r) for r in self.db.execute("SELECT * FROM world_social_relationships ORDER BY actor_id,target_id")]
+            if self.life_engine is not None:
+                # The table keeps the kind of relationship; how strong it is lives in the NPC state only.
+                for item in relationships:
+                    actor = self.life_engine.npcs.get(item["actor_id"])
+                    if actor is not None and item["target_id"] in actor.affinity:
+                        item["strength"] = actor.affinity[item["target_id"]]
             payroll_accruals = [dict(r) for r in self.db.execute("SELECT * FROM world_payroll_accruals ORDER BY created_minute,accrual_id")]
             return {"buildings": buildings, "objects": objects, "properties": properties, "businesses": businesses,
                     "employment": employment, "payroll_accruals": payroll_accruals,

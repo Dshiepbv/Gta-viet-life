@@ -1,7 +1,7 @@
 import json
 import unittest
 
-from engine_context import engine_context_prompt
+from engine_context import canonical_affinity, engine_context_prompt
 
 
 class EngineContextPromptTests(unittest.TestCase):
@@ -35,6 +35,14 @@ class EngineContextPromptTests(unittest.TestCase):
         self.assertIn("Mai", prompt)
         self.assertIn("Do not claim unlisted events", prompt)
         self.assertLessEqual(len(prompt), 6000)
+
+    def test_engine_owns_the_affinity_of_its_actors(self):
+        self.assertEqual(canonical_affinity(json.dumps({"relationship": {"affinity": 35}})), 35.0)
+        self.assertEqual(canonical_affinity(json.dumps({"relationship": {"affinity": 900}})), 100.0)
+        for raw in ("", "not-json", json.dumps({"relationship": {"affinity": True}}), json.dumps([1])):
+            self.assertIsNone(canonical_affinity(raw))
+        main = (__import__("pathlib").Path(__file__).with_name("main.py")).read_text(encoding="utf-8")
+        self.assertIn('if result["affinity_delta"] and engine_affinity is None:', main)
 
     def test_invalid_or_oversized_context_is_ignored(self):
         self.assertEqual(engine_context_prompt("not-json"), "")

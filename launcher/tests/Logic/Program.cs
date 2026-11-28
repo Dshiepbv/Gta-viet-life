@@ -81,6 +81,40 @@ try
     Check(!ReleaseFeed.IsNewer(new Version("0.3.5"), new Version("0.3.5.0")), "same version is not newer");
     Check(ReleaseFeed.IsNewer(new Version("0.3.6"), new Version("0.3.5.0")), "newer version");
 
+    // ---- seven states
+    foreach (var title in new[] { "SẴN SÀNG KHỞI CHẠY", "ĐANG KIỂM TRA", "ĐANG TẢI BẢN v1", "ĐANG CÀI MODULE", "CẦN CHỌN GTA V", "KHÔNG TƯƠNG THÍCH", "CẬP NHẬT THẤT BẠI" })
+        Check(LauncherStates.All.Contains(LauncherStates.Of(title)), "state for " + title);
+    Check(LauncherStates.Of("KHÔNG TƯƠNG THÍCH") == LauncherStates.Incompatible && LauncherStates.Of("CHƯA SẴN SÀNG") == LauncherStates.Error &&
+          LauncherStates.Of("ĐANG KHỞI ĐỘNG") == LauncherStates.Installing && LauncherStates.Of("BỘ CÀI BỊ HỎNG") == LauncherStates.NeedsRepair, "state mapping");
+    Check(LauncherStates.All.Distinct().Count() == 7, "seven states");
+
+    // ---- community MLO packs: original link + SHA-256, never repackaged
+    var rpfBytes = new byte[] { 0x37, 0x46, 0x50, 0x52, 1, 2, 3 };
+    var zipPath = Path.Combine(root, "mlo/source.zip");
+    Directory.CreateDirectory(Path.GetDirectoryName(zipPath)!);
+    using (var zip = System.IO.Compression.ZipFile.Open(zipPath, System.IO.Compression.ZipArchiveMode.Create))
+    using (var entry = zip.CreateEntry("pack/dlc.rpf").Open()) entry.Write(rpfBytes);
+    var zipHash = PackageManifest.HashFile(zipPath);
+    var good = new MloPack { Name = "Quan", Url = "https://example.test/quan.zip", Sha256 = zipHash, DlcName = "gvl_quan" };
+    var wrong = new MloPack { Name = "Sai", Url = "https://example.test/sai.zip", Sha256 = new string('0', 64), DlcName = "gvl_sai" };
+    var http = new MloPack { Name = "Http", Url = "http://example.test/x.zip", Sha256 = zipHash, DlcName = "gvl_http" };
+    Check(MloPacks.Problem(good) == null && MloPacks.Problem(http) != null && MloPacks.Problem(new MloPack { Name = "x", Url = good.Url, Sha256 = zipHash, DlcName = "../x" }) != null, "pack validation");
+    var downloads = 0;
+    Func<string, string, CancellationToken, Task> fake = (url, path, ct) => { downloads++; File.Copy(zipPath, path, true); return Task.CompletedTask; };
+    var gameDir = Path.Combine(root, "mlo/game");
+    var staging = Path.Combine(root, "mlo/staging");
+    var results = MloPacks.InstallAll(new[] { good, wrong, http }, gameDir, staging, Path.Combine(root, "mlo/backup"), fake, CancellationToken.None).GetAwaiter().GetResult();
+    Check(results[0].Installed && File.ReadAllBytes(MloPacks.Target(gameDir, good)).SequenceEqual(rpfBytes), "pack installed from zip");
+    Check(!results[1].Installed && !File.Exists(MloPacks.Target(gameDir, wrong)), "wrong hash not installed");
+    Check(!results[2].Installed && downloads == 2, "http link never downloaded");
+    results = MloPacks.InstallAll(new[] { good }, gameDir, staging, Path.Combine(root, "mlo/backup"), fake, CancellationToken.None).GetAwaiter().GetResult();
+    Check(results[0].Message == "Đã có" && downloads == 2, "installed pack not downloaded again");
+    var manifestPath = Path.Combine(root, "mlo/manifest.json");
+    File.WriteAllText(manifestPath, "{\"version\":\"1\",\"files\":{},\"mlo_packs\":[{\"name\":\"A\",\"url\":\"https://a\",\"sha256\":\"" + zipHash + "\",\"dlcName\":\"a\"}]}");
+    File.WriteAllText(Path.Combine(root, "mlo/user.json"), "[{\"name\":\"B\",\"url\":\"https://b\",\"sha256\":\"" + zipHash + "\",\"dlcName\":\"a\"}]");
+    var loaded = MloPacks.Load(manifestPath, Path.Combine(root, "mlo/user.json"));
+    Check(loaded.Count == 1 && loaded[0].Name == "B", "user list overrides the manifest for the same pack");
+
     // ---- installer
     Write("src/GtaVietLifeCore.dll", "core-v2"); Write("src/GtaVietLifeWorld.dll", "world-v2");
     Write("src/GtaVietLifeCore.ini", "default"); Write("src/GtaVietLifeNew.ini", "new-default");

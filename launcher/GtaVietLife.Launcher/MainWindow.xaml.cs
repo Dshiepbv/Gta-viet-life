@@ -51,7 +51,10 @@ public partial class MainWindow:Window {
   try{
    var exe=GamePathBox.Text.Trim();if(!File.Exists(exe))throw new FileNotFoundException("Chọn đúng tệp GTA5.exe.");
    settings.GameExecutable=exe;settings.Save();Set("ĐANG KIỂM TRA","Kiểm tra mod runtime và tự cài module vào thư mục scripts.");
-   var result=runtime.InstallAdapter(exe);RuntimeInfo.Text=result.Item2;Log(result.Item2);if(!result.Item1)throw new InvalidOperationException(result.Item2);
+   Set("ĐANG CÀI MODULE","Kiểm tra tương thích và cài module vào thư mục scripts.");
+   var result=runtime.InstallAdapter(exe);RuntimeInfo.Text=result.Item2;Log(result.Item2);
+   if(!result.Item1){Set("KHÔNG TƯƠNG THÍCH",result.Item2);HostState.Text="Chưa khởi động";AdapterState.Text="Chưa cài";return;}
+   await InstallMloPacks(Path.GetDirectoryName(exe)!);
    Set("ĐANG KHỞI ĐỘNG","Khởi động Engine Host và cầu nối AI cục bộ.");
    await runtime.StartAsync(CancellationToken.None);ready=true;HostState.Text="Hoạt động";BridgeState.Text=runtime.BridgeProblem==null?"Hoạt động":"Không chạy";AdapterState.Text="Đã cài · chờ game";
    Set("SẴN SÀNG KHỞI CHẠY",runtime.BridgeProblem==null?"Các dịch vụ đã hoạt động và module đã được cài. Bạn có thể mở GTA V.":"Engine và module đã sẵn sàng. Cầu nối AI (hội thoại) chưa chạy: "+runtime.BridgeProblem);PlayButton.IsEnabled=true;
@@ -90,6 +93,16 @@ public partial class MainWindow:Window {
    }
   }
  }
+ async Task InstallMloPacks(string gameDir){
+  var packs=MloPacks.Load(Path.Combine(AppContext.BaseDirectory,"manifest.json"),Path.Combine(LauncherSettings.Dir,"mlo-packs.json"));
+  if(packs.Count==0)return;
+  Set("ĐANG TẢI GÓI NỘI THẤT",packs.Count+" gói MLO khai báo trong manifest.json / mlo-packs.json.");
+  using var http=new System.Net.Http.HttpClient{Timeout=TimeSpan.FromMinutes(20)};http.DefaultRequestHeaders.UserAgent.ParseAdd("GTA-Viet-Life-Launcher/0.3");
+  var results=await MloPacks.InstallAll(packs,gameDir,Path.Combine(LauncherSettings.Dir,"Data","MloStaging"),Path.Combine(LauncherSettings.Dir,"Data","Backups","mlo"),
+   async (url,path,ct)=>{using var r=await http.GetAsync(url,System.Net.Http.HttpCompletionOption.ResponseHeadersRead,ct);r.EnsureSuccessStatusCode();
+    await using var input=await r.Content.ReadAsStreamAsync(ct);await using var output=File.Create(path);await input.CopyToAsync(output,ct);},CancellationToken.None);
+  foreach(var r in results)Log("MLO "+r.Name+": "+r.Message);
+ }
  async void Update_Click(object s,RoutedEventArgs e){
   if(busy||closing)return;
   if(RuntimeManager.GameRunning()){MessageBox.Show("Hãy thoát GTA V trước khi cập nhật.","GTA Viet Life");return;}
@@ -123,6 +136,6 @@ public partial class MainWindow:Window {
   }catch(Exception ex){Log("Export failed: "+ex);MessageBox.Show("Không xuất được nhật ký: "+ex.Message,"GTA Viet Life");}
  }
  void Exit_Click(object s,RoutedEventArgs e)=>Close();
- void Set(string title,string detail){StatusTitle.Text=title;StatusDetail.Text=detail;bool positive=title.StartsWith("SẴN SÀNG",StringComparison.Ordinal)||title.StartsWith("ĐANG TRONG GAME",StringComparison.Ordinal);StatusTitle.Foreground=positive?System.Windows.Media.Brushes.LightGreen:System.Windows.Media.Brushes.White;}
+ void Set(string title,string detail){StateBadge.Text=LauncherStates.Of(title).ToUpperInvariant();StatusTitle.Text=title;StatusDetail.Text=detail;bool positive=title.StartsWith("SẴN SÀNG",StringComparison.Ordinal)||title.StartsWith("ĐANG TRONG GAME",StringComparison.Ordinal);StatusTitle.Foreground=positive?System.Windows.Media.Brushes.LightGreen:System.Windows.Media.Brushes.White;}
  void Log(string s){RuntimeManager.Log(s);Dispatcher.Invoke(()=>LogText.Text+=$"[{DateTime.Now:HH:mm:ss}] {s}\n");}
 }

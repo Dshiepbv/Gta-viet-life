@@ -16,7 +16,7 @@ import time
 import unicodedata
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs
-from engine_context import engine_context_prompt
+from engine_context import canonical_affinity, engine_context_prompt
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.environ.get("GVL_DATA_DIR", HERE)
@@ -192,6 +192,9 @@ class Bridge:
             self.life.update_state({"hour": ctx.get("hour", "")})
             ctx["extra"] = self.life.context(npc, ctx.get("res_activity", ""))
             canonical_context = engine_context_prompt(ctx.get("engine_context", ""))
+            engine_affinity = canonical_affinity(ctx.get("engine_context", ""))
+            if engine_affinity is not None:
+                npc = dict(npc, affinity=engine_affinity)   # Life Engine is the single owner of this relationship
             if canonical_context:
                 ctx["extra"] += "\n" + canonical_context
             result, text, by_audio = None, "", False
@@ -233,9 +236,13 @@ class Bridge:
             self.memory.add(key, "player", text)
             self.memory.add(key, "npc", result["reply"])
             try:
-                if result["affinity_delta"]:
+                if result["affinity_delta"] and engine_affinity is None:
                     new_aff = self.memory.change_affinity(key, result["affinity_delta"])
                     self.social.level_change(npc, npc["affinity"], new_aff)
+                elif result["affinity_delta"]:
+                    # The game forwards affinity_delta to the engine with the dialogue; only predict the new level here.
+                    expected = max(-100.0, min(100.0, engine_affinity + result["affinity_delta"] * 5.0))
+                    self.social.level_change(npc, engine_affinity, expected)
                 self.social.after_talk(key)
             except Exception as e:
                 print(f"[social] lỗi: {e}")

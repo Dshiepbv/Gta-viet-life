@@ -82,7 +82,8 @@ MAPS = {"gta5.shvdn": {"entrance": "shop.gta.a.anchor", "interior": "shop.gta.a.
 # Same shapes and the same order as the C# scripts send them.
 QUEUED_SAMPLES = [
     ("/engine/v1/world/buildings", {"building_id": "building.shop.a", "category": "retail_business",
-        "name": "Burton - cua hang", "adapter_maps": MAPS, "interactions": ["open", "close", "inspect"]}),
+        "name": "Burton - cua hang", "adapter_maps": MAPS, "interactions": ["open", "close", "inspect"],
+        "attributes": {"tier": 2, "purpose": "shop", "area_m2": 60, "zone": "DOWNT"}}),
     ("/engine/v1/world/objects", {"object_id": "object.home.0.bed", "building_id": "building.shop.a",
         "kind": "bed", "adapter_anchors": {"gta5.shvdn": "bed"}, "initial_state": {}}),
     ("/engine/v1/world/accounts/ensure", {"account_id": "legacy:player_cash", "owner_id": "player.main",
@@ -166,7 +167,7 @@ class StaticPathContractTests(unittest.TestCase):
                 sent = csharp_keys(SOURCES[name], variable, position)
                 expected = by_path[path]
                 self.assertEqual(sorted(sent - expected), [], "C# sends fields the sample does not model")
-                optional = {"gta5.shvdn", "entrance", "interior", "stock"}
+                optional = {"gta5.shvdn", "entrance", "interior", "stock", "attributes", "tier", "purpose", "area_m2", "zone"}
                 if variable == "cashBody":   # shop tills receive no player events, so no opening sequence
                     optional |= {"as_of_source", "as_of_sequence"}
                 self.assertEqual(sorted(expected - sent - optional), [],

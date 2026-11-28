@@ -9,6 +9,7 @@
   <ItemGroup>
     <Compile Include="../GtaVietLifeInteriors.cs" />
     <Compile Include="../GtaVietLifeSaveFile.cs" />
+    <Compile Include="../GtaVietLifeUisPlan.cs" />
     <Reference Include="ScriptHookVDotNet3">
       <HintPath>$(ShvdnApi3)</HintPath>
       <Private>false</Private>
