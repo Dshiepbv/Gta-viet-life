@@ -101,3 +101,6 @@ Engine: 96 test pass; test mới `engine/tests/test_phase2_regressions.py` đã 
 
 ## Kế hoạch V4
 - docs/PLAN_V4.md. Bước tiếp: A (quan hệ/ký ức về Engine). Được push và gắn tag không cần hỏi.
+
+- Khóa ký APK: %LOCALAPPDATA%\GtaVietLife\signing (ngoài repo). Workflow chỉ phát hành APK khi có secret. Chờ chủ dự án thêm 2 secret.
+- Chủ dự án chốt: bằng chứng runtime do script tự ghi log (bài tự kiểm).
