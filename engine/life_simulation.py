@@ -766,6 +766,7 @@ class LifeSimulationEngine:
             "food": ("eat", {"hunger": -35.0, "mood": 3.0, "bladder": 8.0}),
             "meal": ("eat", {"hunger": -35.0, "mood": 3.0, "bladder": 8.0}),
             "fridge": ("eat", {"hunger": -15.0, "thirst": -15.0, "bladder": 4.0}),
+            "counter": ("eat", {"hunger": -20.0, "thirst": -10.0, "bladder": 4.0}),
             "vending_machine": ("drink", {"thirst": -20.0}),
             "bed": ("sleep", {"energy": 35.0, "health": 1.0, "stress": -8.0}),
             "toilet": ("toilet", {"bladder": -90.0}),
