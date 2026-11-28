@@ -113,3 +113,5 @@ Engine: 96 test pass; test mới `engine/tests/test_phase2_regressions.py` đã 
 - Chưa làm: bài tự kiểm tự động trong game; giá VND chưa dùng trong script C#; đổi tên exe.
 
 - Tag v0.4.1 và v0.4.2 trỏ vào commit thiếu .gitattributes: build trên GitHub sẽ hỏng vì Windows đổi xuống dòng làm sai SHA-256 của Data Pack, nên không có Release. Bản dùng được: v0.4.3.
+
+- Tag v0.4.1, v0.4.2, v0.4.3 trỏ vào commit thiếu .gitattributes nên build hỏng, không có Release; xóa tag bị hệ thống chặn, để nguyên. Bản phát hành đúng: v0.4.4 (commit 3cbaf38).
