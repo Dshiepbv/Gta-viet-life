@@ -2761,6 +2761,23 @@ public class GtaVietLifeWorld : Script
         sleepAt = Game.GameTime + 1100;
     }
 
+    void ReportPlayerActivity(string activity, string locationId, int durationMinutes)
+    {
+        try
+        {
+            AppDomain d = AppDomain.CurrentDomain;
+            object connected = d.GetData("GVL.Engine.Connected");
+            Action<string, string> post = d.GetData("GVL.Engine.WorldPost") as Action<string, string>;
+            if (!(connected is bool) || !(bool)connected || post == null) return;
+            string body = "{\"request_id\":\"" + Guid.NewGuid().ToString("N") +
+                "\",\"actor_id\":\"player.main\",\"activity\":\"" + WorldJsonEscape(activity) +
+                "\",\"location_id\":\"" + WorldJsonEscape(locationId) +
+                "\",\"duration_minutes\":" + durationMinutes.ToString(CultureInfo.InvariantCulture) + "}";
+            post("/engine/v1/simulation/actors/activity", body);
+        }
+        catch (Exception ex) { Log("dong bo hoat dong nguoi choi vao life engine loi: " + ex.Message); }
+    }
+
     void StartWork()
     {
         Ped me = Game.Player.Character;
@@ -2773,6 +2790,7 @@ public class GtaVietLifeWorld : Script
         }
         if (hour < 7 || hour >= 18) { Notify("Chi lam ca tu 7h den 18h."); return; }
         if (me.IsInVehicle()) { Notify("Xuong xe da."); return; }
+        ReportPlayerActivity("work", "work.gta.workspot", 240);
         fadeAction = 3;
         GTA.UI.Screen.FadeOut(800);
         sleepAt = Game.GameTime + 1100;
