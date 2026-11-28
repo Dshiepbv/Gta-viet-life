@@ -538,6 +538,7 @@ public class GtaVietLife : Script
     string phoneKey = "";
     int nextNamedCheck, nextNamedSave;
     const string NamedFile = "GtaVietLifeNamed.sav";
+    readonly GvlSaveFile namedStore = new GvlSaveFile(NamedFile, delegate(List<string> lines) { return lines.TrueForAll(x => x.IndexOf(',') > 0); }, Log);
 
     static string PhoneCall()
     {
@@ -546,18 +547,15 @@ public class GtaVietLife : Script
 
     void LoadNamed()
     {
-        try
-        {
-            if (!System.IO.File.Exists(NamedFile)) return;
-            var ci = System.Globalization.CultureInfo.InvariantCulture;
-            foreach (string line in System.IO.File.ReadAllLines(NamedFile))
-            {
-                string[] q = line.Split(',');
-                if (q.Length < 6) continue;
-                named[q[0]] = new NamedRec { Key = q[0], Model = int.Parse(q[1]), Pos = new Vector3(float.Parse(q[2], ci), float.Parse(q[3], ci), float.Parse(q[4], ci)), Heading = float.Parse(q[5], ci) };
-            }
-        }
-        catch (Exception ex) { Log("load named loi: " + ex.Message); }
+        if (!namedStore.Load(ParseNamedLine)) Log("load named loi: giu nguyen file cu");
+    }
+
+    void ParseNamedLine(string line)
+    {
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        string[] q = line.Split(',');
+        if (q.Length < 6) return;
+        named[q[0]] = new NamedRec { Key = q[0], Model = int.Parse(q[1]), Pos = new Vector3(float.Parse(q[2], ci), float.Parse(q[3], ci), float.Parse(q[4], ci)), Heading = float.Parse(q[5], ci) };
     }
 
     void SaveNamed()
@@ -568,7 +566,7 @@ public class GtaVietLife : Script
             var l = new List<string>();
             foreach (NamedRec r in named.Values)
                 l.Add(r.Key + "," + r.Model + "," + r.Pos.X.ToString(ci) + "," + r.Pos.Y.ToString(ci) + "," + r.Pos.Z.ToString(ci) + "," + r.Heading.ToString(ci));
-            System.IO.File.WriteAllLines(NamedFile, l.ToArray());
+            namedStore.Write(l);
         }
         catch (Exception ex) { Log("save named loi: " + ex.Message); }
     }

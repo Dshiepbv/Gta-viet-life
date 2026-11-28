@@ -14,6 +14,7 @@ using GTA.Native;
 public class GtaVietLifeInteriors : Script
 {
     const string SaveFile = "GtaVietLifeInteriors.sav";
+    readonly GvlSaveFile store = new GvlSaveFile(SaveFile, delegate(List<string> lines) { return lines.Count > 1 && lines[0] == "version=1" && lines[lines.Count - 1] == "end=1"; }, Log);
     const string BuildingPath = "building.uis.";
     const float PromptRange = 1.8f;
     const float ScanRange = 45f;
@@ -111,7 +112,7 @@ public class GtaVietLifeInteriors : Script
     readonly HashSet<string> registeredWithEngine = new HashSet<string>();
     readonly Dictionary<int, bool> doorModel = new Dictionary<int, bool>();
 
-    bool enabled = true, autoDiscover = true, showMarkers = true, saveBlocked, dirty, furnishPending;
+    bool enabled = true, autoDiscover = true, showMarkers = true, dirty, furnishPending;
     Keys useKey = Keys.H, teleportKey = Keys.F7;
     int testIndex = -1, teleportUntil;
     TestPoint teleporting;
@@ -720,27 +721,17 @@ public class GtaVietLifeInteriors : Script
     // ------------------------------------------------------------ luu / tai
     void Load()
     {
-        try
-        {
-            if (!File.Exists(SaveFile)) return;
-            string[] lines = File.ReadAllLines(SaveFile, Encoding.UTF8);
-            if (lines.Length < 2 || lines[0] != "version=1" || lines[lines.Length - 1] != "end=1")
-                throw new InvalidDataException("file luu thieu dau hoac cuoi");
-            foreach (string line in lines)
-            {
-                int i = line.IndexOf('=');
-                if (i < 0) continue;
-                string key = line.Substring(0, i), value = line.Substring(i + 1);
-                if (key == "door") registry.Load(value);
-                else if (key == "bad") health.Load(value);
-                else if (key == "inside") Restore(value);
-            }
-        }
-        catch (Exception ex)
-        {
-            saveBlocked = true;   // khong ghi de file khong doc duoc
-            Log("load loi, giu nguyen file cu: " + ex.Message);
-        }
+        if (!store.Load(ParseSaveLine)) Notify("~r~GTA Viet Life: khong doc duoc danh ba cua. File cu duoc giu nguyen, tien trinh moi KHONG duoc luu.");
+    }
+
+    void ParseSaveLine(string line)
+    {
+        int i = line.IndexOf('=');
+        if (i < 0) return;
+        string key = line.Substring(0, i), value = line.Substring(i + 1);
+        if (key == "door") registry.Load(value);
+        else if (key == "bad") health.Load(value);
+        else if (key == "inside") Restore(value);
     }
 
     // Chi tiep tuc trang thai "dang o trong" khi nhan vat that su con o cho mau noi that do.
@@ -764,7 +755,6 @@ public class GtaVietLifeInteriors : Script
 
     void Save()
     {
-        if (saveBlocked) return;
         try
         {
             CultureInfo ci = CultureInfo.InvariantCulture;
@@ -776,10 +766,7 @@ public class GtaVietLifeInteriors : Script
                 lines.Add("inside=" + building + "|" + template + "|" + returnPos.X.ToString(ci) + "|" +
                     returnPos.Y.ToString(ci) + "|" + returnPos.Z.ToString(ci) + "|" + returnHeading.ToString(ci));
             lines.Add("end=1");
-            File.WriteAllLines(SaveFile + ".tmp", lines.ToArray(), Encoding.UTF8);
-            if (File.Exists(SaveFile)) File.Replace(SaveFile + ".tmp", SaveFile, SaveFile + ".bak");
-            else File.Move(SaveFile + ".tmp", SaveFile);
-            dirty = false;
+            if (store.Write(lines)) dirty = false;
         }
         catch (Exception ex) { Log("save loi: " + ex.Message); }
     }

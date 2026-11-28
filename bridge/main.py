@@ -143,9 +143,12 @@ class Bridge:
     def news(self, ctx: dict) -> str:
         """Ban tin radio: LLM tong hop tin don/su kien gan day roi doc bang giong noi. Tra ve so ms uoc tinh."""
         events = self.life.recent(8)
-        lines = self.brain.news(ctx, events) if self.busy.acquire(timeout=20) else []
-        if lines:
-            self.busy.release()
+        lines = []
+        if self.busy.acquire(timeout=20):
+            try:
+                lines = self.brain.news(ctx, events)
+            finally:
+                self.busy.release()   # nha khoa ca khi LLM tra rong hoac loi, neu khong /stop bi treo
         if not lines:   # khong co LLM: doc tho tin don
             lines = [f"Bản tin lúc {ctx.get('hour', '?')} giờ."] + (events[-3:] or ["Thành phố hôm nay bình yên."])
         total = sum(700 + 80 * len(t) for t in lines)

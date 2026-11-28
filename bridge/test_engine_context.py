@@ -23,9 +23,22 @@ class EngineContextPromptTests(unittest.TestCase):
         self.assertIn("Do not claim unlisted events", prompt)
         self.assertIn("hunger=70", prompt)
 
+    def test_large_context_is_trimmed_and_keeps_the_knowledge_boundary(self):
+        raw = json.dumps({
+            "identity": {"name": "Mai", "biography": "b" * 2000},
+            "known_facts": [{"fact": "f" * 500, "source": "s"} for _ in range(128)],
+            "recent_memories": [{"summary": "m" * 500} for _ in range(10)],
+            "knowledge_boundary": "Do not claim unlisted events." + "." * 650,
+        })
+        self.assertGreater(len(raw), 16000)
+        prompt = engine_context_prompt(raw)
+        self.assertIn("Mai", prompt)
+        self.assertIn("Do not claim unlisted events", prompt)
+        self.assertLessEqual(len(prompt), 6000)
+
     def test_invalid_or_oversized_context_is_ignored(self):
         self.assertEqual(engine_context_prompt("not-json"), "")
-        self.assertEqual(engine_context_prompt("x" * 16001), "")
+        self.assertEqual(engine_context_prompt("x" * 200001), "")
         self.assertEqual(engine_context_prompt(json.dumps(["not", "an", "object"])), "")
 
 

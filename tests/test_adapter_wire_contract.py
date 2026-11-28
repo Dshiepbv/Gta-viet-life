@@ -86,7 +86,8 @@ QUEUED_SAMPLES = [
     ("/engine/v1/world/objects", {"object_id": "object.home.0.bed", "building_id": "building.shop.a",
         "kind": "bed", "adapter_anchors": {"gta5.shvdn": "bed"}, "initial_state": {}}),
     ("/engine/v1/world/accounts/ensure", {"account_id": "legacy:player_cash", "owner_id": "player.main",
-        "opening_balance": 500, "allow_negative": True, "currency": "USD"}),
+        "opening_balance": 500, "as_of_source": "gta5.shvdn:abc", "as_of_sequence": 12,
+        "allow_negative": True, "currency": "USD"}),
     ("/engine/v1/world/accounts/ensure", {"account_id": "legacy:shop.a.cash", "owner_id": "business.shop.a",
         "opening_balance": 40, "allow_negative": True, "currency": "USD"}),
     ("/engine/v1/world/properties", {"property_id": "property.shop.a", "building_id": "building.shop.a",
@@ -165,7 +166,10 @@ class StaticPathContractTests(unittest.TestCase):
                 sent = csharp_keys(SOURCES[name], variable, position)
                 expected = by_path[path]
                 self.assertEqual(sorted(sent - expected), [], "C# sends fields the sample does not model")
-                self.assertEqual(sorted(expected - sent - {"gta5.shvdn", "entrance", "interior", "stock"}), [],
+                optional = {"gta5.shvdn", "entrance", "interior", "stock"}
+                if variable == "cashBody":   # shop tills receive no player events, so no opening sequence
+                    optional |= {"as_of_source", "as_of_sequence"}
+                self.assertEqual(sorted(expected - sent - optional), [],
                                  "C# no longer sends these fields")
 
 

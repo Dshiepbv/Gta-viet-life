@@ -1,5 +1,5 @@
 """Authenticated loopback Engine Host session gateway (Python stdlib only)."""
-import argparse, json, logging, secrets, threading, time
+import argparse, json, logging, os, secrets, socket, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -11,6 +11,41 @@ except ImportError:  # PyInstaller entry-point execution
     from society import SocietySimulation
 
 PROTOCOL="gvl-engine/1"; BUILD="0.1.0"; MAX_BODY=65536
+# One heartbeat simulates at most this much; the rest of a large clock jump follows on later beats.
+CLOCK_CHUNK_MINUTES=1440
+
+class DataDirLock:
+    """Exclusive OS lock so only one Engine Host writes a data folder. Freed when the process dies."""
+    def __init__(self, data_dir):
+        self.handle = open(Path(data_dir) / "engine.lock", "a+b")
+        try:
+            self.handle.seek(0)
+            if os.name == "nt":
+                import msvcrt
+                msvcrt.locking(self.handle.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(self.handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            self.handle.close()
+            raise RuntimeError("engine_data_dir_in_use")
+    def release(self):
+        if self.handle.closed: return
+        if os.name == "nt":
+            import msvcrt
+            self.handle.seek(0)
+            msvcrt.locking(self.handle.fileno(), msvcrt.LK_UNLCK, 1)
+        self.handle.close()
+
+class EngineServer(ThreadingHTTPServer):
+    """Refuses to share its port; the stdlib default lets a second process bind it on Windows."""
+    allow_reuse_address = os.name != "nt"
+    daemon_threads = True
+    def server_bind(self):
+        if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
 class State:
     def __init__(self, token, data_dir=None):
         self.token=token; self.lock=threading.RLock(); self.session=None; self.last_world_minute=None; self.started=time.time()
@@ -35,6 +70,8 @@ class State:
         rid=p.get("request_id")
         if not isinstance(rid,str) or not rid: raise ValueError("request_id_required")
         if p.get("protocol") != PROTOCOL: raise ValueError("protocol_mismatch")
+        clock_id=p.get("clock_id","")
+        if not isinstance(clock_id,str) or len(clock_id)>128: raise ValueError("invalid_clock_id")
         a=p.get("adapter")
         if not isinstance(a,dict) or not a.get("id") or not a.get("version"): raise ValueError("invalid_adapter_identity")
         sid=p.get("session_id")
@@ -53,16 +90,24 @@ class State:
                 self.clock_mode = "gta5.game"
                 if world_minute is not None:
                     previous = self.simulation.store.get_meta("last_game_world_minute")
-                    if previous is not None:
-                        delta = world_minute - int(previous)
-                        if delta > 0:
-                            self.advance(min(delta, 10080))
-                    elif not self.simulation.npcs:
-                        self.simulation.set_clock_baseline(world_minute)
-                    elif world_minute > self.simulation.simulation_minute:
-                        self.advance(min(world_minute - self.simulation.simulation_minute, 10080))
-                    self.last_world_minute = world_minute
-                    self.simulation.store.set_meta("last_game_world_minute", str(world_minute))
+                    known_clock = self.simulation.store.get_meta("game_clock_id")
+                    # A clock mark written before clocks had identities belongs to the legacy counter.
+                    if known_clock is None and previous is not None: known_clock = "legacy"
+                    if clock_id: self.simulation.store.set_meta("game_clock_id", clock_id)
+                    if clock_id and known_clock and clock_id != known_clock:
+                        # The adapter lost its day counter: keep history and count on from its new time.
+                        self._new_epoch()
+                        self._set_clock_mark(world_minute)
+                    elif previous is not None:
+                        self.last_world_minute = int(previous)
+                        self._observe_game_minute(world_minute)
+                    else:
+                        if not self.simulation.npcs:
+                            self.simulation.set_clock_baseline(world_minute)
+                        elif world_minute > self.simulation.simulation_minute:
+                            self.advance(min(world_minute - self.simulation.simulation_minute, CLOCK_CHUNK_MINUTES))
+                        self._set_clock_mark(world_minute)
+                    self.session["observed_world_minute"] = world_minute
             else:
                 self.clock_mode = "host" if world_minute is None else "adapter"
                 self.last_world_minute = world_minute
@@ -70,19 +115,38 @@ class State:
                     self.simulation.set_clock_baseline(world_minute)
             self.simulation.store.set_meta("clock_mode", self.clock_mode)
         return {"accepted":True,"protocol":PROTOCOL,"session_id":sid,"required_capabilities":["adapter.session"],"host_build":BUILD}
+    def _set_clock_mark(self, minute):
+        """The mark is the newest game minute already simulated; it only moves back on a new clock."""
+        self.last_world_minute = minute
+        self.simulation.store.set_meta("last_game_world_minute", str(minute))
+    def _new_epoch(self):
+        epoch = int(self.simulation.store.get_meta("clock_epoch") or 0) + 1
+        self.simulation.store.set_meta("clock_epoch", str(epoch))
+    def _observe_game_minute(self, world_minute):
+        observed = (self.session or {}).get("observed_world_minute")
+        if world_minute < (self.last_world_minute if observed is None else observed):
+            self._new_epoch()   # an older save was loaded; nothing is simulated again
+        mark = self.last_world_minute
+        if world_minute > mark:
+            step = min(world_minute - mark, CLOCK_CHUNK_MINUTES)
+            self.advance(step)
+            self._set_clock_mark(mark + step)
     def heartbeat(self,sid,world_minute=None):
         if world_minute is not None and (isinstance(world_minute,bool) or not isinstance(world_minute,int) or world_minute<0):
             raise ValueError("invalid_world_minute")
         with self.lock:
             if not self.session or self.session["session_id"]!=sid: return False
             if world_minute is not None:
-                previous=self.last_world_minute
-                if previous is not None and world_minute>previous:
-                    self.advance(min(world_minute-previous,10080))
-                # A backward game-clock adjustment never rewinds durable NPC history.
-                self.last_world_minute=world_minute
                 if self.clock_mode == "gta5.game":
-                    self.simulation.store.set_meta("last_game_world_minute", str(world_minute))
+                    if self.last_world_minute is None: self._set_clock_mark(world_minute)
+                    else: self._observe_game_minute(world_minute)
+                    self.session["observed_world_minute"] = world_minute
+                else:
+                    previous=self.last_world_minute
+                    if previous is not None and world_minute>previous:
+                        self.advance(min(world_minute-previous,10080))
+                    # A backward game-clock adjustment never rewinds durable NPC history.
+                    self.last_world_minute=world_minute
                 # Refresh the offline checkpoint even while the game is paused.
                 self.simulation.store.save(self.simulation.simulation_minute,[],[])
             self.session["last_heartbeat"]=time.time(); return True
@@ -222,7 +286,8 @@ def handler_for(state, log):
                 if self.path=="/engine/v1/world/accounts/ensure":
                     return self.sendj(200,state.society.ensure_account(
                         p.get("account_id",""),p.get("owner_id",""),p.get("opening_balance",0),
-                        p.get("allow_negative",True),p.get("currency","USD")))
+                        p.get("allow_negative",True),p.get("currency","USD"),
+                        p.get("as_of_source",""),p.get("as_of_sequence")))
                 if self.path=="/engine/v1/world/accounts":
                     return self.sendj(201,state.society.create_account(
                         p.get("account_id",""),p.get("owner_id",""),p.get("opening_balance",0),
@@ -295,7 +360,13 @@ def main():
     d=Path(a.data_dir); d.mkdir(parents=True,exist_ok=True)
     logging.basicConfig(filename=str(d/"engine-host.log"),level=logging.INFO,format="%(asctime)s %(levelname)s %(message)s",encoding="utf-8")
     log=logging.getLogger("gvl.engine")
+    try: data_lock=DataDirLock(d)
+    except RuntimeError:
+        log.error("another Engine Host already owns %s",d); raise SystemExit("engine_data_dir_in_use")
+    # Bind before touching the database so a port clash never advances the simulation.
+    s=EngineServer((a.host,a.port),BaseHTTPRequestHandler)
     state=State(token,d)
+    s.RequestHandlerClass=handler_for(state,log)
     try:
         last_epoch=state.simulation.store.get_wallclock_epoch()
         elapsed=max(0.0,time.time()-last_epoch) if last_epoch is not None else 0.0
@@ -319,10 +390,9 @@ def main():
                 log.exception("background life simulation tick failed")
     worker=threading.Thread(target=simulation_worker,name="gvl-life-simulation",daemon=True)
     worker.start()
-    s=ThreadingHTTPServer((a.host,a.port),handler_for(state,log)); s.daemon_threads=True
     log.info("Engine Host %s listening on %s:%s",BUILD,a.host,a.port)
     try: s.serve_forever(poll_interval=.25)
     finally:
         stop.set(); worker.join(timeout=3)
-        s.server_close(); log.info("Engine Host stopped")
+        s.server_close(); state.simulation.store.close(); data_lock.release(); log.info("Engine Host stopped")
 if __name__=="__main__": main()

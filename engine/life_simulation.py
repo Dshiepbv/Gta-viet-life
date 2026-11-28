@@ -135,15 +135,53 @@ class NPCState:
 class SQLiteLifeStore:
     """Versioned, transactional persistence for canonical NPC state and events."""
 
-    SCHEMA_VERSION = 3
+    SCHEMA_VERSION = 4
 
     def __init__(self, path: str | Path = ":memory:") -> None:
         self._lock = threading.RLock()
-        self.connection = sqlite3.connect(str(path), check_same_thread=False)
-        self.connection.row_factory = sqlite3.Row
+        self.path = str(path)
+        self.connection = self._connect(self.path)
         self._volatile_saves = 0
-        self._migrate()
+        try:
+            self._backup_before_upgrade()
+            self._migrate()
+        except BaseException:
+            self.connection.close()
+            raise
         self.prune_volatile_requests()
+
+    def _connect(self, path: str) -> sqlite3.Connection:
+        connection = sqlite3.connect(path, check_same_thread=False, timeout=10.0)
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA busy_timeout=10000")
+        connection.execute("PRAGMA foreign_keys=ON")
+        if path != ":memory:":
+            connection.execute("PRAGMA journal_mode=WAL")
+            connection.execute("PRAGMA synchronous=FULL")
+        return connection
+
+    def _stored_version(self) -> int:
+        if not self.connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_meta'").fetchone():
+            return 0
+        row = self.connection.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()
+        return int(row["value"]) if row else 0
+
+    def _backup_before_upgrade(self) -> None:
+        """Copy an existing database aside before any schema change touches it."""
+        version = self._stored_version()
+        if self.path == ":memory:" or not 0 < version < self.SCHEMA_VERSION:
+            return
+        target = "%s.v%d.bak" % (self.path, version)
+        if Path(target).exists():
+            return
+        partial = target + ".tmp"
+        copy = sqlite3.connect(partial)
+        try:
+            self.connection.backup(copy)
+        finally:
+            copy.close()
+        Path(partial).replace(target)
 
     def prune_volatile_requests(self) -> int:
         """Delete expired receipts of high-frequency idempotent requests; durable receipts are kept."""
@@ -158,19 +196,21 @@ class SQLiteLifeStore:
 
     def _migrate(self) -> None:
         with self._lock, self.connection:
+            # sqlite3 autocommits DDL unless a transaction is opened explicitly.
+            self.connection.execute("BEGIN IMMEDIATE")
             self.connection.execute("CREATE TABLE IF NOT EXISTS schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
             row = self.connection.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()
             version = int(row["value"]) if row else 0
             if version > self.SCHEMA_VERSION:
                 raise RuntimeError("database_schema_newer_than_engine")
             if version < 1:
-                self.connection.execute("""CREATE TABLE npc_state (
+                self.connection.execute("""CREATE TABLE IF NOT EXISTS npc_state (
                     npc_id TEXT PRIMARY KEY, profile_json TEXT NOT NULL, state_json TEXT NOT NULL,
                     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""")
-                self.connection.execute("""CREATE TABLE life_events (
+                self.connection.execute("""CREATE TABLE IF NOT EXISTS life_events (
                     event_id TEXT PRIMARY KEY, sim_minute INTEGER NOT NULL, npc_id TEXT NOT NULL,
                     event_type TEXT NOT NULL, payload_json TEXT NOT NULL)""")
-                self.connection.execute("INSERT OR REPLACE INTO schema_meta(key,value) VALUES('simulation_minute','0')")
+                self.connection.execute("INSERT OR IGNORE INTO schema_meta(key,value) VALUES('simulation_minute','0')")
                 version = 1
             if version < 2:
                 self.connection.execute("""CREATE TABLE IF NOT EXISTS request_dedup (
@@ -185,6 +225,8 @@ class SQLiteLifeStore:
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, completed_at TEXT)""")
                 self.connection.execute("CREATE INDEX IF NOT EXISTS idx_command_outbox_status ON command_outbox(status, created_minute)")
                 version = 3
+            # Version 4 adds the ledger guards and opening-balance records owned by the society module.
+            version = max(version, 4)
             self.connection.execute(
                 "INSERT OR REPLACE INTO schema_meta(key,value) VALUES('schema_version',?)", (str(version),)
             )

@@ -1,10 +1,15 @@
 """Safe formatter for authoritative, bounded Life Engine NPC context."""
 import json
 
+# The Engine bounds the number of facts and memories, but 128 facts of 500 characters is a
+# legitimate context far beyond the prompt budget; the prompt is trimmed, not discarded.
+MAX_RAW = 200_000
+MAX_PROMPT = 6000
+
 
 def engine_context_prompt(raw: str) -> str:
     """Format canonical Host facts for the existing cognition prompt; never invent facts."""
-    if not raw or not isinstance(raw, str) or len(raw) > 16000:
+    if not raw or not isinstance(raw, str) or len(raw) > MAX_RAW:
         return ""
     try:
         data = json.loads(raw)
@@ -43,6 +48,6 @@ def engine_context_prompt(raw: str) -> str:
             if isinstance(memory, dict) and isinstance(memory.get("summary"), str):
                 lines.append(f"  + {memory['summary'][:300]}")
     boundary = data.get("knowledge_boundary")
-    if isinstance(boundary, str):
-        lines.append("GIỚI HẠN TRI THỨC: " + boundary[:700])
-    return "\n".join(lines)[:6000]
+    tail = "\nGIỚI HẠN TRI THỨC: " + boundary[:700] if isinstance(boundary, str) else ""
+    # The knowledge boundary is a safety rule: trim facts and memories to keep room for it.
+    return "\n".join(lines)[:MAX_PROMPT - len(tail)] + tail

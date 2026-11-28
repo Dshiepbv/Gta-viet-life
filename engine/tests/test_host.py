@@ -35,7 +35,10 @@ class HostTests(unittest.TestCase):
   # A backward clock correction updates the baseline but never rewinds NPC history.
   self.assertTrue(self.state.heartbeat("clock-session",590))
   self.assertEqual(self.state.simulation.simulation_minute,603)
+  # Minutes already simulated are not simulated again after loading an older save.
   self.assertTrue(self.state.heartbeat("clock-session",592))
+  self.assertEqual(self.state.simulation.simulation_minute,603)
+  self.assertTrue(self.state.heartbeat("clock-session",605))
   self.assertEqual(self.state.simulation.simulation_minute,605)
   self.assertTrue(self.state.adapter_is_connected())
   self.assertTrue(self.state.close("clock-session"))

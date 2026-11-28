@@ -27,6 +27,7 @@ public class GtaVietLifePersonal : Script
 {
     // ------------------------------------------------------------ cấu hình
     const string SaveFile = "GtaVietLifePersonal.sav";
+    readonly GvlSaveFile store = new GvlSaveFile(SaveFile, GvlSaveFile.LooksKeyValue, Log);
     const int BagSmall = 10, BagBig = 25, BackpackPrice = 250;
     const int ShipFee = 3;
     const int CallCarFee = 50;
@@ -1867,64 +1868,57 @@ public class GtaVietLifePersonal : Script
             l.Add("out=" + outToday);
             foreach (KeyValuePair<string, int> wallet in savedWallets) l.Add("wallet_" + wallet.Key + "=" + wallet.Value);
             foreach (int[] h in moneyHist) l.Add("mhist=" + h[0] + "," + h[1] + "," + h[2]);
-            File.WriteAllLines(SaveFile, l.ToArray());
+            store.Write(l);
         }
         catch (Exception ex) { Log("save loi: " + ex.Message); }
     }
 
     void Load()
     {
-        try
+        if (!store.Load(ParseSaveLine)) Notify("~r~GTA Viet Life: khong doc duoc ho so ca nhan. File cu duoc giu nguyen, tien trinh moi KHONG duoc luu.");
+    }
+
+    void ParseSaveLine(string line)
+    {
+        CultureInfo ci = CultureInfo.InvariantCulture;
+        int i = line.IndexOf('=');
+        if (i < 0) return;
+        string k = line.Substring(0, i), v = line.Substring(i + 1);
+        if (k == "name") playerName = v;
+        else if (k == "hometown") hometown = v;
+        else if (k.StartsWith("skill") && k.Length == 6) { int s = k[5] - '0'; if (s >= 0 && s < skill.Length) { skill[s] = Math.Max(0f, Math.Min(100f, float.Parse(v, ci))); skillShown[s] = (int)(skill[s] / 10f); } }
+        else if (k == "item") { string[] q = v.Split(','); if (Def(q[0]) != null) bag[q[0]] = int.Parse(q[1]); }
+        else if (k == "backpack") hasBackpack = v == "1";
+        else if (k.StartsWith("outfit") && k.Length == 7) { int s = k[6] - '0'; if (s >= 0 && s < outfit.Length) outfit[s] = v; }
+        else if (k == "wearing") wearing = int.Parse(v);
+        else if (k == "car") { string[] q = v.Split(','); CarRec c = new CarRec(); c.Hash = int.Parse(q[0]); c.Prim = int.Parse(q[1]); c.Sec = int.Parse(q[2]); c.Plate = q.Length > 3 ? q[3] : ""; c.Label = q.Length > 4 ? q[4] : "Xe"; c.Impounded = q.Length > 5 && q[5] == "1"; garage.Add(c); }
+        else if (k == "day") dayNo = int.Parse(v);
+        else if (k == "age") age = int.Parse(v);
+        else if (k == "kg") kg = float.Parse(v, ci);
+        else if (k == "muscle") muscle = float.Parse(v, ci);
+        else if (k == "hairDays") hairDays = int.Parse(v);
+        else if (k == "beardDays") beardDays = int.Parse(v);
+        else if (k == "trainDay") lastTrainDay = long.Parse(v);
+        else if (k == "lastDay") lastDayHandled = long.Parse(v);
+        else if (k == "lic") { foreach (string x in v.Split(',')) if (x.Length > 0) lic.Add(x); }
+        else if (k == "record") record = int.Parse(v);
+        else if (k == "jailUntil") jailUntil = long.Parse(v);
+        else if (k == "arrestStars") arrestStars = int.Parse(v);
+        else if (k == "suit") { string[] q = v.Split(','); suitAmount = int.Parse(q[0]); suitDue = long.Parse(q[1]); }
+        else if (k == "spouse") spouse = v;
+        else if (k == "custom")
         {
-            if (!File.Exists(SaveFile)) return;
-            CultureInfo ci = CultureInfo.InvariantCulture;
-            foreach (string line in File.ReadAllLines(SaveFile))
-            {
-                int i = line.IndexOf('=');
-                if (i < 0) continue;
-                string k = line.Substring(0, i), v = line.Substring(i + 1);
-                try
-                {
-                    if (k == "name") playerName = v;
-                    else if (k == "hometown") hometown = v;
-                    else if (k.StartsWith("skill") && k.Length == 6) { int s = k[5] - '0'; if (s >= 0 && s < skill.Length) { skill[s] = Math.Max(0f, Math.Min(100f, float.Parse(v, ci))); skillShown[s] = (int)(skill[s] / 10f); } }
-                    else if (k == "item") { string[] q = v.Split(','); if (Def(q[0]) != null) bag[q[0]] = int.Parse(q[1]); }
-                    else if (k == "backpack") hasBackpack = v == "1";
-                    else if (k.StartsWith("outfit") && k.Length == 7) { int s = k[6] - '0'; if (s >= 0 && s < outfit.Length) outfit[s] = v; }
-                    else if (k == "wearing") wearing = int.Parse(v);
-                    else if (k == "car") { string[] q = v.Split(','); CarRec c = new CarRec(); c.Hash = int.Parse(q[0]); c.Prim = int.Parse(q[1]); c.Sec = int.Parse(q[2]); c.Plate = q.Length > 3 ? q[3] : ""; c.Label = q.Length > 4 ? q[4] : "Xe"; c.Impounded = q.Length > 5 && q[5] == "1"; garage.Add(c); }
-                    else if (k == "day") dayNo = int.Parse(v);
-                    else if (k == "age") age = int.Parse(v);
-                    else if (k == "kg") kg = float.Parse(v, ci);
-                    else if (k == "muscle") muscle = float.Parse(v, ci);
-                    else if (k == "hairDays") hairDays = int.Parse(v);
-                    else if (k == "beardDays") beardDays = int.Parse(v);
-                    else if (k == "trainDay") lastTrainDay = long.Parse(v);
-                    else if (k == "lastDay") lastDayHandled = long.Parse(v);
-                    else if (k == "lic") { foreach (string x in v.Split(',')) if (x.Length > 0) lic.Add(x); }
-                    else if (k == "record") record = int.Parse(v);
-                    else if (k == "jailUntil") jailUntil = long.Parse(v);
-                    else if (k == "arrestStars") arrestStars = int.Parse(v);
-                    else if (k == "suit") { string[] q = v.Split(','); suitAmount = int.Parse(q[0]); suitDue = long.Parse(q[1]); }
-                    else if (k == "spouse") spouse = v;
-                    else if (k == "custom")
-                    {
-                        string[] q = v.Split(',');
-                        customOn = q[0] == "1"; prevModelHash = int.Parse(q[1]); shapeA = int.Parse(q[2]); shapeB = int.Parse(q[3]); skinA = int.Parse(q[4]); skinB = int.Parse(q[5]);
-                        shapeMix = float.Parse(q[6], ci); skinMix = float.Parse(q[7], ci); hairStyle = int.Parse(q[8]); hairColor = int.Parse(q[9]); hairHi = int.Parse(q[10]);
-                        eyeColor = int.Parse(q[11]); browStyle = int.Parse(q[12]); beardStyle = int.Parse(q[13]); beardMax = float.Parse(q[14], ci);
-                    }
-                    else if (k == "face") { string[] q = v.Split(','); for (int fi = 0; fi < face.Length && fi < q.Length; fi++) face[fi] = float.Parse(q[fi], ci); }
-                    else if (k == "pet") { string[] q = v.Split(','); petModel = int.Parse(q[0]); petName = q.Length > 1 ? q[1] : ""; }
-                    else if (k == "in") inToday = int.Parse(v);
-                    else if (k == "out") outToday = int.Parse(v);
-                    else if (k == "wallet_SP0" || k == "wallet_SP1" || k == "wallet_SP2") savedWallets[k.Substring(7)] = Math.Max(0, int.Parse(v));
-                    else if (k == "mhist") { string[] q = v.Split(','); moneyHist.Add(new int[] { int.Parse(q[0]), int.Parse(q[1]), int.Parse(q[2]) }); }
-                }
-                catch (Exception ex) { Log("load dong loi: " + line + " - " + ex.Message); }
-            }
+            string[] q = v.Split(',');
+            customOn = q[0] == "1"; prevModelHash = int.Parse(q[1]); shapeA = int.Parse(q[2]); shapeB = int.Parse(q[3]); skinA = int.Parse(q[4]); skinB = int.Parse(q[5]);
+            shapeMix = float.Parse(q[6], ci); skinMix = float.Parse(q[7], ci); hairStyle = int.Parse(q[8]); hairColor = int.Parse(q[9]); hairHi = int.Parse(q[10]);
+            eyeColor = int.Parse(q[11]); browStyle = int.Parse(q[12]); beardStyle = int.Parse(q[13]); beardMax = float.Parse(q[14], ci);
         }
-        catch (Exception ex) { Log("load loi: " + ex.Message); }
+        else if (k == "face") { string[] q = v.Split(','); for (int fi = 0; fi < face.Length && fi < q.Length; fi++) face[fi] = float.Parse(q[fi], ci); }
+        else if (k == "pet") { string[] q = v.Split(','); petModel = int.Parse(q[0]); petName = q.Length > 1 ? q[1] : ""; }
+        else if (k == "in") inToday = int.Parse(v);
+        else if (k == "out") outToday = int.Parse(v);
+        else if (k == "wallet_SP0" || k == "wallet_SP1" || k == "wallet_SP2") savedWallets[k.Substring(7)] = Math.Max(0, int.Parse(v));
+        else if (k == "mhist") { string[] q = v.Split(','); moneyHist.Add(new int[] { int.Parse(q[0]), int.Parse(q[1]), int.Parse(q[2]) }); }
     }
 
     // ------------------------------------------------------------ tiện ích

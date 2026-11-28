@@ -137,3 +137,21 @@ Các mã khác vẫn mở, gồm G2 (Personal ghi đè ví GTA, trái hợp đ�
 | M3 còn thiếu | Không có bộ 500–1000 tọa độ cửa; nội thất gốc không dịch chuyển được nên nhiều nhà dùng chung mẫu (mỗi lúc một nhà), `building_id` chỉ đổi vị trí đồ sinh thêm; cư dân chỉ vào nhà khi ở trong 30 m quanh cửa đã ghi |
 | M6 | Có `manifest.json`, tự kiểm lúc mở, Updater quay lui khi bản mới không xác nhận. Còn thiếu: đổi tên exe theo yêu cầu, `config.json` của Launcher, ký checksum, tự chạy game |
 
+## 8. Đợt 0.3.0: lưu bền, sổ cái, thời gian (2026-11-28, chưa chạy trong game)
+
+| Mã | Trạng thái | Test |
+|---|---|---|
+| E4 | Adapter gửi `as_of_source` + `as_of_sequence`; số dư đầu kỳ mở một lần, event đã nằm trong số dư không cộng lại, event đến trước không bị mất; quan sát ví được ưu tiên | `test_phase2_regressions.py` |
+| E6 | Engine giữ mốc giờ cao nhất đã mô phỏng; giờ lùi tăng `clock_epoch`, không mô phỏng lại; nhảy giờ lớn chạy theo khúc 1440 phút; bộ đếm mới (`clock_id` khác) đặt lại mốc | như trên, `test_host.py` |
+| E7 | Migration chạy trong một giao dịch; DB dở dang do bản cũ mở lại được; backup `.v<n>.bak` trước khi nâng cấp | như trên |
+| E8 | Trùng ID khác nội dung bị từ chối; không trộn tiền tệ; giới hạn số tiền kèm trigger ở DB; khóa tiền tố của engine; phát lại bán và thuê trả `duplicate`; một khoản lương lỗi không chặn khoản khác; kiểm số dư lúc khởi động | như trên |
+| E10 | Khóa một tiến trình trên thư mục dữ liệu và cổng; WAL, `foreign_keys`, `busy_timeout` | như trên |
+| E12 | Ngữ cảnh dài được cắt bớt, giữ giới hạn tri thức | `bridge/test_engine_context.py` |
+| B1 | `news()` luôn nhả khóa | `bridge/test_news_lock.py` |
+| G3 | World, Personal, Economy, DoiSong, Chat, Interiors, Core ghi qua `GvlSaveFile`: file tạm, `.bak`, dòng đầu và cuối; tải lỗi cả hai thì không ghi đè | `test_csharp_logic.py` (lớp thuần) |
+| G5 | `Core.sav` mới sinh `clock_id`, nguồn event `gta5.shvdn:<id>`; file cũ giữ nguồn cũ | như trên |
+| G6 | Số dư ví đọc trên luồng script | `test_csharp_logic.py` |
+
+Còn mở: E9, E11, E14, G4, G7, G8–G13. Sổ cái chưa là chủ ghi của ngân hàng và quán: script C# vẫn tự giữ số dư (đợt tiếp theo).
+Chưa làm: `epoch`, `expires_at_world_minute` trong phong bì event và lệnh; Core là nơi duy nhất đếm ngày.
+

@@ -29,12 +29,13 @@ def testable_block(script, name):
     if not match:
         raise AssertionError("%s has no testable block '%s'" % (script, name))
     return ("using System;\nusing System.Collections.Generic;\nusing System.Globalization;\n"
-            "using System.Text;\n" + match.group(1))
+            "using System.IO;\nusing System.Text;\n" + match.group(1))
 
 
 HARNESS = r'''
 using System;
 using System.Collections.Generic;
+using System.IO;
 
 static class Harness
 {
@@ -319,13 +320,69 @@ static class Harness
         Check(w.ShouldReport(10, 200), "timer reset after a reload");
     }
 
+    static List<string> LoadAll(GvlSaveFile file, out bool ok)
+    {
+        List<string> got = new List<string>();
+        ok = file.Load(delegate(string line) { if (line.StartsWith("bad")) throw new FormatException(line); got.Add(line); });
+        return got;
+    }
+
+    static GvlSaveFile Open(string path) { return new GvlSaveFile(path, GvlSaveFile.LooksKeyValue, null); }
+
+    static void SaveFiles()
+    {
+        string folder = Path.Combine(Path.GetTempPath(), "gvl-save-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(folder);
+        try
+        {
+            string path = Path.Combine(folder, "a.sav");
+            bool ok;
+            GvlSaveFile f = Open(path);
+            Check(LoadAll(f, out ok).Count == 0 && ok && !f.Blocked, "no file yet is a new game");
+            Check(f.Write(new[] { "money=1" }) && f.Write(new[] { "money=2" }), "writes");
+            Check(string.Join(",", LoadAll(Open(path), out ok).ToArray()) == "money=2", "reads the newest");
+            Check(File.Exists(path + ".bak") && !File.Exists(path + ".tmp"), "keeps a backup, no temp left");
+
+            // Cut off in the middle of a write: fall back to the backup and keep the damaged copy.
+            File.WriteAllText(path, GvlSaveFile.Header + "\r\nmoney=3\r\n");
+            f = Open(path);
+            Check(string.Join(",", LoadAll(f, out ok).ToArray()) == "money=1" && ok, "truncated file uses backup");
+            Check(File.ReadAllText(path + ".broken").Contains("money=3"), "damaged file preserved");
+            Check(f.Write(new[] { "money=4" }), "can save after recovery");
+            Check(string.Join(",", LoadAll(Open(path + ".bak"), out ok).ToArray()) == "money=1", "good backup not replaced by the damaged file");
+
+            // Both unreadable: never overwrite.
+            File.WriteAllText(path, "");
+            File.WriteAllBytes(path + ".bak", new byte[64]);
+            f = Open(path);
+            LoadAll(f, out ok);
+            Check(!ok && f.Blocked && !f.Write(new[] { "money=0" }), "blocked when nothing is readable");
+            Check(new FileInfo(path).Length == 0 && new FileInfo(path + ".bak").Length == 64, "files untouched");
+
+            // Files written by earlier builds have no markers; one bad line does not lose the others.
+            string legacy = Path.Combine(folder, "b.sav");
+            File.WriteAllLines(legacy, new[] { "a=1", "bad=x", "c=3" });
+            f = Open(legacy);
+            Check(string.Join(",", LoadAll(f, out ok).ToArray()) == "a=1,c=3" && ok, "bad line skipped");
+            Check(File.ReadAllText(legacy + ".broken").Contains("bad=x"), "original kept when a line is dropped");
+
+            string empty = Path.Combine(folder, "c.sav");
+            f = Open(empty);
+            f.Write(new string[0]);
+            Check(LoadAll(Open(empty), out ok).Count == 0 && ok, "an empty save is valid");
+        }
+        finally { Directory.Delete(folder, true); }
+        Check(GvlSource.Id("legacy") == "gta5.shvdn" && GvlSource.Id("") == "gta5.shvdn", "old saves keep their event source");
+        Check(GvlSource.Id("abc") == "gta5.shvdn:abc", "new counters get their own source");
+    }
+
     static int Main(string[] args)
     {
         if (args.Length > 0 && args[0] == "control") Check(false, "control case");
         else { Paths(); PermanentErrorDoesNotBlock(); BoundedRetry(404, GvlSendRules.MaxNotFoundAttempts);
                BoundedRetry(500, GvlSendRules.MaxServerErrorAttempts); TransientErrorKeepsEverything();
                CoalescingAndPersistence(); Capacity(); Batches(); Fade();
-               Streaming(); Templates(); Portal(); Crowd(); Wallet(); }
+               Streaming(); Templates(); Portal(); Crowd(); Wallet(); SaveFiles(); }
         Console.WriteLine("failures=" + failures);
         return failures == 0 ? 0 : 1;
     }
@@ -348,6 +405,7 @@ class CSharpLogicTests(unittest.TestCase):
                  "Fade.cs": testable_block("GtaVietLifeDoiSong.cs", "fade"),
                  "Uis.cs": testable_block("GtaVietLifeInteriors.cs", "uis"),
                  "Wallet.cs": testable_block("GtaVietLifePersonal.cs", "wallet"),
+                 "SaveFile.cs": testable_block("GtaVietLifeSaveFile.cs", "savefile"),
                  "Harness.cs": HARNESS}
         for name, text in files.items():
             (folder / name).write_text(text, encoding="utf-8-sig")
@@ -367,6 +425,29 @@ class CSharpLogicTests(unittest.TestCase):
 
     def test_control_case_fails(self):
         self.assertEqual(self.run_harness("control").returncode, 1)
+
+
+class SaveSafetyTests(unittest.TestCase):
+    def test_no_script_writes_a_save_file_directly(self):
+        offenders = []
+        for path in sorted(GAME.glob("*.cs")):
+            source = path.read_text(encoding="utf-8-sig")
+            offenders += [(path.name, m) for m in
+                          re.findall(r"File\.(?:WriteAll\w+|Replace|Copy)\((SaveFile|NamedFile)\b", source)]
+        self.assertEqual(offenders, [], "save files must go through GvlSaveFile")
+
+    def test_every_script_using_the_helper_compiles_it(self):
+        for project in (GAME / "compile").glob("*.Compile.csproj"):
+            text = project.read_text(encoding="utf-8-sig")
+            script = re.search(r'Include="\.\./(GtaVietLife\w*\.cs)"', text).group(1)
+            if "GvlSaveFile" in (GAME / script).read_text(encoding="utf-8-sig"):
+                self.assertIn("../GtaVietLifeSaveFile.cs", text, project.name)
+
+    def test_core_reads_the_wallet_on_the_script_thread(self):
+        source = (GAME / "GtaVietLifeCore.cs").read_text(encoding="utf-8-sig")
+        for body in re.findall(r"Task\.Run\(delegate(.*?)\n        \}\);", source, re.S):
+            self.assertNotIn("Game.Player.Money", body)
+            self.assertNotIn("SyncPlayerWalletBaseline", body)
 
 
 class ScriptQueueSafetyTests(unittest.TestCase):

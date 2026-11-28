@@ -3,7 +3,7 @@
 File này được Claude Code tự nạp mỗi phiên. Phần 0 riêng cho dự án; phần 1–8 là luật làm việc chung; phần 9 là trạng thái.
 
 ## 0. Dự án: GTA VietLife (mod GTA V, thư mục `E:\AI\Projects\Gta-vietlife`)
-- Tình trạng (2026-11-28): đích là GTA V Legacy; đã có bộ cài 0.2.0 gồm M3 UIS, chưa chạy trong GTA V. Kiểm toán: `docs/AUDIT_M0_M6.md`. Hợp đồng dữ liệu: `docs/SHARED_STATE_CONTRACT.md`.
+- Tình trạng (2026-11-28): đích là GTA V Legacy; đã có bộ cài 0.3.0, chưa chạy trong GTA V. Tiến độ phiên gần nhất: `NOTES.md`. Kiểm toán: `docs/AUDIT_M0_M6.md`. Hợp đồng dữ liệu: `docs/SHARED_STATE_CONTRACT.md`.
 - Mục tiêu mod (1 câu): Life Simulator, người chơi và mọi NPC có vòng đời, sinh hoạt, kinh tế, quan hệ, tương tác vật lý, ký ức và lưu bền.
 - Loại mod và nền tảng: 7 script C# SHVDN v3 (`game/`, phát hành dạng DLL biên dịch sẵn), engine Python + SQLite (`engine/`), bridge hội thoại (`bridge/`), Launcher/Updater .NET (`launcher/`), adapter Godot tham chiếu, app Android dashboard.
 - Phiên bản game và thư viện: GTA V Legacy; biên dịch theo SHVDN API 3.6.0 (ghim SHA-256), khi chơi dùng SHVDN nightly cho build từ 1.0.3258; .NET 8 (launcher), net48 (script), Python 3.11. Build game đích: chưa ghi nhận.
@@ -15,12 +15,12 @@ File này được Claude Code tự nạp mỗi phiên. Phần 0 riêng cho dự
 ### Bản đồ module và trạng thái kiểm toán
 | Module | Chính | Trạng thái 2026-11-28 | Lỗi mở |
 |---|---|---|---|
-| M0 Life Core | `engine/life_simulation.py` | Logic thật, chưa chạy game | E7 |
-| M1 Bridge/Clock | `GtaVietLifeCore.cs`, `engine/host.py` | Đường gửi đã sửa, chưa chạy game | E6 |
-| M2 Social | `bridge/`, Chat, Personal | Dữ liệu tách 2–3 nơi | B1 G8 |
+| M0 Life Core | `engine/life_simulation.py` | Logic thật, chưa chạy game | E9 |
+| M1 Bridge/Clock | `GtaVietLifeCore.cs`, `engine/host.py` | E6 đã sửa, chưa chạy game | |
+| M2 Social | `bridge/`, Chat, Personal | Dữ liệu tách 2–3 nơi | G8 E14 |
 | M3 World/Objects | World, `GtaVietLifeInteriors.cs`, `society.py` | UIS đã viết, logic thuần có test, chưa chạy game | G9 G12 |
-| M4 Economy/Work | Economy, World, `society.py` | G2 đã sửa; sổ cái chưa là chủ ngân hàng/quán | E4 E8 G4 |
-| M5 Compat/Host | `engine/host.py`, Godot | Thiếu khóa một tiến trình | E10 E11 |
+| M4 Economy/Work | Economy, World, `society.py` | E4 E8 đã sửa; sổ cái chưa là chủ ngân hàng/quán | G4 G7 |
+| M5 Compat/Host | `engine/host.py`, Godot | Đã khóa một tiến trình | E11 |
 | M6 Launcher | `launcher/`, `packaging/` | Bộ cài chạy thử được; còn thiếu so đặc tả | xem audit mục 5 |
 
 ### Đặc tả M6: Launcher độc lập
@@ -31,6 +31,7 @@ File này được Claude Code tự nạp mỗi phiên. Phần 0 riêng cho dự
 
 ### Luật kỹ thuật rút từ kiểm toán
 - Logic C# cần test đặt trong khối `// <gvl-testable:tên>`, không gọi API GTA, viết theo C# 5.
+- File lưu chỉ ghi qua `GvlSaveFile` (`game/GtaVietLifeSaveFile.cs`); script mới có file lưu phải thêm file này vào `.Compile.csproj`.
 - Event tiền không bị bỏ vì lỗi 5xx; yêu cầu bị loại phải vào `GtaVietLifeCore.deadletter.log`.
 - Thêm đường dẫn engine mới trong C#: kiểm bộ lọc ở `PostWorldRequest` và route ở `host.py`.
 - Không gọi native GTA trong `Task.Run`. Không tự xếp lại việc vào hàng đang được `while` rút trong cùng tick.
@@ -113,3 +114,4 @@ Văn phong con người: không mở bài "Không phải X mà là Y", không c�
 - [2026-11-28] Đã làm: gộp nhánh codex vào main (16477fb, cây file không đổi vì 4819d89 đã chứa codex; chưa push); kiểm toán M0–M6; 63+2 test pass; chưa build C#, chưa chạy game. | Bước tiếp: đợt 1. | Đã chốt: xem mục Đã chốt.
 - [2026-11-28] Đợt 1 xong trên máy, chưa commit: E1 E2 E3 E5 E13 G1; 71 engine + 13 contract/C# + 2 bridge test pass; 6 script build 0 lỗi; chưa chạy CI, chưa vào game. | Bước tiếp: chủ dự án nghiệm thu, push, xem CI; chỉ làm đợt 2 (E7 E10 G3 G2, tăng trưởng `request_dedup`) khi được duyệt.
 - [2026-11-28] Đợt 1 đã push (28ae051), CI #272 xanh. G2 + dọn dedup + M3 UIS + bộ cài Legacy 0.2.0 xong trên máy; 77 engine + 15 contract/C# + 2 bridge + test Launcher/Updater/exe đóng gói pass. | Bước tiếp: chủ dự án test trong GTA V Legacy tối nay, gửi `GtaVietLife*.log`, `ScriptHookVDotNet.log`; sau đó E4 E6 E7 E8 G3. | Chưa đạt so yêu cầu: danh bạ 500–1000 cửa, offset nội thất theo tòa nhà.
+- [2026-11-28] Bản 0.3.0 (commit và push lên main): E4 E6 E7 E8 E10 E12 B1 G3 G5 G6; bộ cài build lại. Chi tiết `docs/AUDIT_M0_M6.md` mục 8. | Bước tiếp: test trong GTA V Legacy, gửi log; kiểm CI; sổ cái làm chủ ngân hàng/quán, G4 G7, M6.

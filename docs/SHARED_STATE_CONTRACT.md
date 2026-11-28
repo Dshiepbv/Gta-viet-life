@@ -1,6 +1,6 @@
 # Hợp đồng dữ liệu chung M0–M6 (bản 1, 2026-11-28)
 
-Trạng thái: quyền sở hữu tiền và cách xử lý khi tải save đã được chủ dự án chốt ngày 2026-11-28, cài đặt ở đợt 3. Các phần còn lại là đề xuất kỹ thuật. Hiện trạng và mã lỗi xem `AUDIT_M0_M6.md`.
+Trạng thái: quyền sở hữu tiền và cách xử lý khi tải save đã được chủ dự án chốt ngày 2026-11-28, cài đặt ở đợt 3. Mục 5, 6 và quy tắc giờ lùi ở mục 4 đã cài phần lớn trong bản 0.3.0 (xem audit mục 8). Các phần còn lại là đề xuất kỹ thuật. Hiện trạng và mã lỗi xem `AUDIT_M0_M6.md`.
 
 ## 1. Quyền sở hữu dữ liệu
 

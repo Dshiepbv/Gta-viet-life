@@ -24,6 +24,7 @@ using GTA.Native;
 public class GtaVietLifeDoiSong : Script
 {
     const string SaveFile = "GtaVietLifeDoiSong.sav";
+    readonly GvlSaveFile store = new GvlSaveFile(SaveFile, GvlSaveFile.LooksKeyValue, Log);
     string server = "http://127.0.0.1:5577";
     Keys menuKey = Keys.Y;   // L la menu Kinh te, J Doi song, I Ca nhan
     Keys navUp = Keys.Oemcomma, navDown = Keys.OemPeriod, navOk = Keys.Return;
@@ -1136,51 +1137,44 @@ public class GtaVietLifeDoiSong : Script
             l.Add("powercut=" + (powerCut ? 1 : 0));
             l.Add("news=" + lastNewsSlot);
             foreach (Food f in fridge) l.Add("food=" + f.Name.Replace(",", " ") + "," + f.H.ToString(ci) + "," + f.T.ToString(ci) + "," + f.E.ToString(ci) + "," + f.Expire);
-            File.WriteAllLines(SaveFile, l.ToArray());
+            store.Write(l);
         }
         catch (Exception ex) { Log("save loi: " + ex.Message); }
     }
 
     void Load()
     {
-        try
+        if (!store.Load(ParseSaveLine)) Notify("~r~GTA Viet Life: khong doc duoc du lieu suc khoe va nha cua. File cu duoc giu nguyen, tien trinh moi KHONG duoc luu.");
+    }
+
+    void ParseSaveLine(string line)
+    {
+        CultureInfo ci = CultureInfo.InvariantCulture;
+        int i = line.IndexOf('=');
+        if (i < 0) return;
+        string k = line.Substring(0, i), v = line.Substring(i + 1);
+        switch (k)
         {
-            if (!File.Exists(SaveFile)) return;
-            CultureInfo ci = CultureInfo.InvariantCulture;
-            foreach (string line in File.ReadAllLines(SaveFile))
-            {
-                int i = line.IndexOf('=');
-                if (i < 0) continue;
-                string k = line.Substring(0, i), v = line.Substring(i + 1);
-                try
+            case "gmin": gmin = long.Parse(v); break;
+            case "stress": stress = float.Parse(v, ci); break;
+            case "wet": wet = float.Parse(v, ci); break;
+            case "cold": coldUntil = long.Parse(v); break;
+            case "poison": poisonUntil = long.Parse(v); break;
+            case "drunk": drunk = float.Parse(v, ci); break;
+            case "injured": injured = v == "1"; break;
+            case "awake": awakeMin = long.Parse(v); break;
+            case "billdue": billDueMin = long.Parse(v); break;
+            case "billowed": billOwed = int.Parse(v); break;
+            case "billsince": billOverdueSince = long.Parse(v); break;
+            case "powercut": powerCut = v == "1"; break;
+            case "news": lastNewsSlot = int.Parse(v); break;
+            case "food":
                 {
-                    switch (k)
-                    {
-                        case "gmin": gmin = long.Parse(v); break;
-                        case "stress": stress = float.Parse(v, ci); break;
-                        case "wet": wet = float.Parse(v, ci); break;
-                        case "cold": coldUntil = long.Parse(v); break;
-                        case "poison": poisonUntil = long.Parse(v); break;
-                        case "drunk": drunk = float.Parse(v, ci); break;
-                        case "injured": injured = v == "1"; break;
-                        case "awake": awakeMin = long.Parse(v); break;
-                        case "billdue": billDueMin = long.Parse(v); break;
-                        case "billowed": billOwed = int.Parse(v); break;
-                        case "billsince": billOverdueSince = long.Parse(v); break;
-                        case "powercut": powerCut = v == "1"; break;
-                        case "news": lastNewsSlot = int.Parse(v); break;
-                        case "food":
-                            {
-                                string[] q = v.Split(',');
-                                if (q.Length >= 5) fridge.Add(new Food(q[0], float.Parse(q[1], ci), float.Parse(q[2], ci), float.Parse(q[3], ci), long.Parse(q[4])));
-                                break;
-                            }
-                    }
+                    string[] q = v.Split(',');
+                    if (q.Length >= 5) fridge.Add(new Food(q[0], float.Parse(q[1], ci), float.Parse(q[2], ci), float.Parse(q[3], ci), long.Parse(q[4])));
+                    break;
                 }
-                catch { }
-            }
         }
-        catch (Exception ex) { Log("load loi: " + ex.Message); }
     }
 
     static float Clamp(float v) { return v < 0f ? 0f : v > 100f ? 100f : v; }

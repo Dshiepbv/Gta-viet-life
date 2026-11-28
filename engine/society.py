@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import sqlite3
 import threading
 import time
@@ -14,10 +15,28 @@ import uuid
 from typing import Any, Callable, Dict, Optional
 
 
+LOG = logging.getLogger("gvl.engine")
 MAX_ID = 128
 MAX_TEXT = 500
 SYNC_RETENTION_SECONDS = 3600
 PRUNE_EVERY_SYNCS = 200
+MAX_AMOUNT = 10 ** 15
+CURRENCIES = ("USD", "VND")
+# Transaction ids with these prefixes are created by the engine itself.
+SYSTEM_PREFIXES = ("opening:", "payroll:", "reconcile:", "bsync:", "legacy-ledger:")
+RESERVED_PREFIXES = SYSTEM_PREFIXES + ("lease:", "sale:")
+
+
+def _system_account(name: str, currency: str) -> str:
+    return "system:" + name if currency == "USD" else "system:%s:%s" % (name, currency)
+
+
+def _public_transaction_id(value: Any, own_prefix: str = "") -> str:
+    value = _valid_id(value, "transaction_id")
+    for prefix in RESERVED_PREFIXES:
+        if value.startswith(prefix) and prefix != own_prefix:
+            raise ValueError("reserved_transaction_id")
+    return value
 
 
 def _valid_id(value: Any, label: str) -> str:
@@ -38,10 +57,13 @@ class SocietySimulation:
         self._syncs_since_prune = 0
         self._migrate()
         self.prune_sync_history()
+        for mismatch in self.verify_ledger():
+            LOG.warning("ledger balance mismatch: %s", mismatch)
 
     def _migrate(self):
         with self.lock, self.db:
             self.db.executescript("""
+                BEGIN IMMEDIATE;
                 CREATE TABLE IF NOT EXISTS world_buildings(
                     building_id TEXT PRIMARY KEY, category TEXT NOT NULL, name TEXT NOT NULL,
                     adapter_maps_json TEXT NOT NULL, interactions_json TEXT NOT NULL,
@@ -111,7 +133,16 @@ class SocietySimulation:
                     target_id TEXT, payload_json TEXT NOT NULL, sim_minute INTEGER NOT NULL);
                 CREATE TABLE IF NOT EXISTS world_processed_life_events(
                     event_id TEXT PRIMARY KEY, processed_minute INTEGER NOT NULL);
+                CREATE TABLE IF NOT EXISTS world_account_openings(
+                    account_id TEXT PRIMARY KEY, source_id TEXT NOT NULL, sequence INTEGER NOT NULL,
+                    balance INTEGER NOT NULL);
             """)
+            for name, action in (("insert", "INSERT"), ("update", "UPDATE OF balance")):
+                self.db.execute("""CREATE TRIGGER IF NOT EXISTS trg_world_balance_%s
+                    BEFORE %s ON world_accounts
+                    WHEN typeof(NEW.balance)<>'integer' OR NEW.balance>%d OR NEW.balance<%d
+                    BEGIN SELECT RAISE(ABORT,'balance_out_of_range'); END"""
+                    % (name, action, MAX_AMOUNT, -MAX_AMOUNT))
             for table, column, kind in (("world_request_dedup", "kind", "TEXT NOT NULL DEFAULT ''"),
                                         ("world_request_dedup", "created_at", "INTEGER NOT NULL DEFAULT 0"),
                                         ("world_event_journal", "recorded_at", "INTEGER NOT NULL DEFAULT 0")):
@@ -272,20 +303,46 @@ class SocietySimulation:
         owner_id = _valid_id(owner_id, "owner_id")
         if isinstance(opening_balance, bool) or not isinstance(opening_balance, int) or opening_balance < 0:
             raise ValueError("invalid_opening_balance")
-        if not isinstance(allow_negative, bool) or currency not in ("USD", "VND"):
+        if not isinstance(allow_negative, bool) or currency not in CURRENCIES:
             raise ValueError("invalid_account_policy")
+        if opening_balance > MAX_AMOUNT:
+            raise ValueError("amount_out_of_range")
         with self.lock, self.db:
             if self.db.execute("SELECT 1 FROM world_accounts WHERE account_id=?", (account_id,)).fetchone():
                 raise ValueError("account_already_exists")
             self.db.execute("INSERT INTO world_accounts(account_id,owner_id,balance,allow_negative,currency) VALUES(?,?,0,?,?)",
                             (account_id, owner_id, 1 if allow_negative else 0, currency))
             if opening_balance:
-                self._post_transaction_locked("opening:" + account_id, "opening", "Opening balance",
-                    [{"account_id": account_id, "amount": opening_balance},
-                     {"account_id": "system:opening_equity", "amount": -opening_balance}])
+                self._post_opening_locked(account_id, currency, opening_balance)
         return self.account(account_id)
 
-    def _post_transaction_locked(self, transaction_id: str, source: str, description: str, entries: list) -> dict:
+    def _ensure_system_account_locked(self, name: str, currency: str) -> str:
+        account_id = _system_account(name, currency)
+        self.db.execute("""INSERT OR IGNORE INTO world_accounts(account_id,owner_id,balance,allow_negative,currency)
+            VALUES(?,'system',0,1,?)""", (account_id, currency))
+        return account_id
+
+    def _post_opening_locked(self, account_id: str, currency: str, amount: int) -> None:
+        equity = self._ensure_system_account_locked("opening_equity", currency)
+        self._post_transaction_locked("opening:" + account_id, "opening", "Opening balance",
+            [{"account_id": account_id, "amount": amount}, {"account_id": equity, "amount": -amount}],
+            enforce_funds=False)
+
+    def _existing_transaction_locked(self, transaction_id: str, source: str, entries: list,
+                                     descriptions: tuple) -> bool:
+        """True for an exact replay; the same id carrying different content is refused."""
+        row = self.db.execute("SELECT source,description FROM world_transactions WHERE transaction_id=?",
+                              (transaction_id,)).fetchone()
+        if not row:
+            return False
+        stored = sorted((r["account_id"], r["amount"]) for r in self.db.execute(
+            "SELECT account_id,amount FROM world_ledger_entries WHERE transaction_id=?", (transaction_id,)))
+        if row["source"] != source or row["description"] not in descriptions or stored != sorted(entries):
+            raise ValueError("transaction_id_conflict")
+        return True
+
+    def _post_transaction_locked(self, transaction_id: str, source: str, description: str, entries: list,
+                                 enforce_funds: bool = True) -> dict:
         transaction_id = _valid_id(transaction_id, "transaction_id")
         if not isinstance(source, str) or not source or len(source) > 64:
             raise ValueError("invalid_transaction_source")
@@ -299,20 +356,31 @@ class SocietySimulation:
             if not isinstance(entry, dict) or isinstance(entry.get("amount"), bool) or not isinstance(entry.get("amount"), int):
                 raise ValueError("invalid_ledger_entry")
             account_id = _valid_id(entry.get("account_id"), "account_id")
+            if abs(entry["amount"]) > MAX_AMOUNT:
+                raise ValueError("amount_out_of_range")
             total += entry["amount"]
             normalized.append((account_id, entry["amount"]))
         if total != 0:
             raise ValueError("unbalanced_transaction")
-        existing = self.db.execute("SELECT 1 FROM world_transactions WHERE transaction_id=?", (transaction_id,)).fetchone()
-        if existing:
+        if self._existing_transaction_locked(transaction_id, source, normalized, (description,)):
             return {"posted": True, "duplicate": True, "transaction_id": transaction_id}
         balances = {}
+        policies = {}
+        currencies = set()
         for account_id, amount in normalized:
-            row = self.db.execute("SELECT balance,allow_negative FROM world_accounts WHERE account_id=?", (account_id,)).fetchone()
+            row = self.db.execute("SELECT balance,allow_negative,currency FROM world_accounts WHERE account_id=?",
+                                  (account_id,)).fetchone()
             if not row:
                 raise KeyError("account_not_found:" + account_id)
+            currencies.add(row["currency"])
+            policies[account_id] = row["allow_negative"]
             balances[account_id] = balances.get(account_id, row["balance"]) + amount
-            if not row["allow_negative"] and balances[account_id] < 0:
+        if len(currencies) != 1:
+            raise ValueError("currency_mismatch")
+        for account_id, balance in balances.items():
+            if abs(balance) > MAX_AMOUNT:
+                raise ValueError("amount_out_of_range")
+            if enforce_funds and not policies[account_id] and balance < 0:
                 raise ValueError("insufficient_funds:" + account_id)
         self.db.execute("INSERT INTO world_transactions(transaction_id,source,description,sim_minute) VALUES(?,?,?,?)",
                         (transaction_id, source, description, int(self.minute_provider())))
@@ -327,23 +395,78 @@ class SocietySimulation:
         return {"posted": True, "duplicate": False, "transaction_id": transaction_id}
 
     def post_transaction(self, transaction_id: str, source: str, description: str, entries: list) -> dict:
+        transaction_id = _public_transaction_id(transaction_id)
         with self.lock, self.db:
             return self._post_transaction_locked(transaction_id, source, description, entries)
 
     def ensure_account(self, account_id: str, owner_id: str, opening_balance: int = 0,
-                       allow_negative: bool = True, currency: str = "USD") -> dict:
-        """Create an opening balance once; repeated adapter sync never resets a live ledger."""
+                       allow_negative: bool = True, currency: str = "USD",
+                       as_of_source: str = "", as_of_sequence: Optional[int] = None) -> dict:
+        """Create an opening balance once; repeated adapter sync never resets a live ledger.
+
+        With as_of_sequence the adapter states which of its events are already part of the balance.
+        Those events never move money again, and later ones that arrived first are kept on top.
+        """
         account_id = _valid_id(account_id, "account_id")
+        owner_id = _valid_id(owner_id, "owner_id")
+        if as_of_sequence is not None:
+            as_of_source = _valid_id(as_of_source, "source_id")
+            if isinstance(as_of_sequence, bool) or not isinstance(as_of_sequence, int) or as_of_sequence < 0:
+                raise ValueError("invalid_event_sequence")
+        if isinstance(opening_balance, bool) or not isinstance(opening_balance, int) or opening_balance < 0:
+            raise ValueError("invalid_opening_balance")
+        if opening_balance > MAX_AMOUNT:
+            raise ValueError("amount_out_of_range")
+        if not isinstance(allow_negative, bool) or currency not in CURRENCIES:
+            raise ValueError("invalid_account_policy")
         with self.lock, self.db:
-            row = self.db.execute("SELECT account_id,balance FROM world_accounts WHERE account_id=?", (account_id,)).fetchone()
-            if row:
-                entries = self.db.execute("SELECT COUNT(*) AS n FROM world_ledger_entries WHERE account_id=?", (account_id,)).fetchone()["n"]
-                if entries == 0 and row["balance"] == 0 and opening_balance > 0:
-                    self._post_transaction_locked("opening:" + account_id, "opening", "Opening balance",
-                        [{"account_id": account_id, "amount": opening_balance},
-                         {"account_id": "system:opening_equity", "amount": -opening_balance}])
-                return self.account(account_id)
-        return self.create_account(account_id, owner_id, opening_balance, allow_negative, currency)
+            self.db.execute("""INSERT OR IGNORE INTO world_accounts
+                (account_id,owner_id,balance,allow_negative,currency) VALUES(?,?,0,?,?)""",
+                (account_id, owner_id, 1 if allow_negative else 0, currency))
+            self._open_account_locked(account_id, opening_balance, as_of_source, as_of_sequence)
+        return self.account(account_id)
+
+    def _open_account_locked(self, account_id: str, opening_balance: int, source_id: str,
+                             sequence: Optional[int]) -> None:
+        if self.db.execute("""SELECT 1 FROM world_transactions WHERE transaction_id=?
+                UNION SELECT 1 FROM world_account_openings WHERE account_id=?""",
+                ("opening:" + account_id, account_id)).fetchone():
+            return
+        row = self.db.execute("SELECT balance,currency FROM world_accounts WHERE account_id=?",
+                              (account_id,)).fetchone()
+        if sequence is None:
+            untouched = not self.db.execute("SELECT 1 FROM world_ledger_entries WHERE account_id=?",
+                                            (account_id,)).fetchone()
+            if untouched and row["balance"] == 0 and opening_balance > 0:
+                self._post_opening_locked(account_id, row["currency"], opening_balance)
+            return
+        # A wallet observation is newer evidence than any opening snapshot.
+        reconciled = self.db.execute("""SELECT 1 FROM world_ledger_entries e
+            JOIN world_transactions t USING(transaction_id)
+            WHERE e.account_id=? AND t.source='reconcile'""", (account_id,)).fetchone()
+        if not reconciled:
+            prefix = "legacy-ledger:" + source_id + ":"
+            later = 0
+            for entry in self.db.execute("""SELECT transaction_id,amount FROM world_ledger_entries
+                    WHERE account_id=? AND substr(transaction_id,1,?)=?""", (account_id, len(prefix), prefix)):
+                # "gta5.shvdn" is also a prefix of newer sources such as "gta5.shvdn:<id>".
+                number = entry["transaction_id"][len(prefix):]
+                if number.isdigit() and int(number) > sequence:
+                    later += entry["amount"]
+            difference = opening_balance + later - row["balance"]
+            if difference:
+                self._post_opening_locked(account_id, row["currency"], difference)
+        self.db.execute("INSERT INTO world_account_openings(account_id,source_id,sequence,balance) VALUES(?,?,?,?)",
+                        (account_id, source_id, sequence, opening_balance))
+
+    def verify_ledger(self) -> list:
+        """Accounts whose stored balance differs from the sum of their ledger entries."""
+        with self.lock:
+            return [dict(row) for row in self.db.execute("""SELECT a.account_id, a.balance,
+                COALESCE(SUM(e.amount),0) AS entries FROM world_accounts a
+                LEFT JOIN world_ledger_entries e USING(account_id)
+                GROUP BY a.account_id HAVING a.balance<>COALESCE(SUM(e.amount),0)
+                ORDER BY a.account_id""")]
 
     def account(self, account_id: str) -> dict:
         with self.lock:
@@ -375,6 +498,7 @@ class SocietySimulation:
 
     def purchase_property(self, transaction_id: str, property_id: str, buyer_account_id: str,
                           price: int) -> dict:
+        transaction_id = _public_transaction_id(transaction_id)
         if isinstance(price, bool) or not isinstance(price, int) or price <= 0:
             raise ValueError("invalid_purchase_price")
         with self.lock, self.db:
@@ -407,6 +531,7 @@ class SocietySimulation:
 
     def lease_property(self, transaction_id: str, property_id: str, tenant_account_id: str,
                        rent: int, lease_minutes: int) -> dict:
+        transaction_id = _public_transaction_id(transaction_id, "lease:")
         if isinstance(rent, bool) or not isinstance(rent, int) or rent <= 0:
             raise ValueError("invalid_rent")
         if isinstance(lease_minutes, bool) or not isinstance(lease_minutes, int) or not 1 <= lease_minutes <= 525600:
@@ -415,6 +540,12 @@ class SocietySimulation:
             row = self.db.execute("SELECT owner_account_id,tenant_account_id,lease_until FROM world_properties WHERE property_id=?", (property_id,)).fetchone()
             if not row:
                 raise KeyError("property_not_found")
+            payee = self.db.execute("""SELECT account_id FROM world_ledger_entries
+                WHERE transaction_id=? AND account_id<>? LIMIT 1""", (transaction_id, tenant_account_id)).fetchone()
+            # Replays are answered first; ownership or the tenant may have changed since.
+            if self._existing_transaction_locked(transaction_id, "property_rent",
+                    [(tenant_account_id, -rent), (payee["account_id"] if payee else "", rent)], (property_id,)):
+                return {"posted": True, "duplicate": True, "transaction_id": transaction_id}
             if row["tenant_account_id"] and row["lease_until"] > int(self.minute_provider()) and row["tenant_account_id"] != tenant_account_id:
                 raise ValueError("property_already_leased")
             result = self._post_transaction_locked(transaction_id, "property_rent", property_id,
@@ -506,17 +637,12 @@ class SocietySimulation:
                 raise ValueError("adapter_mapping_unavailable")
             cash_account_id = row["cash_account_id"]
             account = self.db.execute(
-                "SELECT balance FROM world_accounts WHERE account_id=?", (cash_account_id,)
+                "SELECT balance,currency FROM world_accounts WHERE account_id=?", (cash_account_id,)
             ).fetchone()
             if not account:
                 raise KeyError("business_cash_account_not_found")
             delta = cash_balance - int(row["native_cash_balance"])
-            equity_id = "system:business_sync_equity"
-            self.db.execute(
-                """INSERT OR IGNORE INTO world_accounts
-                (account_id,owner_id,balance,allow_negative,currency)
-                VALUES(?, 'system', 0, 1, 'USD')""", (equity_id,)
-            )
+            equity_id = self._ensure_system_account_locked("business_sync_equity", account["currency"])
             if delta:
                 transaction_id = "bsync:" + hashlib.sha256(request_id.encode("utf-8")).hexdigest()[:48]
                 self._post_transaction_locked(
@@ -554,18 +680,26 @@ class SocietySimulation:
             raise ValueError("invalid_sale_quantity")
         if isinstance(unit_price, bool) or not isinstance(unit_price, int) or unit_price < 0:
             raise ValueError("invalid_unit_price")
+        transaction_id = _public_transaction_id(transaction_id, "sale:")
+        item_id = _valid_id(item_id, "item_id")
+        description = "%s|%s|%d" % (business_id, item_id, quantity)
         with self.lock, self.db:
             row = self.db.execute("SELECT cash_account_id,inventory_json,is_open FROM world_businesses WHERE business_id=?",
                                   (business_id,)).fetchone()
             if not row:
                 raise KeyError("business_not_found")
+            total = quantity * unit_price
+            # Replays are answered before stock checks: the first sale may have emptied the shelf.
+            # Sales posted by earlier builds stored only the business id as description.
+            if self._existing_transaction_locked(transaction_id, "retail_sale",
+                    [(buyer_account_id, -total), (row["cash_account_id"], total)], (description, business_id)):
+                return {"posted": True, "duplicate": True, "transaction_id": transaction_id}
             if not row["is_open"]:
                 raise ValueError("business_closed")
             inventory = json.loads(row["inventory_json"])
             if inventory.get(item_id, 0) < quantity:
                 raise ValueError("insufficient_inventory")
-            total = quantity * unit_price
-            result = self._post_transaction_locked(transaction_id, "retail_sale", business_id,
+            result = self._post_transaction_locked(transaction_id, "retail_sale", description,
                 [{"account_id": buyer_account_id, "amount": -total},
                  {"account_id": row["cash_account_id"], "amount": total}])
             if not result["duplicate"]:
@@ -688,6 +822,10 @@ class SocietySimulation:
                 sign = amount if event_type == "ledger.income" else -amount
                 tx_id = "legacy-ledger:" + source_id + ":" + str(seq)
                 account_id = "legacy:player_bank" if fields.get("acct", "cash") == "bank" else "legacy:player_cash"
+                if self.db.execute(
+                        "SELECT 1 FROM world_account_openings WHERE account_id=? AND source_id=? AND sequence>=?",
+                        (account_id, source_id, seq)).fetchone():
+                    return True   # already part of the opening balance
                 self._post_transaction_locked(tx_id, fields.get("cat", "legacy"),
                     fields.get("note", event_type), [
                         {"account_id": account_id, "amount": sign},
@@ -799,11 +937,20 @@ class SocietySimulation:
             if not cash["allow_negative"] and int(cash["balance"]) < int(accrual["amount"]):
                 continue
             transaction_id = "payroll:" + accrual["accrual_id"]
-            transaction = self._post_transaction_locked(
-                transaction_id, "payroll", "Hourly wage for " + accrual["employee_id"],
-                [{"account_id": accrual["cash_account_id"], "amount": -int(accrual["amount"])},
-                 {"account_id": accrual["employee_account_id"], "amount": int(accrual["amount"])}],
-            )
+            self.db.execute("SAVEPOINT payroll")
+            try:
+                transaction = self._post_transaction_locked(
+                    transaction_id, "payroll", "Hourly wage for " + accrual["employee_id"],
+                    [{"account_id": accrual["cash_account_id"], "amount": -int(accrual["amount"])},
+                     {"account_id": accrual["employee_account_id"], "amount": int(accrual["amount"])}],
+                )
+            except (ValueError, KeyError, sqlite3.IntegrityError) as exc:
+                # The wage stays pending and visible instead of being marked paid or blocking others.
+                self.db.execute("ROLLBACK TO payroll")
+                self.db.execute("RELEASE payroll")
+                LOG.warning("payroll %s not settled: %s", accrual["accrual_id"], exc)
+                continue
+            self.db.execute("RELEASE payroll")
             self.db.execute(
                 "UPDATE world_payroll_accruals SET status='paid',paid_transaction_id=? WHERE accrual_id=? AND status='pending'",
                 (transaction_id, accrual["accrual_id"]),

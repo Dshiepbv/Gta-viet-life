@@ -28,6 +28,7 @@ using GTA.Native;
 public class GtaVietLifeEconomy : Script
 {
     const string SaveFile = "GtaVietLifeEconomy.sav";
+    readonly GvlSaveFile store = new GvlSaveFile(SaveFile, GvlSaveFile.LooksKeyValue, Log);
     const double GameDaySeconds = 2880.0;   // 1 ngày game = 48 phút thực (giống file Đời sống)
     const int MaxOfflineDays = 14;
 
@@ -835,44 +836,37 @@ public class GtaVietLifeEconomy : Script
             foreach (Impounded im in impounded) l.Add("imp=" + im.Hash + "," + im.Prim + "," + im.Sec + "," + im.Day + "," + im.Plate.Replace(",", " ") + "," + im.Key.Replace(",", "."));
             int start = Math.Max(0, ledger.Count - 60);
             for (int i = start; i < ledger.Count; i++) l.Add("led=" + ledger[i]);
-            File.WriteAllLines(SaveFile, l.ToArray());
+            store.Write(l);
         }
         catch (Exception ex) { Log("save loi: " + ex.Message); }
     }
 
     void Load()
     {
-        try
+        if (!store.Load(ParseSaveLine)) Notify("~r~GTA Viet Life: khong doc duoc so ngan hang. File cu duoc giu nguyen, tien trinh moi KHONG duoc luu.");
+    }
+
+    void ParseSaveLine(string line)
+    {
+        CultureInfo ci = CultureInfo.InvariantCulture;
+        int i = line.IndexOf('=');
+        if (i < 0) return;
+        string k = line.Substring(0, i), v = line.Substring(i + 1);
+        string[] q = v.Split(',');
+        switch (k)
         {
-            if (!File.Exists(SaveFile)) return;
-            CultureInfo ci = CultureInfo.InvariantCulture;
-            foreach (string line in File.ReadAllLines(SaveFile))
-            {
-                int i = line.IndexOf('=');
-                if (i < 0) continue;
-                string k = line.Substring(0, i), v = line.Substring(i + 1);
-                try
-                {
-                    string[] q = v.Split(',');
-                    switch (k)
-                    {
-                        case "seen": lastSeen = long.Parse(v); break;
-                        case "bank": bank = int.Parse(v); break;
-                        case "bankdebt": bankDebt = int.Parse(v); break;
-                        case "credit": credit = Math.Max(300, Math.Min(850, int.Parse(v))); break;
-                        case "day": dayNo = int.Parse(v); break;
-                        case "bad": badUntil = int.Parse(v); break;
-                        case "cans": cans = int.Parse(v); break;
-                        case "loan": loans.Add(new Loan { Kind = int.Parse(q[0]), Principal = int.Parse(q[1]), Left = int.Parse(q[2]), Periods = int.Parse(q[3]), Due = int.Parse(q[4]), Late = int.Parse(q[5]), Rate = float.Parse(q[6], ci) }); break;
-                        case "car": { Car c = new Car { Key = q[0], Fuel = float.Parse(q[1], ci), Cap = float.Parse(q[2], ci), Oil = float.Parse(q[3], ci), Km = float.Parse(q[4], ci) }; cars[c.Key] = c; break; }
-                        case "imp": impounded.Add(new Impounded { Hash = int.Parse(q[0]), Prim = int.Parse(q[1]), Sec = int.Parse(q[2]), Day = int.Parse(q[3]), Plate = q[4], Key = q.Length > 5 ? q[5] : "" }); break;
-                        case "led": ledger.Add(v); break;
-                    }
-                }
-                catch (Exception ex) { Log("dong luu hong (" + k + "): " + ex.Message); }
-            }
+            case "seen": lastSeen = long.Parse(v); break;
+            case "bank": bank = int.Parse(v); break;
+            case "bankdebt": bankDebt = int.Parse(v); break;
+            case "credit": credit = Math.Max(300, Math.Min(850, int.Parse(v))); break;
+            case "day": dayNo = int.Parse(v); break;
+            case "bad": badUntil = int.Parse(v); break;
+            case "cans": cans = int.Parse(v); break;
+            case "loan": loans.Add(new Loan { Kind = int.Parse(q[0]), Principal = int.Parse(q[1]), Left = int.Parse(q[2]), Periods = int.Parse(q[3]), Due = int.Parse(q[4]), Late = int.Parse(q[5]), Rate = float.Parse(q[6], ci) }); break;
+            case "car": { Car c = new Car { Key = q[0], Fuel = float.Parse(q[1], ci), Cap = float.Parse(q[2], ci), Oil = float.Parse(q[3], ci), Km = float.Parse(q[4], ci) }; cars[c.Key] = c; break; }
+            case "imp": impounded.Add(new Impounded { Hash = int.Parse(q[0]), Prim = int.Parse(q[1]), Sec = int.Parse(q[2]), Day = int.Parse(q[3]), Plate = q[4], Key = q.Length > 5 ? q[5] : "" }); break;
+            case "led": ledger.Add(v); break;
         }
-        catch (Exception ex) { Log("load loi: " + ex.Message); }
     }
 
     // ------------------------------------------------------------ tien ich

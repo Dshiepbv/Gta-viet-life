@@ -17,12 +17,13 @@ using GTA;
 public class GtaVietLifeCore : Script
 {
     const string SaveFile = "GtaVietLifeCore.sav";
-    const string BackupFile = "GtaVietLifeCore.sav.bak";
-    const string TempFile = "GtaVietLifeCore.sav.tmp";
+    readonly GvlSaveFile store = new GvlSaveFile(SaveFile, GvlSaveFile.LooksKeyValue, Log);
     static readonly string[] Modules = { "Personal", "Legal", "Body", "Social", "Life", "Economy" };
     static readonly object OutboxLock = new object();
     static readonly object SaveLock = new object();
 
+    const string LegacyClockId = "legacy";
+    string clockId = "";
     string server = "http://127.0.0.1:5577";
     string hostServer = "http://127.0.0.1:5580";
     string hostSessionId = Guid.NewGuid().ToString("N");
@@ -155,7 +156,12 @@ public class GtaVietLifeCore : Script
         currentWorldMinute = gameDay * 1440L + minute;
         MaintainHostSession(Stopwatch.GetTimestamp());
         if (hostConnected && now > nextResidentSync) { nextResidentSync = now + 10000; SyncResidentProfiles(); }
-        if (hostConnected && now > nextWalletBaselineSync) { nextWalletBaselineSync = now + 10000; SyncPlayerProfile(); }
+        if (hostConnected && now > nextWalletBaselineSync)
+        {
+            nextWalletBaselineSync = now + 10000;
+            SyncPlayerProfile();
+            SyncPlayerWalletBaseline();
+        }
         if (hostConnected && now > nextEngineCommandPoll) { nextEngineCommandPoll = now + 2000; PollEngineCommands(); }
         if (hostConnected && now > nextWorldCommandPoll) { nextWorldCommandPoll = now + 2000; PollEngineWorldCommands(); }
         if (hostConnected && now > nextWorldPostRetry) { nextWorldPostRetry = now + 5000; StartWorldPostWorker(); }
@@ -264,21 +270,28 @@ public class GtaVietLifeCore : Script
         });
     }
 
+    // Chay tren luong script: Game.Player.Money khong duoc goi trong Task.Run.
     void SyncPlayerWalletBaseline()
     {
         try
         {
+            object seqValue = Get("GVL.EventSeq");
+            long sequence = seqValue is long ? (long)seqValue : 0;
+            string source = GvlSource.Id(clockId);
             int balance = Math.Max(0, Game.Player.Money);
             string requestId = Guid.NewGuid().ToString("N");
             string body = "{\"request_id\":\"" + requestId +
                 "\",\"account_id\":\"legacy:player_cash\",\"owner_id\":\"player.main\",\"opening_balance\":" +
-                balance.ToString(CultureInfo.InvariantCulture) + ",\"allow_negative\":true,\"currency\":\"USD\"}";
+                balance.ToString(CultureInfo.InvariantCulture) + ",\"as_of_source\":\"" + source + "\",\"as_of_sequence\":" +
+                sequence.ToString(CultureInfo.InvariantCulture) + ",\"allow_negative\":true,\"currency\":\"USD\"}";
             PostWorldRequest("/engine/v1/world/accounts/ensure", body);
             object bankValue = Get("GVL.Bank");
-            int bank = bankValue is int ? Math.Max(0, (int)bankValue) : 0;
+            if (!(bankValue is int)) return;   // chua co so ngan hang thi khong mo so du 0
+            int bank = Math.Max(0, (int)bankValue);
             string bankBody = "{\"request_id\":\"" + Guid.NewGuid().ToString("N") +
                 "\",\"account_id\":\"legacy:player_bank\",\"owner_id\":\"player.main\",\"opening_balance\":" +
-                bank.ToString(CultureInfo.InvariantCulture) + ",\"allow_negative\":true,\"currency\":\"USD\"}";
+                bank.ToString(CultureInfo.InvariantCulture) + ",\"as_of_source\":\"" + source + "\",\"as_of_sequence\":" +
+                sequence.ToString(CultureInfo.InvariantCulture) + ",\"allow_negative\":true,\"currency\":\"USD\"}";
             PostWorldRequest("/engine/v1/world/accounts/ensure", bankBody);
         }
         catch (Exception ex) { Log("dong bo so du tien mat voi life engine loi: " + ex.Message); }
@@ -317,7 +330,7 @@ public class GtaVietLifeCore : Script
                 {
                     Dictionary<string, object> request = new Dictionary<string, object> {
                         { "request_id", Guid.NewGuid().ToString("N") },
-                        { "source_id", "gta5.shvdn" }, { "events", events }
+                        { "source_id", GvlSource.Id(clockId) }, { "events", events }
                     };
                     JavaScriptSerializer json = new JavaScriptSerializer();
                     using (WebClient wc = new HostWebClient())
@@ -368,59 +381,48 @@ public class GtaVietLifeCore : Script
                 "seq=" + lastSeenSeq.ToString(CultureInfo.InvariantCulture),
                 "outbox=" + encoded,
                 "engine_outbox=" + engineEncoded,
-                "world_outbox=" + worldEncoded
+                "world_outbox=" + worldEncoded,
+                "clock_id=" + clockId
             };
-            File.WriteAllLines(TempFile, lines, Encoding.UTF8);
-            if (File.Exists(SaveFile))
-            {
-                try { File.Copy(SaveFile, BackupFile, true); } catch { }
-                File.Replace(TempFile, SaveFile, null);
-            }
-            else File.Move(TempFile, SaveFile);
+            store.Write(lines);
         }
         catch (Exception ex) { Log("save loi: " + ex.Message); }
     }
 
     void Load()
     {
-        if (!LoadFrom(SaveFile)) LoadFrom(BackupFile);
+        bool existed = File.Exists(SaveFile) || File.Exists(SaveFile + ".bak");
+        if (!store.Load(ParseSaveLine))
+            Log("khong doc duoc " + SaveFile + "; giu nguyen file, hang doi moi KHONG duoc luu");
+        // Mat file thi bo dem ngay va seq quay ve 0: dung dinh danh moi de engine khong coi la trung.
+        // File do ban cu ghi khong co clock_id va tiep tuc dung nguon cu.
+        if (clockId.Length == 0)
+            clockId = existed && !store.Blocked ? LegacyClockId : Guid.NewGuid().ToString("N").Substring(0, 12);
         object current = Get("GVL.EventSeq");
         long currentSeq = current is long ? (long)current : 0;
         Set("GVL.EventSeq", Math.Max(lastSeenSeq, currentSeq));
+        Set("GVL.EventSource", GvlSource.Id(clockId));
     }
 
-    bool LoadFrom(string path)
+    void ParseSaveLine(string line)
     {
-        try
+        int i = line.IndexOf('=');
+        if (i < 0) return;
+        string key = line.Substring(0, i), value = line.Substring(i + 1);
+        if (key == "day") gameDay = Math.Max(0, long.Parse(value, CultureInfo.InvariantCulture));
+        else if (key == "seq") lastSeenSeq = Math.Max(0, long.Parse(value, CultureInfo.InvariantCulture));
+        else if (key == "clock_id") clockId = value.Trim();
+        else if (key == "world_outbox" && value.Length > 0)
         {
-            if (!File.Exists(path)) return false;
-            long loadedDay = 0, loadedSeq = 0;
-            List<string> loadedOutbox = new List<string>();
-            List<string> loadedEngineOutbox = new List<string>();
-            string loadedWorldOutbox = "";
-            foreach (string line in File.ReadAllLines(path, Encoding.UTF8))
-            {
-                int i = line.IndexOf('=');
-                if (i < 0) continue;
-                string key = line.Substring(0, i), value = line.Substring(i + 1);
-                if (key == "day") long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out loadedDay);
-                else if (key == "seq") long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out loadedSeq);
-                else if (key == "world_outbox" && value.Length > 0)
-                    loadedWorldOutbox = Encoding.UTF8.GetString(Convert.FromBase64String(value));
-                else if ((key == "outbox" || key == "engine_outbox") && value.Length > 0)
-                {
-                    string decoded = Encoding.UTF8.GetString(Convert.FromBase64String(value));
-                    List<string> destination = key == "outbox" ? loadedOutbox : loadedEngineOutbox;
-                    foreach (string item in decoded.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries)) destination.Add(item);
-                }
-            }
-            gameDay = Math.Max(0, loadedDay);
-            lastSeenSeq = Math.Max(0, loadedSeq);
-            lock (OutboxLock) { outbox.AddRange(loadedOutbox); engineOutbox.AddRange(loadedEngineOutbox); }
-            lock (WorldPostQueueLock) worldPostQueue.Restore(loadedWorldOutbox);
-            return true;
+            string decoded = Encoding.UTF8.GetString(Convert.FromBase64String(value));
+            lock (WorldPostQueueLock) worldPostQueue.Restore(decoded);
         }
-        catch (Exception ex) { Log("load " + path + " loi: " + ex.Message); return false; }
+        else if ((key == "outbox" || key == "engine_outbox") && value.Length > 0)
+        {
+            string[] items = Encoding.UTF8.GetString(Convert.FromBase64String(value))
+                .Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            lock (OutboxLock) (key == "outbox" ? outbox : engineOutbox).AddRange(items);
+        }
     }
 
     sealed class HostWebClient : WebClient
@@ -488,7 +490,7 @@ public class GtaVietLifeCore : Script
             }
             catch { }
             string body = "{\"protocol\":\"gvl-engine/1\",\"request_id\":\"" + Guid.NewGuid().ToString("N") + "\",\"session_id\":\"" + hostSessionId +
-                "\",\"world_minute\":" + currentWorldMinute.ToString(CultureInfo.InvariantCulture) + ",\"adapter\":{\"id\":\"gta5.shvdn\",\"version\":\"0.1.0\",\"base_game\":\"" + gameEdition + "\",\"base_game_build\":\"" + gameVersion +
+                "\",\"clock_id\":\"" + clockId + "\",\"world_minute\":" + currentWorldMinute.ToString(CultureInfo.InvariantCulture) + ",\"adapter\":{\"id\":\"gta5.shvdn\",\"version\":\"0.1.0\",\"base_game\":\"" + gameEdition + "\",\"base_game_build\":\"" + gameVersion +
                 "\"},\"capabilities\":[\"adapter.session\",\"adapter.command_poll\",\"adapter.actor_activity\",\"adapter.dialogue_context\",\"adapter.event_outbox\",\"adapter.world_interaction\",\"adapter.space_transition\",\"adapter.object_interaction\"]}";
             using (WebClient wc = new HostWebClient())
             {
@@ -559,7 +561,6 @@ public class GtaVietLifeCore : Script
                         Log("host tu choi ho so nguoi choi (HTTP " + status + "): " + ex.Message);
                     }
                 }
-                SyncPlayerWalletBaseline();
             }
             catch (Exception ex) { Log("dong bo nhan vat nguoi choi vao life engine loi: " + ex.Message); }
             finally { lock (HostLock) playerSyncing = false; }
@@ -973,6 +974,15 @@ public class GtaVietLifeCore : Script
 }
 
 // <gvl-testable:outbox>
+public static class GvlSource
+{
+    // Nguon event rieng cho moi lan tao lai bo dem; ban cu giu nguyen "gta5.shvdn".
+    public static string Id(string clockId)
+    {
+        return string.IsNullOrEmpty(clockId) || clockId == "legacy" ? "gta5.shvdn" : "gta5.shvdn:" + clockId;
+    }
+}
+
 // Logic gui lai thuan C#, khong goi API GTA; tests/test_csharp_logic.py bien dich doan nay va chay that.
 public static class GvlSendRules
 {

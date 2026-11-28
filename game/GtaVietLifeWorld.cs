@@ -24,6 +24,7 @@ public class GtaVietLifeWorld : Script
 {
     // ------------------------------------------------------------ cấu hình
     const string SaveFile = "GtaVietLifeWorld.sav";
+    readonly GvlSaveFile store = new GvlSaveFile(SaveFile, GvlSaveFile.LooksKeyValue, Log);
     const int FoodPrice = 15;
     const int DrinkPrice = 5;
     const int RentPerDay = 150;
@@ -3405,9 +3406,13 @@ public class GtaVietLifeWorld : Script
             anchor + "\",\"interior\":\"" + anchor + "\"}},\"interactions\":[\"open\",\"close\",\"inspect\"]}";
         post("/engine/v1/world/buildings", body);
         int playerCash = Math.Max(0, Game.Player.Money);
+        object seqValue = AppDomain.CurrentDomain.GetData("GVL.EventSeq");
+        long eventSequence = seqValue is long ? (long)seqValue : 0;
+        string eventSource = AppDomain.CurrentDomain.GetData("GVL.EventSource") as string ?? "gta5.shvdn";
         string ownerBody = "{\"request_id\":\"" + Guid.NewGuid().ToString("N") +
             "\",\"account_id\":\"legacy:player_cash\",\"owner_id\":\"player.main\",\"opening_balance\":" +
-            playerCash.ToString(CultureInfo.InvariantCulture) + ",\"allow_negative\":true,\"currency\":\"USD\"}";
+            playerCash.ToString(CultureInfo.InvariantCulture) + ",\"as_of_source\":\"" + eventSource + "\",\"as_of_sequence\":" +
+            eventSequence.ToString(CultureInfo.InvariantCulture) + ",\"allow_negative\":true,\"currency\":\"USD\"}";
         post("/engine/v1/world/accounts/ensure", ownerBody);
         string cashBody = "{\"request_id\":\"" + Guid.NewGuid().ToString("N") +
             "\",\"account_id\":\"" + cashAccountId + "\",\"owner_id\":\"" + businessId +
@@ -4722,8 +4727,7 @@ public class GtaVietLifeWorld : Script
             l.Add("ownveh=" + ownVehHash);
             foreach (Shop sh in shops)
                 l.Add("shop=" + sh.Pos.X.ToString(ci) + "," + sh.Pos.Y.ToString(ci) + "," + sh.Pos.Z.ToString(ci) + "," + sh.Heading.ToString(ci) + "," + sh.Ground.ToString(ci) + "," + sh.Level + "," + sh.Stock + "," + sh.Staff + "," + sh.Cash + "," + sh.SoldToday + "," + sh.Mode + "," + sh.Rent + "," + sh.DaysLeft + "," + sh.Overdue + "," + sh.Paid + "," + (sh.Indoor ? 1 : 0) + "," + sh.Type);
-            File.WriteAllLines(SaveFile, l.ToArray());
-            WriteDash();
+            if (store.Write(l)) WriteDash();
         }
         catch (Exception ex) { Log("save loi: " + ex.Message); }
     }
@@ -4774,85 +4778,82 @@ public class GtaVietLifeWorld : Script
 
     void Load()
     {
-        try
+        if (!store.Load(ParseSaveLine)) Notify("~r~GTA Viet Life: khong doc duoc du lieu Doi song. File cu duoc giu nguyen, tien trinh moi KHONG duoc luu.");
+    }
+
+    void ParseSaveLine(string line)
+    {
+        CultureInfo ci = CultureInfo.InvariantCulture;
+        int i = line.IndexOf('=');
+        if (i < 0) return;
+        string k = line.Substring(0, i), v = line.Substring(i + 1);
+        switch (k)
         {
-            if (!File.Exists(SaveFile)) return;
-            CultureInfo ci = CultureInfo.InvariantCulture;
-            foreach (string line in File.ReadAllLines(SaveFile))
-            {
-                int i = line.IndexOf('=');
-                if (i < 0) continue;
-                string k = line.Substring(0, i), v = line.Substring(i + 1);
-                switch (k)
+            case "hunger": hunger = float.Parse(v, ci); break;
+            case "thirst": thirst = float.Parse(v, ci); break;
+            case "energy": energy = float.Parse(v, ci); break;
+            case "hygiene": hygiene = float.Parse(v, ci); break;
+            case "rhythm": rhythmOn = v != "0"; break;
+            case "resnext": nextResId = int.Parse(v); break;
+            case "res":
                 {
-                    case "hunger": hunger = float.Parse(v, ci); break;
-                    case "thirst": thirst = float.Parse(v, ci); break;
-                    case "energy": energy = float.Parse(v, ci); break;
-                    case "hygiene": hygiene = float.Parse(v, ci); break;
-                    case "rhythm": rhythmOn = v != "0"; break;
-                    case "resnext": nextResId = int.Parse(v); break;
-                    case "res":
-                        {
-                            string[] q = v.Split(',');
-                            if (q.Length < 13) break;
-                            Resident r = new Resident();
-                            r.Id = int.Parse(q[0]); r.ModelHash = int.Parse(q[1]); r.Female = q[2] == "1"; r.NameIdx = int.Parse(q[3]);
-                            r.Home = new Vector3(float.Parse(q[4], ci), float.Parse(q[5], ci), float.Parse(q[6], ci));
-                            r.Work = new Vector3(float.Parse(q[7], ci), float.Parse(q[8], ci), float.Parse(q[9], ci));
-                            r.Lunch = new Vector3(float.Parse(q[10], ci), float.Parse(q[11], ci), float.Parse(q[12], ci));
-                            residents.Add(r);
-                            if (r.Id >= nextResId) nextResId = r.Id + 1;
-                            break;
-                        }
-                    case "rep": rep = int.Parse(v); break;
-                    case "debt": debt = int.Parse(v); break;
-                    case "seen": lastSeen = long.Parse(v); break;
-                    case "hist": { string[] q = v.Split(','); if (q.Length == 7) { int[] h = new int[7]; for (int z = 0; z < 7; z++) h[z] = int.Parse(q[z]); dayHist.Add(h); } break; }
-                    case "b2bday": b2bDay = int.Parse(v); break;
-                    case "b2b": { string[] q = v.Split(','); int dd = int.Parse(q[0]); if (dd >= 0 && dd < Deals.Length) contracts.Add(new int[] { dd, int.Parse(q[1]) }); break; }
-                    case "recv": { string[] q = v.Split(','); receivables.Add(new int[] { int.Parse(q[0]), int.Parse(q[1]), int.Parse(q[2]) }); break; }
-                    case "job": jobGiaoHang = v == "1"; break;
-                    case "estate":
-                        {
-                            string[] q = v.Split(',');
-                            if (q.Length < 11) break;
-                            int ee = int.Parse(q[0]);
-                            if (ee < 0 || ee >= Estates.Length || OwnedIdx(ee) >= 0) break;
-                            Owned o = new Owned { E = ee, Occ = Math.Max(0, Math.Min(Estates[ee].Units, int.Parse(q[1]))), Mode = int.Parse(q[2]) == 1 ? 1 : 0, Level = Math.Max(1, Math.Min(3, int.Parse(q[3]))), RentLv = Math.Max(0, Math.Min(2, int.Parse(q[4]))), Manager = q[5] == "1", Value = int.Parse(q[6]), Paid = int.Parse(q[7]), LastNet = int.Parse(q[8]), LastGross = int.Parse(q[9]), TotalNet = int.Parse(q[10]) };
-                            owned.Add(o);
-                            break;
-                        }
-                    case "deliveries": deliveriesTotal = int.Parse(v); break;
-                    case "hasHome": hasHome = v == "1"; break;
-                    case "homeIdx": homeIdx = int.Parse(v); if (homeIdx >= 0 && homeIdx < Homes.Length) homeName = Homes[homeIdx].Name; break;
-                    case "rent": rentPerDay = int.Parse(v); break;
-                    case "homeEnergy": homeEnergy = float.Parse(v, ci); break;
-                    case "staffAngle": staffAngle = int.Parse(v) % 4; break;
-                    case "home": home = ParseVec(v); break;
-                    case "hasBiz": hasBiz = v == "1"; break;
-                    case "biz": bizPos = ParseVec(v); break;
-                    case "stock": bizStock = int.Parse(v); break;
-                    case "staff": bizStaff = int.Parse(v); break;
-                    case "cash": bizCash = int.Parse(v); break;
-                    case "level": bizLevel = int.Parse(v); break;
-                    case "heading": bizHeading = float.Parse(v, ci); break;
-                    case "ground": bizGround = float.Parse(v, ci); break;
-                    case "ownveh": ownVehHash = int.Parse(v); break;
-                    case "shop":
-                        {
-                            string[] q = v.Split(',');
-                            Shop sh = new Shop();
-                            sh.Pos = new Vector3(float.Parse(q[0], ci), float.Parse(q[1], ci), float.Parse(q[2], ci));
-                            sh.Heading = float.Parse(q[3], ci); sh.Ground = float.Parse(q[4], ci);
-                            sh.Level = int.Parse(q[5]); sh.Stock = int.Parse(q[6]); sh.Staff = int.Parse(q[7]); sh.Cash = int.Parse(q[8]); sh.SoldToday = int.Parse(q[9]);
-                            sh.Mode = Math.Max(0, Math.Min(3, int.Parse(q[10]))); sh.Rent = int.Parse(q[11]); sh.DaysLeft = int.Parse(q[12]); sh.Overdue = int.Parse(q[13]); sh.Paid = int.Parse(q[14]); sh.Indoor = q.Length > 15 && q[15] == "1"; sh.Type = q.Length > 16 ? Math.Max(0, Math.Min(Types.Length - 1, int.Parse(q[16]))) : 0;
-                            shops.Add(sh);
-                            break;
-                        }
+                    string[] q = v.Split(',');
+                    if (q.Length < 13) break;
+                    Resident r = new Resident();
+                    r.Id = int.Parse(q[0]); r.ModelHash = int.Parse(q[1]); r.Female = q[2] == "1"; r.NameIdx = int.Parse(q[3]);
+                    r.Home = new Vector3(float.Parse(q[4], ci), float.Parse(q[5], ci), float.Parse(q[6], ci));
+                    r.Work = new Vector3(float.Parse(q[7], ci), float.Parse(q[8], ci), float.Parse(q[9], ci));
+                    r.Lunch = new Vector3(float.Parse(q[10], ci), float.Parse(q[11], ci), float.Parse(q[12], ci));
+                    residents.Add(r);
+                    if (r.Id >= nextResId) nextResId = r.Id + 1;
+                    break;
                 }
-            }
+            case "rep": rep = int.Parse(v); break;
+            case "debt": debt = int.Parse(v); break;
+            case "seen": lastSeen = long.Parse(v); break;
+            case "hist": { string[] q = v.Split(','); if (q.Length == 7) { int[] h = new int[7]; for (int z = 0; z < 7; z++) h[z] = int.Parse(q[z]); dayHist.Add(h); } break; }
+            case "b2bday": b2bDay = int.Parse(v); break;
+            case "b2b": { string[] q = v.Split(','); int dd = int.Parse(q[0]); if (dd >= 0 && dd < Deals.Length) contracts.Add(new int[] { dd, int.Parse(q[1]) }); break; }
+            case "recv": { string[] q = v.Split(','); receivables.Add(new int[] { int.Parse(q[0]), int.Parse(q[1]), int.Parse(q[2]) }); break; }
+            case "job": jobGiaoHang = v == "1"; break;
+            case "estate":
+                {
+                    string[] q = v.Split(',');
+                    if (q.Length < 11) break;
+                    int ee = int.Parse(q[0]);
+                    if (ee < 0 || ee >= Estates.Length || OwnedIdx(ee) >= 0) break;
+                    Owned o = new Owned { E = ee, Occ = Math.Max(0, Math.Min(Estates[ee].Units, int.Parse(q[1]))), Mode = int.Parse(q[2]) == 1 ? 1 : 0, Level = Math.Max(1, Math.Min(3, int.Parse(q[3]))), RentLv = Math.Max(0, Math.Min(2, int.Parse(q[4]))), Manager = q[5] == "1", Value = int.Parse(q[6]), Paid = int.Parse(q[7]), LastNet = int.Parse(q[8]), LastGross = int.Parse(q[9]), TotalNet = int.Parse(q[10]) };
+                    owned.Add(o);
+                    break;
+                }
+            case "deliveries": deliveriesTotal = int.Parse(v); break;
+            case "hasHome": hasHome = v == "1"; break;
+            case "homeIdx": homeIdx = int.Parse(v); if (homeIdx >= 0 && homeIdx < Homes.Length) homeName = Homes[homeIdx].Name; break;
+            case "rent": rentPerDay = int.Parse(v); break;
+            case "homeEnergy": homeEnergy = float.Parse(v, ci); break;
+            case "staffAngle": staffAngle = int.Parse(v) % 4; break;
+            case "home": home = ParseVec(v); break;
+            case "hasBiz": hasBiz = v == "1"; break;
+            case "biz": bizPos = ParseVec(v); break;
+            case "stock": bizStock = int.Parse(v); break;
+            case "staff": bizStaff = int.Parse(v); break;
+            case "cash": bizCash = int.Parse(v); break;
+            case "level": bizLevel = int.Parse(v); break;
+            case "heading": bizHeading = float.Parse(v, ci); break;
+            case "ground": bizGround = float.Parse(v, ci); break;
+            case "ownveh": ownVehHash = int.Parse(v); break;
+            case "shop":
+                {
+                    string[] q = v.Split(',');
+                    Shop sh = new Shop();
+                    sh.Pos = new Vector3(float.Parse(q[0], ci), float.Parse(q[1], ci), float.Parse(q[2], ci));
+                    sh.Heading = float.Parse(q[3], ci); sh.Ground = float.Parse(q[4], ci);
+                    sh.Level = int.Parse(q[5]); sh.Stock = int.Parse(q[6]); sh.Staff = int.Parse(q[7]); sh.Cash = int.Parse(q[8]); sh.SoldToday = int.Parse(q[9]);
+                    sh.Mode = Math.Max(0, Math.Min(3, int.Parse(q[10]))); sh.Rent = int.Parse(q[11]); sh.DaysLeft = int.Parse(q[12]); sh.Overdue = int.Parse(q[13]); sh.Paid = int.Parse(q[14]); sh.Indoor = q.Length > 15 && q[15] == "1"; sh.Type = q.Length > 16 ? Math.Max(0, Math.Min(Types.Length - 1, int.Parse(q[16]))) : 0;
+                    shops.Add(sh);
+                    break;
+                }
         }
-        catch (Exception ex) { Log("load loi: " + ex.Message); }
     }
 
     static Vector3 ParseVec(string v)
