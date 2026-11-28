@@ -239,3 +239,8 @@ The GTA World adapter posts player body meters every two seconds through `POST /
 ### Player-controlled work sessions
 
 GTA V work actions can register a bounded player activity through `POST /engine/v1/simulation/actors/activity`. The activity is time-boxed in simulation minutes, so work time and hourly work events accrue only during the actual game-clock interval. The GTA World adapter reports the player's mechanic shift as a 240-minute work session before the native time-skip action; the native game remains responsible for its existing cash reward and physical presentation.
+
+
+### GTA residential personal-care objects
+
+The GTA V residential catalog now registers bed, fridge, sofa, toilet and shower objects. The World adapter detects the corresponding native interior furniture, starts the sleep/shower/toilet action, and delays its successful command acknowledgement until the time-skip/action state has completed. Only then does the Life Engine apply the canonical energy, hydration, hygiene or bladder consequence. If the player is not inside the leased home or the native object is not detected, the command is not reported as completed.
