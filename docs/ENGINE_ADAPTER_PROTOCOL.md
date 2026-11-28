@@ -229,3 +229,8 @@ The SQLite life-event journal is now consumed through a separate processed-event
 ## GTA V player-character registration
 
 The GTA Core periodically registers `player.main` through the shared actor endpoint as `actor_kind: "player"`, then synchronizes the legacy cash/bank opening balances. Name, occupation, home semantic ID and age can be configured in the `[Player]` settings section; defaults are neutral placeholders. The player actor participates in the same needs, aging, relationship and economic domains as residents, while autonomous NPC navigation commands are never issued to the player. Player movement and direct controls remain owned by GTA V.
+
+
+### Player body-state observation
+
+The GTA World adapter posts player body meters every two seconds through `POST /engine/v1/simulation/actors/observe`. The native GTA physiology remains authoritative for hunger/fullness, hydration, energy, hygiene and health; the adapter converts fullness and hydration bars into canonical unmet-need values before submission. The Engine does not independently decay those same player meters, avoiding double simulation. NPC physiology remains simulated by the portable Life Engine. The player's bladder pressure, social relationships, stress, mood, fitness and aging remain part of the shared simulation state.
