@@ -156,9 +156,9 @@ Muc "Tim mat bang" co them cac cua hang that cua game goc (24/7, LTD, Los Santos
 ### Cap nhat trong app
 App tu kiem tra ban moi khi mo (hoac nhan giu nut Back > "Cap nhat app"). De Android cho cai de len ban cu, moi APK phai ky cung mot khoa:
 
-1. Tao khoa mot lan (can Java): `keytool -genkeypair -keystore gtadash.jks -alias gtadash -keyalg RSA -keysize 2048 -validity 10000`
-2. Trong GitHub repo > Settings > Secrets and variables > Actions, them `ANDROID_KEYSTORE_BASE64` (noi dung file ma hoa base64) va `ANDROID_KEYSTORE_PASSWORD`.
-3. Giu file `gtadash.jks` o noi an toan, khong dua vao repo. Lan dau chuyen sang khoa nay phai go app cu roi cai lai.
+1. Khoa da tao san tren may phat trien: `%LOCALAPPDATA%\GtaVietLife\signing\gtadash.p12` (PKCS12, alias `gtadash`), kem hai file text `ANDROID_KEYSTORE_BASE64.txt` va `ANDROID_KEYSTORE_PASSWORD.txt`.
+2. Trong GitHub repo > Settings > Secrets and variables > Actions, them hai secret cung ten, gia tri la noi dung hai file text do.
+3. Sao luu thu muc `signing` ra noi an toan. Mat khoa thi moi ban APK sau phai go app cu. Lan dau chuyen sang khoa nay phai go app cu mot lan.
 
 ### APK cho dien thoai Android
 GitHub tu build `GtaDashboard-N.apk` (muc Releases, tag `dash-N`). Cai xong mo len, nhap `http://IP-may-tinh:5588` mot lan. Doi dia chi: giu nut Back. Man hinh luon sang. APK ky debug nen cai thang, can cho phep "cai tu nguon khong ro".

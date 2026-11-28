@@ -7,6 +7,7 @@ bridge/memory.db
 # signing keys
 *.jks
 *.keystore
+*.p12
 
 # build output
 publish/
